@@ -406,6 +406,8 @@ html[data-theme="dark"] {
 }
 
 /* 只放必须盖过工具类的规则。 */
+/* 挂机配置内统一为常规字重，包括标题、标签、按钮和动态预览。 */
+#config-root, #config-root * { font-weight: 400; }
 #world-map-pan { display: none; }
 @media (any-pointer: coarse) { #world-map-pan { display: inline-flex; } }
 @media (prefers-reduced-motion: reduce) {

@@ -768,7 +768,7 @@ function configRender() {
   movedFields.add('loop.everySeconds');
   for (const group of groups) {
     const controls = (configEditor.data.rules?.moduleControls ?? []).filter(control => control.configTarget === group.id && !hiddenFields.has(control.key));
-    const switches = controls.map(control => configField(control.key, control.label, 'switch', {
+    const switches = controls.map(control => configField(control.key, controls.length === 1 ? '自动挂机' : control.label, 'switch', {
       help: control.help || group.fields.find(field => field.key === control.key)?.help,
       moduleControl: true, controlFields: control.fields, gates: control.gates, configuredFields: control.configuredFields,
     }));
@@ -818,10 +818,6 @@ function configRender() {
       const section = el('section', 'config-section'); section.id = 'config-group-' + group.id;
       section.setAttribute('role', direct ? 'group' : 'tabpanel');
       section.setAttribute('aria-labelledby', direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
-      if (!direct) {
-        const heading = el('div', 'config-group-heading title-with-help'); const title = el('h3', '', group.title); title.id = section.id + '-title'; heading.append(title);
-        section.append(heading);
-      }
       if (['cityWar','silicon','treasure'].includes(group.id)) {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
         section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新载入配置；已保存设置会保留。'));
