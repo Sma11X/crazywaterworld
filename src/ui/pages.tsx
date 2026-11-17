@@ -132,21 +132,6 @@ export function heroesPage() {
   </div>)
 }
 
-export function dailiesPage() {
-  return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="每日任务" help="先“探测”查看当前能做哪些任务及不能执行的原因。点金与折扣店默认跳过，勾选允许花钻石才会消费。">
-<div className="bar">
-      <Button id="dailies-plan" variant="outline">探测</Button>
-      <Button id="dailies-run" variant="default">一键完成</Button>
-      <Option id="dailies-paid" label="允许花钻石（默认关闭）" />
-      <span id="dailies-hint" className="warn"></span>
-    </div>
-
-    <div id="dailies-table"></div></Panel>
-
-  </div>)
-}
-
 export function accountPage() {
   return renderToStaticMarkup(<div className="account-page">
     <div className="account-page-heading">

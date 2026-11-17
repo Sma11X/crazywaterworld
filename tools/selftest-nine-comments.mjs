@@ -129,7 +129,7 @@ try {
   });
   await check('内嵌页面语法、旧页面ID和日志弹窗结构完整', async () => {
     const {PAGE}=await import('../src/page.mjs');new vm.Script(PAGE.match(/<script>([\s\S]*)<\/script>/)[1]);
-    for(const id of ['tab-heroes','tab-dailies','tab-activities','journal-dialog','logs-open','log-category','resource-tabs'])assert(PAGE.includes('id="'+id+'"'));
+    for(const id of ['tab-heroes','tab-guild','tab-activities','journal-dialog','logs-open','log-category','resource-tabs'])assert(PAGE.includes('id="'+id+'"'));
     assert(!PAGE.includes('data-tab="heroes"')); assert(PAGE.includes('data-resource-tab="heroes"'));
   });
   await check('未连接也能预览运行安排，旧配置原值不变，不创建游戏连接', async () => {

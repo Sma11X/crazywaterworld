@@ -340,7 +340,6 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
 .guild-tech-table td:first-child { min-width:105px }
 .guild-tech-table .dim { display:block; font-size:12px }
 .guild-tech-group>summary { font-weight:500 }
-.daily-operation { min-width:100px }
 
 /* ---- 活动 ---- */
 .activity-toolbar,.activity-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px }

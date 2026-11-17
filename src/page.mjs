@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { automationControls } from './automation-controls.mjs';
 import { operationLabels } from './operation-labels.mjs';
-import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, dailiesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, idlePanel, stagePanel, settingsPage } from './ui/dist/console.mjs';
+import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, idlePanel, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
 const progressionScript = readFileSync(new URL('./ui/progression.js', import.meta.url), 'utf8');
@@ -41,7 +41,7 @@ export const PAGE = `<!doctype html>
 ${chrome()}
 <div class="deck"><main>
   <nav id="resource-tabs" class="resource-tabs" aria-label="资源与玩法分类" hidden>
-    <button type="button" data-resource-tab="dailies">日常</button><button type="button" data-resource-tab="guild">联盟</button><button type="button" data-resource-tab="inventory">仓库</button><button type="button" data-resource-tab="heroes">英雄与装备</button><button type="button" data-resource-tab="activities">活动</button><button type="button" data-resource-tab="giftcodes">礼包兑换</button>
+    <button type="button" data-resource-tab="guild">联盟</button><button type="button" data-resource-tab="inventory">仓库</button><button type="button" data-resource-tab="heroes">英雄与装备</button><button type="button" data-resource-tab="activities">活动</button><button type="button" data-resource-tab="giftcodes">礼包兑换</button>
   </nav>
   <section id="tab-overview">
     ${overviewPage()}
@@ -74,9 +74,6 @@ ${chrome()}
   <section id="tab-activities" class="hidden">
     ${activitiesPage()}
   </section>
-  <section id="tab-dailies" class="hidden">
-    ${dailiesPage()}
-  </section>
 
   <section id="tab-guild" class="hidden">${guildPage()}</section>
 
@@ -103,8 +100,6 @@ const operationNames = ${JSON.stringify(operationLabels)};
 let current = null;
 let accounts = [];
 let stream = null;
-let dailyAccount = null, dailyVersion = 0;
-const pendingDailyAccounts = new Set();
 
 function num(v) {
   if (v == null || typeof v !== 'object') return v;
@@ -557,11 +552,6 @@ function renderHostingControl() {
 }
 function renderAccountSelect() {
   appointmentsAccountChanged();
-  if (dailyAccount !== current || snapshot.paused || disconnected.has(current)) {
-    dailyAccount = current; dailyVersion++;
-    clear($('dailies-table'));
-    $('dailies-hint').textContent = snapshot.paused ? '账号已暂停' : '点击探测查看当前日常';
-  }
   if(accountDetailsOwner!==current){
     accountSelectionVersion++;
     accountDetailsOwner=current;
@@ -1495,106 +1485,6 @@ bindGameAction('hero-run', async () => {
   }
 });
 
-// ---- 日常 ------------------------------------------------------------------
-const DAILY_LABEL = { ready: '可做', paid: '需付费', partial: '部分可做', waiting: '等待中', done: '已完成', blocked: '不可用', error: '出错', unknown: '未知' };
-
-function dailyOperation(entry, account) {
-  const cell = el('div', 'daily-operation');
-  if (!entry.manual?.token) {
-    const reason = entry.manual?.reason || '请重新探测';
-    cell.textContent = reason === entry.reason ? '暂无操作' : reason;
-    cell.title = reason; return cell;
-  }
-  const button = smallButton(entry.manual.label);
-  button.disabled = pendingDailyAccounts.has(account) || snapshot.paused || disconnected.has(account);
-  button.onclick = async () => {
-    if (account !== current || snapshot.paused || disconnected.has(account) || pendingDailyAccounts.has(account)) return;
-    pendingDailyAccounts.add(account); button.disabled = true; button.textContent = '执行中…';
-    $('dailies-hint').textContent = '正在处理“' + entry.task.title + '”…';
-    let outcome;
-    try {
-      outcome = await call('/api/dailies/single', { method: 'POST', body: JSON.stringify({ confirm: true, token: entry.manual.token, paid: isChecked($('dailies-paid')) }) });
-    } catch (error) { if (account === current) { outcome = { label: error.message }; reportError(error); } }
-    finally {
-      pendingDailyAccounts.delete(account);
-      if (account === current) {
-        await refreshDailyView();
-        if (outcome) $('dailies-hint').textContent = outcome.label;
-      }
-    }
-  };
-  cell.appendChild(button); return cell;
-}
-function renderDailies(data, account = current) {
-  if (account !== current) return;
-  dailyAccount = account;
-  const box = clear($('dailies-table'));
-  const taskTable = table(['任务', '进度', '状态', '动作 / 原因', '完成操作'], data.tasks.map((entry) => [
-    entry.task.title,
-    entry.task.progress + '/' + entry.task.targetProgress,
-    chip(entry.status, DAILY_LABEL[entry.status] || entry.status),
-    entry.status === 'ready' || entry.status === 'paid' || entry.status === 'partial'
-      ? (entry.actions || []).map((a) => a.cost || a.request).join('；') || '直接完成'
-      : (entry.reason || ''),
-    dailyOperation(entry, account),
-  ]));
-  taskTable.classList.add('daily-tasks');
-  box.appendChild(taskTable);
-  if (data.chests) {
-    const line = (label, chest) => {
-      const tiers = chest.tiers || [];
-      const tail = tiers.length
-        ? '第 ' + tiers.map((t2) => t2.id).join(' / ') + ' 档'
-        : (chest.nextAt == null ? '这一季的档位都领完了' : '下一档要 ' + chest.nextAt + ' 点活跃');
-      return [label, chest.activity + ' 活跃', chip(tiers.length ? 'ready' : 'done', tiers.length ? '可领' : '不欠'), tail];
-    };
-    box.appendChild(table(['活跃奖励', '活跃度', '状态', '动作 / 原因'], [
-      line('每日宝箱', data.chests.daily),
-      line('每周宝箱', data.chests.weekly),
-    ]));
-  }
-  if (data.gift) {
-    const free = data.gift.freeAvailable;
-    box.appendChild(table(['每日礼包', '状态', '动作 / 原因'], [
-      ['每日精选赠礼', chip(free ? 'ready' : 'done', free ? '可领' : '已领'),
-        free ? '免费，一键领取会顺手领掉' : '今天那份已经领过了，明天 0 点重置'],
-    ]));
-  }
-}
-
-async function refreshDailyView() {
-  const account = current, version = ++dailyVersion;
-  if (!account || snapshot.paused || disconnected.has(account)) {
-    clear($('dailies-table')); $('dailies-hint').textContent = snapshot.paused ? '账号已暂停' : '请先连接当前账号'; return;
-  }
-  $('dailies-hint').textContent = '探测中 ...';
-  try {
-    const data = await call('/api/dailies');
-    if (account !== current || version !== dailyVersion) return;
-    renderDailies(data, account);
-    $('dailies-hint').textContent = '';
-  } catch (error) {
-    if (account !== current || version !== dailyVersion) return;
-    $('dailies-hint').textContent = '读取失败，请重新探测';
-    reportError(error);
-  }
-}
-$('dailies-plan').onclick = refreshDailyView;
-bindGameAction('dailies-run', async () => {
-  const account = current;
-  const paid = isChecked($('dailies-paid'));
-  $('dailies-hint').textContent = '执行中 ...';
-  try {
-    const data = await call('/api/dailies/run', { method: 'POST', body: JSON.stringify({ confirm: true, paid }) });
-    if (account !== current) return;
-    $('dailies-hint').textContent = '完成 ' + data.results.filter((r) => r.ok).length + ' 个动作，失败 ' + data.results.filter((r) => r.ok === false).length + '，领取奖励 ' + data.claimed.length + ' 个，耗时 ' + Math.round(data.ms / 1000) + 's';
-    renderDailies(data);
-  } catch (error) {
-    $('dailies-hint').textContent = '';
-    reportError(error);
-  }
-});
-
 // ---- 表格 ------------------------------------------------------------------
 // 单元格可以是字符串、{num}、{chip}、{cell: 图标项}、{cells: [图标项]}
 function putCell(td, spec) {
@@ -2173,7 +2063,7 @@ $('login-settings-form').onsubmit = async event => {
   }
 };
 ${giftCodeScript}
-let selectedResource = 'dailies';
+let selectedResource = 'guild';
 function activateConsolePage(button, resource = selectedResource) {
     const isResource = button.dataset.tab === 'resources';
     const target = isResource ? resource : button.dataset.tab;
