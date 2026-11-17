@@ -427,12 +427,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   function emit(session, level, message, extra) {
     const display = describeLogError(message, extra);
-    const operationDetail = extra?.operationId ? [
-      '操作 ' + extra.operationId,
-      extra.dedupeKey ? '防重键 ' + extra.dedupeKey : '',
-      '阶段 ' + extra.phase + ' / ' + extra.result,
-    ].filter(Boolean).join('\n') : '';
-    const detail = [extra?.diagnostic, display.detail, operationDetail].filter(Boolean).join('\n');
+    const detail = [extra?.diagnostic, display.detail].filter(Boolean).join('\n');
     const entry = redactLog({ id: ++logId, t: Date.now(), level, category: classifyLog(display.message, extra), message: display.message, detail: detail || undefined, extra, account: session?.id ?? null,
       accountName: session ? logAccountLabels.get(session.id) || session.player?.nickname || '未命名账号' : undefined,
       operationId: extra?.operationId, dedupeKey: extra?.dedupeKey, module: extra?.module, phase: extra?.phase, result: extra?.result });
@@ -882,7 +877,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     instance.on('message',({name})=>{
       if(name==='SCNewCampaignReport'){
         invalidateFleetReports(instance);
-        if(session.client===instance)emit(session,'info','收到新战报',{pirateUpdated:true});
         // 推送领奖遵循当前挂机状态与活动开关，排队和发送前继续核对。
         const generation=session.generation;
         const enabled=()=>current()&&generation===session.generation&&session.loop.running&&session.loop.tasks.campaignReports&&nativePreferenceEnabled(session.preferences,'campaignReports');
