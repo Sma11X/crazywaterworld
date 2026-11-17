@@ -23,9 +23,20 @@ function savedSettings(account) {
   return settingsFromNative(account.automation?.tasks, account.automation);
 }
 
-export function exportAccountBackup(store, { id, all = false, includeSettings = false, getSettings = savedSettings } = {}) {
+export function exportAccountBackup(store, { id, ids, all = false, includeSettings = false, getSettings = savedSettings } = {}) {
   if (typeof includeSettings !== 'boolean') throw new Error('请选择有效的账号导出方式');
-  const selected = all === true ? store.accounts : store.accounts.filter(account => account.id === id);
+  let selected;
+  if (ids !== undefined) {
+    if (!Array.isArray(ids) || !ids.length || ids.some(value => typeof value !== 'string' || !value.trim())) {
+      throw new Error('请至少选择一个有效账号');
+    }
+    if (id !== undefined || all !== false) throw new Error('请只指定一种账号导出范围');
+    const requested = new Set(ids);
+    selected = store.accounts.filter(account => requested.has(account.id));
+    if (selected.length !== requested.size) throw new Error('所选账号已不存在，请刷新账号列表后重试');
+  } else {
+    selected = all === true ? store.accounts : store.accounts.filter(account => account.id === id);
+  }
   if (!selected.length) throw new Error('没有可导出的账号');
   return {
     format: ACCOUNT_BACKUP_FORMAT, version: 1, exportedAt: new Date().toISOString(), includeSettings,

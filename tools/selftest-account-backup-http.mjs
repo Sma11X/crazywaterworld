@@ -69,6 +69,26 @@ try {
     await api('accounts/export', { id: 'missing' }, 400);
     await api('accounts/export', { all: true, includeSettings: 'yes' }, 400);
   });
+  await test('多选导出只包含指定账号与对应配置，拒绝空选和失效账号', async () => {
+    for (const includeSettings of [false, true]) {
+      const subset = await api('accounts/export', { ids: [source[0].id, source[2].id], includeSettings });
+      assert.deepEqual(subset.accounts.map(account => account.id), [source[0].id, source[2].id]);
+      assert.equal(subset.activeId, source[0].id);
+      assert.equal(subset.accounts.every(account => Object.hasOwn(account, 'settings') === includeSettings), true);
+      if (includeSettings) assert.equal(subset.accounts[0].settings.settings.loop.everySeconds, 21);
+    }
+    const active = await api('accounts/export', { ids: [source[1].id, source[2].id], includeSettings: true });
+    assert.equal(active.activeId, source[1].id);
+    assert.deepEqual(active.accounts[0].settings.settings, custom);
+    const repeated = await api('accounts/export', { ids: [source[1].id, source[1].id] });
+    assert.equal(repeated.accounts.length, 1);
+    for (const ids of [[], null, 'all', [null], [''], [source[0].id, 'missing']]) {
+      await api('accounts/export', { ids }, 400);
+    }
+    await api('accounts/export', { ids: [], all: true }, 400);
+    await api('accounts/export', { ids: [source[0].id], all: true }, 400);
+    await api('accounts/export', { ids: [source[0].id], id: source[1].id }, 400);
+  });
   await close();
   const existing = make('shared'); existing.label = '本机备注';
   existing.automation.paused = true;

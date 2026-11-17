@@ -225,11 +225,10 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
 .account-card-footer { flex-direction:column; align-items:stretch; gap:16px; margin-top:auto }
 .account-card-footer [data-account-field=seen] { font-size:12px; overflow-wrap:anywhere }
 .account-card-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px }
-.account-card-menu,.account-backup-menu { position:relative }
+.account-card-menu { position:relative }
 .account-card-menu>summary { width:32px; height:32px; justify-content:center }
 .account-card-menu>summary::after { display:none }
 .account-card-menu>summary svg { width:18px; height:18px }
-.account-backup-menu>summary { min-height:36px; padding-inline:12px }
 .account-menu-content { position:absolute; top:calc(100% + 6px); right:0; z-index:10; min-width:160px; display:grid; gap:2px; padding:4px }
 .account-menu-content>button { width:100%; justify-content:flex-start }
 .account-menu-content>p { width:180px; padding:6px 8px; font-size:12px; line-height:1.5 }
@@ -238,6 +237,15 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
 #account-add-dialog,#account-info-dialog { width:min(680px,calc(100vw - 32px)); max-width:none; padding:24px }
 #account-export-dialog { width:min(480px,calc(100vw - 32px)); max-width:none; padding:24px }
 #account-export-dialog p { line-height:1.6; overflow-wrap:anywhere }
+.account-export-selection { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px }
+.account-export-all { display:flex; align-items:center; gap:8px; min-height:32px }
+#account-export-all:indeterminate { background:linear-gradient(var(--primary),var(--primary)) center / 8px 2px no-repeat }
+#account-export-list { display:grid; gap:4px; max-height:min(32dvh,260px); overflow:auto; overscroll-behavior:contain }
+.account-export-option { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border); border-radius:calc(var(--radius) * .8); cursor:pointer }
+.account-export-option:has(input:checked) { border-color:var(--ring); background:var(--accent) }
+.account-export-option>span { display:grid; gap:4px; min-width:0; overflow-wrap:anywhere }
+.account-export-option strong { font-weight:500 }
+.account-export-option .dim { font-size:12px; font-weight:400 }
 #account-add-dialog[open] { grid-template-rows:auto minmax(0,1fr); gap:20px; overflow:hidden }
 .account-dialog-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px }
 .account-dialog-heading>[data-slot=dialog-header] { min-width:0; padding-top:4px }
@@ -259,7 +267,6 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
   .account-page-heading { align-items:flex-start; gap:16px }
   .account-page-title { gap:8px }
   .account-page-actions { gap:4px }
-  .account-backup-menu>summary { padding-inline:8px }
   .account-channel-grid { grid-template-columns:minmax(0,1fr) }
   .account-channel { min-height:88px }
   #account-add-dialog,#account-info-dialog { padding:20px }

@@ -1,5 +1,5 @@
 let accountTransferBusy = false;
-let accountExportId = null;
+let accountExportChoices = [];
 
 function accountTransferNotice(message, failed = false) {
   const notice = $('account-transfer-notice');
@@ -8,27 +8,65 @@ function accountTransferNotice(message, failed = false) {
   notice.classList.toggle('warn', failed);
 }
 
+function updateAccountExportSelection() {
+  const count = accountExportChoices.filter(input => input.checked).length;
+  const total = accountExportChoices.length;
+  $('account-export-scope').textContent = total
+    ? '已选择 ' + count + ' / ' + total + ' 个账号' : '暂无可导出的账号，请先添加账号。';
+  $('account-export-all').checked = total > 0 && count === total;
+  $('account-export-all').indeterminate = count > 0 && count < total;
+  $('account-export-all').disabled = accountTransferBusy || !total;
+  for (const input of accountExportChoices) input.disabled = accountTransferBusy;
+  for (const name of ['account-export-only', 'account-export-settings']) $(name).disabled = accountTransferBusy || !count;
+  $('account-export-close').disabled = accountTransferBusy;
+}
+
 function exportAccounts(id) {
   if (accountTransferBusy) return;
-  accountExportId = id || null;
-  $('account-export-scope').textContent = id
-    ? '导出「' + (accounts.find(account => account.id === id)?.title || '所选账号') + '」'
-    : '导出全部 ' + accounts.length + ' 个账号';
+  const list = $('account-export-list');
+  list.replaceChildren();
+  accountExportChoices = accounts.map(account => {
+    const row = document.createElement('label');
+    row.className = 'account-export-option';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = account.id;
+    input.checked = account.id === id;
+    input.onchange = () => { $('account-export-error').hidden = true; updateAccountExportSelection(); };
+    const info = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = account.title;
+    const detail = document.createElement('span');
+    detail.className = 'dim';
+    detail.textContent = [accountChannel(account.source), account.lastSeen?.worldName
+      || (account.lastSeen?.worldId ? '区服 ' + account.lastSeen.worldId : '')].filter(Boolean).join(' · ');
+    info.append(title, detail);
+    row.append(input, info);
+    list.appendChild(row);
+    return input;
+  });
+  list.hidden = !accountExportChoices.length;
+  updateAccountExportSelection();
   $('account-export-error').hidden = true;
   $('account-export-dialog').showModal();
-  $('account-export-only').focus();
+  (accountExportChoices.find(input => input.checked) || (accounts.length ? $('account-export-all') : $('account-export-close'))).focus();
 }
 
 async function downloadAccounts(includeSettings) {
   if (accountTransferBusy) return;
-  const id = accountExportId;
+  const ids = accountExportChoices.filter(input => input.checked).map(input => input.value);
+  if (!ids.length) {
+    $('account-export-error').textContent = '请至少勾选一个账号';
+    $('account-export-error').hidden = false;
+    return;
+  }
   accountTransferBusy = true;
-  for (const name of ['account-export-only', 'account-export-settings', 'account-export-close']) $(name).disabled = true;
+  updateAccountExportSelection();
   $('account-export-error').hidden = true;
   try {
     if (includeSettings && !await configFlush()) throw new Error('配置尚未保存，请先处理配置页的提示后再导出');
     const response = await fetch('/api/accounts/export', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...(id ? { id } : { all: true }), includeSettings }) });
+      body: JSON.stringify({ ids, includeSettings }) });
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || '账号导出失败');
@@ -36,19 +74,19 @@ async function downloadAccounts(includeSettings) {
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a');
     link.href = url;
-    link.download = (id ? 'account-' : 'accounts-') + (includeSettings ? 'with-settings-' : '')
+    link.download = (ids.length === 1 ? 'account-' : 'accounts-') + (includeSettings ? 'with-settings-' : '')
       + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
     document.body.appendChild(link);
     try { link.click(); }
     finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
     $('account-export-dialog').close();
-    accountTransferNotice('已导出' + (id ? '所选账号' : '全部账号') + (includeSettings ? '及配置' : '（仅账号）') + '。');
+    accountTransferNotice('已导出所选 ' + ids.length + ' 个账号' + (includeSettings ? '及配置' : '（仅账号）') + '。');
   } catch (error) {
     $('account-export-error').textContent = error.message;
     $('account-export-error').hidden = false;
   } finally {
     accountTransferBusy = false;
-    for (const name of ['account-export-only', 'account-export-settings', 'account-export-close']) $(name).disabled = false;
+    updateAccountExportSelection();
   }
 }
 
@@ -91,6 +129,12 @@ async function importAccounts(file) {
 }
 
 $('export-accounts').onclick = () => exportAccounts();
+$('account-export-all').onchange = () => {
+  if (accountTransferBusy) return;
+  for (const input of accountExportChoices) input.checked = $('account-export-all').checked;
+  $('account-export-error').hidden = true;
+  updateAccountExportSelection();
+};
 $('account-export-only').onclick = () => downloadAccounts(false);
 $('account-export-settings').onclick = () => downloadAccounts(true);
 $('account-export-close').onclick = () => { if (!accountTransferBusy) $('account-export-dialog').close(); };

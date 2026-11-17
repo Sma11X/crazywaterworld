@@ -2241,9 +2241,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         return;
       }
       if (route === 'POST /api/accounts/export') {
-        const { id, all, includeSettings = false } = jsonBody();
+        const { id, ids, all, includeSettings = false } = jsonBody();
         const store = loadStore();
-        const backup = exportAccountBackup(store, { id, all, includeSettings,
+        const backup = exportAccountBackup(store, { id, ids, all, includeSettings,
           getSettings: account => settingsView(sessionFor(account.id)).settings });
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
           'content-disposition': 'attachment; filename="' + (includeSettings ? 'accounts-with-settings' : 'accounts') + '.json"' });

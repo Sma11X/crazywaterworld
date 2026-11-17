@@ -154,10 +154,7 @@ export function accountPage() {
       <div className="account-page-actions">
         <Button id="import-accounts" type="button" variant="outline">导入账号</Button>
         <input id="import-accounts-file" type="file" accept=".json,application/json" aria-label="选择账号备份文件" hidden />
-        <details className="account-backup-menu">
-          <summary>备份账号</summary>
-          <div className="account-menu-content"><Button id="export-accounts" type="button" variant="ghost" size="sm" className="w-full justify-start">导出全部账号</Button><p className="dim">备份含登录凭证，请妥善保管。</p></div>
-        </details>
+        <Button id="export-accounts" type="button" variant="outline" aria-haspopup="dialog" aria-controls="account-export-dialog">导出账号</Button>
         <Button id="account-add" type="button" aria-haspopup="dialog" aria-controls="account-add-dialog"><Plus aria-hidden="true" />添加账号</Button>
       </div>
     </div>
@@ -167,7 +164,11 @@ export function accountPage() {
 
     <dialog id="account-export-dialog" aria-labelledby="account-export-title" aria-describedby="account-export-scope">
       <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-export-title">导出账号</DialogTitle></DialogHeader><Button id="account-export-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭账号导出"><X aria-hidden="true" /></Button></div>
-      <p id="account-export-scope" className="dim" />
+      <div className="account-export-selection">
+        <label className="account-export-all"><input id="account-export-all" type="checkbox" />全选账号</label>
+        <p id="account-export-scope" className="dim" role="status" aria-live="polite" />
+      </div>
+      <div id="account-export-list" role="group" aria-label="选择要导出的账号" />
       <div className="grid gap-3">
         <Button id="account-export-only" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>仅账号</strong><span className="text-xs font-normal">保存登录凭据、备注和角色资料</span></span></Button>
         <Button id="account-export-settings" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>账号及配置</strong><span className="text-xs font-normal">同时保存每个账号的游戏配置和阵容预设</span></span></Button>
