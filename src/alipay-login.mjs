@@ -1,19 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { createCodec } from './codec.mjs';
 import { inspectGameFrame } from './frame-header.mjs';
-import { findAppBrowser } from './platform/browser.mjs';
+import { ensureHeadlessBrowser } from './platform/browser.mjs';
 
 const GAME_URL = 'https://www.wanyiwan.top/game/fkssj';
 const AUTH_PATH = '/gameauth/com.alipay.gameauth.common.facade.service.GameCenterPcAuthFacade/';
 const ACTIVE_PHASES = new Set(['starting', 'waiting', 'authorizing']);
-const START_TIMEOUT_MS = 45_000;
+const START_TIMEOUT_MS = 12 * 60_000;
 const QR_TIMEOUT_MS = 5 * 60_000;
 const GAME_TIMEOUT_MS = 2 * 60_000;
 const CAPTURED_TIMEOUT_MS = 10 * 60_000;
 
 async function launchBrowser() {
-  const executablePath = findAppBrowser();
-  if (!executablePath) throw new Error('请先安装 Microsoft Edge 或 Google Chrome，再生成支付宝登录二维码。');
+  let executablePath;
+  try {
+    executablePath = await ensureHeadlessBrowser();
+  } catch (error) {
+    if (error.message.includes('自动下载 Chromium')) throw error;
+    throw new Error('服务器未找到 Chromium、Google Chrome 或 Microsoft Edge，且自动下载未能完成。请检查网络和数据目录权限，或设置 CW_BROWSER_EXECUTABLE。');
+  }
   const { chromium } = await import('playwright-core');
   return chromium.launch({ executablePath, headless: true, timeout: 30_000 });
 }
@@ -43,6 +48,7 @@ function validTimestamp(value) {
 export function createAlipayLogin({
   protocol,
   launch = launchBrowser,
+  startTimeoutMs = START_TIMEOUT_MS,
   now = Date.now,
   setTimeout: schedule = globalThis.setTimeout,
   clearTimeout: unschedule = globalThis.clearTimeout,
@@ -307,9 +313,9 @@ export function createAlipayLogin({
       await session.readyPromise;
     } catch (error) {
       if (live(session)) {
-        const message = !findAppBrowser() && launch === launchBrowser
-          ? '请先安装 Microsoft Edge 或 Google Chrome，再生成支付宝登录二维码。'
-          : '无法打开支付宝扫码登录页面，请检查 Edge 或 Chrome 及网络连接后重试。';
+        const message = error.message?.includes('自动下载 Chromium') || error.message?.includes('未找到 Chromium')
+          ? error.message
+          : '无法打开支付宝扫码登录页面，请检查无头浏览器依赖、浏览器运行权限及服务器网络后重试。';
         finish(session, 'error', message);
       }
     }
@@ -330,12 +336,12 @@ export function createAlipayLogin({
     });
     const session = {
       id: randomUUID(), phase: 'starting', qrImage: null, error: null,
-      expiresAt: now() + START_TIMEOUT_MS, credential: null, timer: null,
+      expiresAt: now() + startTimeoutMs, credential: null, timer: null,
       browser: null, context: null, disposing: null, pages: new Set(), qrVersion: 0,
     };
     session.readyPromise = new Promise(resolve => { session.ready = resolve; });
     current = session;
-    deadline(session, session.expiresAt, 'error', '生成二维码超时，请检查网络后重试。');
+    deadline(session, session.expiresAt, 'error', '浏览器准备或二维码生成超时，请检查下载网络和服务器后重试。');
     session.startPromise = initialize(session, prior);
     previousStart = session.startPromise.catch(() => {});
     return session.startPromise;

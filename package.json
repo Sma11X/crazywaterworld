@@ -27,7 +27,7 @@
     "typecheck": "tsc -p tsconfig.ledger.json",
     "pretest:offline": "npm run build:ui && npm run typecheck",
     "test:offline": "node tools/selftest-offline.mjs",
-    "test:alipay": "node tools/selftest-alipay-login.mjs && node tools/selftest-alipay-login-http.mjs && node tools/selftest-alipay-login-ui.mjs",
+    "test:alipay": "node tools/selftest-alipay-browser.mjs && node tools/selftest-alipay-login.mjs && node tools/selftest-alipay-login-http.mjs && node tools/selftest-alipay-login-ui.mjs",
     "test:lineups": "node tools/selftest-saved-lineups.mjs && node tools/selftest-lineup-runtime.mjs && node tools/selftest-lineup-challenges.mjs && node tools/selftest-lineup-presets-http.mjs && node tools/selftest-lineup-editor-ui.mjs && node tools/selftest-lineup-lifecycle-http.mjs",
     "test:lineups:browser": "npm run build:ui && node tools/selftest-lineup-editor-browser.mjs"
   },

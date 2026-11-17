@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-需要 Windows 和 Node.js 20.11 或更高版本。请先在电脑版微信中打开一次《疯狂水世界》，供工具读取本机游戏协议包。配置表和世界地图默认从游戏 CDN 自动更新。添加抖音账号还需要登录本机的电脑版抖音。支付宝扫码登录需要本机安装 Edge 或 Chrome。
+需要 Windows 和 Node.js 20.11 或更高版本。请先在电脑版微信中打开一次《疯狂水世界》，供工具读取本机游戏协议包。配置表和世界地图默认从游戏 CDN 自动更新。添加抖音账号还需要登录本机的电脑版抖音。支付宝扫码首次使用时会自动下载与 Playwright 版本匹配的 Chromium（需服务器可访问下载源并预留磁盘空间）；已有浏览器可继续复用，也可通过 `CW_BROWSER_EXECUTABLE` 指定。
 
 ```powershell
 git clone https://github.com/xutongxue233/crazywaterworld.git

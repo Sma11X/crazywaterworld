@@ -85,7 +85,7 @@ function renderAlipayLogin() {
   const captured = state.phase === 'captured';
   const messages = {
     idle: '点击「生成二维码」，然后使用支付宝扫一扫。',
-    starting: '正在打开支付宝登录页面并读取二维码…',
+    starting: '正在准备浏览器并打开支付宝登录页面；首次使用可能需要自动下载 Chromium，请稍候…',
     waiting: '请使用支付宝扫码，并在手机上确认登录。',
     authorizing: '扫码已确认，正在进入游戏并读取登录信息…',
     'reading-roles': '正在读取该账号的区服和游戏角色…',

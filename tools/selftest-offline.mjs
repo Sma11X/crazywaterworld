@@ -59,6 +59,7 @@ const cases = [
   ['selftest-phone-login.mjs'],
   ['selftest-phone-login-http.mjs'],
   ['selftest-phone-login-ui.mjs'],
+  ['selftest-alipay-browser.mjs'],
   ['selftest-alipay-login.mjs'],
   ['selftest-alipay-login-http.mjs'],
   ['selftest-alipay-login-ui.mjs'],

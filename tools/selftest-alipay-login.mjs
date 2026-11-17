@@ -137,6 +137,7 @@ function fixture(options = {}) {
   env.manager = createAlipayLogin({
     protocol: options.protocol ?? protocol,
     launch,
+    ...(options.startTimeoutMs ? { startTimeoutMs: options.startTimeoutMs } : {}),
     now: () => time,
     setTimeout(callback, delay) {
       const id = ++sequence;
@@ -326,12 +327,12 @@ await test('二维码到期及服务端失效释放浏览器，凭证保存期�
 });
 
 await test('启动与授权阶段超时均结束临时浏览器', async () => {
-  const env = fixture({ noQr: true });
+  const env = fixture({ noQr: true, startTimeoutMs: 45_000 });
   const starting = env.manager.start();
   await settle();
   await env.advance(45_000);
   assert.equal((await starting).phase, 'error');
-  assert.match(env.manager.status().error, /生成二维码超时/);
+  assert.match(env.manager.status().error, /浏览器准备或二维码生成超时/);
   assert.equal(env.browsers[0].closed, 1);
   const second = fixture();
   await second.manager.start();
