@@ -48,6 +48,7 @@ import { hasBaseWork } from './automation-settings.mjs';
 import { treasureAutomationEnabled, runTreasureLoot } from './treasure-loot.mjs';
 import {watchTreasureTravel,matchesFollowDeparture} from './treasure-follow.mjs';
 import {watchFleetMaintenance,fleetMaintenanceEnabled,fleetMaintenanceInterval,runFleetMaintenance} from './fleet-maintenance.mjs';
+import {watchFleetSpeed,fleetSpeedEnabled,runFleetSpeed} from './fleet-speed.mjs';
 import { cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations, runCityWar } from './city-war.mjs';
 import { forgeEnabled, runEquipmentForge } from './equipment-forge.mjs';
 import { antiqueEnabled, runAntiqueUpgrade } from './antique-upgrade.mjs';
@@ -167,12 +168,16 @@ export async function runLoop(client, protocol, {
   });
   scheduler.addCleanup(() => factorySchedule.dispose());
   let maintenanceAt=0,maintenanceVersion=0;
+  let fleetSpeedAt=0;
+  scheduler.addCleanup(watchFleetSpeed(client).subscribe(()=>{
+    if(!stop.aborted&&fleetSpeedEnabled(getSettings())){fleetSpeedAt=0;scheduler.wake();}
+  }));
   let siliconVersion = 0, dispatchSettingsPending = false;
   scheduler.addCleanup(watchSiliconMining(client).subscribe(() => {
     if (stop.aborted || !getSettings()?.silicon?.enabled) return;
     siliconAt = 0; siliconVersion++; scheduler.wake();
   }));
-  const settingsWake = () => { siliconAt = 0; extendedAt = 0; siliconVersion++; dispatchSettingsPending = true;
+  const settingsWake = () => { fleetSpeedAt = 0; siliconAt = 0; extendedAt = 0; siliconVersion++; dispatchSettingsPending = true;
     rewards?.clearTask('guildShip'); rewards?.clearTask('guildFort'); wakeActivities(); scheduler.wake(); };
   const extendedPush = ({ name }) => {
     if (/^SCGuildShip|^SCFort|^SCHeroRaid/.test(name) || ['SCAllActivity','SCGuildOrder','SCNewGuildAidAsk','SCGuildAidHelp','SCGuildAidRemove','SCNewGuildWelfarePack'].includes(name)) {
@@ -374,8 +379,11 @@ export async function runLoop(client, protocol, {
       signal: typeof stop.throwIfAborted === 'function' ? stop : undefined };
     async function checkDispatch() {
       if(stop.aborted)return;
-      if(usageLedger)await checkFleetSettlement(client,player,usageLedger);
+      if(usageLedger){const changes=await checkFleetSettlement(client,player,usageLedger);for(const change of changes)if(change.repairRecovery)
+        stepLog('world')({category:'战后维修',title:change.buildingId+'维修复查',ok:true,status:'confirmed',note:change.reason,taskKey:'舰队战后维修'});}
       await checkMaintenance();
+      // 加速补满后立即刷新维修占用，让同轮城战能使用已恢复的舰队。
+      if(await checkFleetSpeed())await checkMaintenance();
       // 城战时间窗先核实；其余任务按配置检查，空闲且无预留的舰队可共享。
       if(getSettings()?.cityWar.reserveDuringWar)await checkCityWar();
       for (const task of dispatchOrder(getSettings())) {
@@ -446,6 +454,19 @@ export async function runLoop(client, protocol, {
         appointmentAt = Date.now() + getEveryMs();
         rewards?.expect('appointments.enabled', rewards.now() + Math.ceil(getEveryMs() / 1000));
       }
+    }
+    async function checkFleetSpeed(){
+      if(stop.aborted||!fleetSpeedEnabled(getSettings())||Date.now()<fleetSpeedAt)return;
+      let delay=5,repairReady=false;
+      try{const plan=await runFleetSpeed(client,protocol,config,player,{getSettings,ledger:usageLedger,
+        enabled:()=>!stop.aborted&&client.connected&&fleetSpeedEnabled(getSettings()),
+        onStep:entry=>{
+          if(entry.status==='confirmed'&&entry.step?.mode==='repair'){repairReady=true;maintenanceAt=0;cityWarAt=0;}
+          summary.world.results.push(entry);stepLog('world')({...entry,category:'城战加速',taskKey:'cityWar.enabled'});
+        }});delay=Math.min(delay,plan?.nextCheckSeconds??5);}
+      catch(error){phaseFailure('world','舰队加速',error);}
+      finally{fleetSpeedAt=Date.now()+Math.max(1,delay)*1000;}
+      return repairReady;
     }
     async function checkMaintenance(){
       if(stop.aborted||!fleetMaintenanceEnabled(getSettings())){watchFleetMaintenance(client).hold([]);onMaintenance?.({enabled:false,rows:[],reason:'现有自动维修未开启'});return;}
@@ -1058,6 +1079,7 @@ export async function runLoop(client, protocol, {
           const afkAt = isEnabled && enabled('afk') ? (afkDeadline ?? Date.now() + 60_000) : Infinity;
           const wakeAt = Math.min(nextRound, activityAt, factorySchedule.nextAt(), siliconNext(), extendedNext(), merchantNext(), appointmentNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
+            fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
             getSettings()?.radar.runEnabled !== false && getSettings()?.radar.enabled ? radarAt : Infinity,
             isEnabled && enabled('upgrade') ? upgradeAt : Infinity,
             treasureAutomationEnabled(getSettings()) ? treasureAt : Infinity,
@@ -1082,6 +1104,7 @@ export async function runLoop(client, protocol, {
           await scheduler.runDue('appointments', appointmentNext, checkAppointments);
           const dispatchNext = () => Math.min(siliconNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
+            fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
             getSettings()?.radar.runEnabled !== false && getSettings()?.radar.enabled ? radarAt : Infinity,
             cityWarEnabled(getSettings()) ? cityWarAt : Infinity,
             treasureAutomationEnabled(getSettings()) ? treasureAt : Infinity);

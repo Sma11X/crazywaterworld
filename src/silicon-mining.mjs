@@ -4,6 +4,9 @@ import { gameplayOpenDay, worldOpenDays } from './extra-rewards.mjs';
 import { dispatchReservationReason, fleetRecordReason, reserveDispatch } from './fleet-availability.mjs';
 import { registerFleetReservations, isFleetReserved } from './fleet-reservations.mjs';
 import { pendingPetrol } from './dispatch-preview.mjs';
+import { recordsInWorld } from './fleet-settlement.mjs';
+import { repairDiamondCost } from './fleet-speed-evidence.mjs';
+import { watchFleetRepairPricing, conservativeRepairMinutes } from './fleet-repair-pricing.mjs';
 
 // 硅矿奖励由服务器自动发放；ChipMineRewardRequest 只是读取共享周期次数。
 const integer = (n, min = 0) => Number.isSafeInteger(n) && n >= min;
@@ -56,12 +59,11 @@ export function siliconInWindow(windows, time) {
 export const siliconInterval = settings => settings?.silicon?.fleets?.some(fleet => fleet.enabled && (fleet.huntEnabled || fleet.pursuit && !fleet.emptyOnly && fleet.tier !== 'BLUE')) ? 120000 : 600000;
 export function watchSiliconMining(client) {
   if (watchers.has(client)) return watchers.get(client);
-  const listeners = new Set(), minutes = new Map();
+  const listeners = new Set(), pricing = watchFleetRepairPricing(client);
   const watcher = { subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     wake() { for (const fn of listeners) { try { fn(); } catch {} } },
-    repairMinutes() { const value = minutes.get(4); return value?.day === day(now(client)) ? value.minutes : null; } };
+    repairMinutes() { return pricing.minutes(); } };
   client.on?.('message', ({ name, body }) => {
-    if (name === 'SCSpeedUp') for (const row of body?.data ?? []) if (integer(row.type) && Number.isFinite(row.minutes) && row.minutes >= 0) minutes.set(row.type, { minutes: row.minutes, day: day(now(client)) });
     if (['SCChipMine', 'SCChipMineRewardInfo', 'SCMyFleetUpdate', 'SCMyFleetPower', 'SCNewCampaignReport', 'SCUpdateItem'].includes(name)) watcher.wake();
   });
   watchers.set(client, watcher); return watcher;
@@ -330,6 +332,13 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
     const own = await get(client, protocol, 'MyFleets'), fleet = own.fleets?.find(row => row.buildingId === step.buildingId);
     if (!fleet || (step.kind === 'siliconRepair' ? !idle(fleet) || fleet.durability !== step.beforeDurability : step.repair ? fleet.state !== 4 || fleet.repairing?.endTs !== step.beforeEnd : fleet.state !== 2 || fleet.moveStartTs !== step.moveStartTs || fleet.moveEndTs !== step.beforeEnd)) return false;
   }
+  let repairMinutes;
+  if (step.kind === 'siliconSpeed' && step.repair) {
+    repairMinutes = Math.ceil((step.beforeEnd - now(client)) / 60);
+    const cost = repairDiamondCost(options.config, repairMinutes,
+      conservativeRepairMinutes(watchFleetRepairPricing(client).minutes(), recordsInWorld(ledger.keyRecords(), snapshot.worldId)));
+    if (!integer(cost, 1) || cost > counters.diamonds) return false;
+  }
   const details = { kind: step.kind, worldId: snapshot.worldId, buildingId: step.buildingId, gridId: step.gridId ?? 0, index: step.index ?? 0,
     color: step.color ?? 0, opponent: step.opponent ?? null, huntTarget: step.huntTarget ?? null, sentAt: snapshot.checkedAt, active: true, occupied: false,
     beforeDurability: step.beforeDurability ?? 0, beforeEnd: step.beforeEnd ?? 0, moveStartTs: step.moveStartTs ?? 0, repair: !!step.repair, targetDurability: step.targetDurability ?? 0 };
@@ -343,8 +352,9 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
       && (step.kind !== 'siliconSpeed' || (step.repair ? policy.repairSpeedUp : policy.marchSpeedUp) && settings.resources.allowDiamonds);
   };
   if (!allowed()) { ledger.cancel(ticket); return false; }
-  let sent = false;
+  let sent = false, pricingTicket;
   try {
+    if (repairMinutes) pricingTicket = watchFleetRepairPricing(client).reserve(repairMinutes);
     sent = true;
     await client.sendWatch(step.request, step.body, { window: 500 });
     const fresh = await readSiliconMining(client, protocol, options.config, player, { settings: getSettings(), ledger });
@@ -355,23 +365,13 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
     return confirmed;
   } catch (error) {
     const rejected = error.prompt && error.request === step.request;
-    if (!sent || rejected || error.notSent && error.request === step.request) ledger.cancel(ticket);
+    if (!sent || rejected || error.notSent && error.request === step.request) { ledger.cancel(ticket); watchFleetRepairPricing(client).cancel(pricingTicket); }
     report({ label: step.label, ok: false, status: rejected ? 'rejected' : 'unknown', error: error.message }); return false;
   }
 }
 
 // 缺少本连接 SCSpeedUp 累计分钟时用真实价格表最高档保守占用钻石预算。
-export function siliconRepairDiamondCost(config, minutes, usedMinutes = null) {
-  const prices = rows(config, 'SpeedUpRubyCfg').filter(row => Number.isFinite(row.minute) && row.minute >= 0 && Number.isFinite(row.fleet) && row.fleet > 0).sort((a, b) => a.minute - b.minute);
-  if (!integer(minutes, 1) || !prices.length || prices[0].minute !== 0) return null;
-  if (usedMinutes === null) return Math.ceil(minutes * Math.max(...prices.map(row => row.fleet)));
-  let remaining = minutes, used = usedMinutes, cost = 0;
-  while (remaining > 0) {
-    const index = prices.findLastIndex(row => row.minute <= used), end = prices[index + 1]?.minute ?? Infinity, count = Math.min(remaining, end - used);
-    cost += count * prices[index].fleet; used += count; remaining -= count;
-  }
-  return Math.ceil(cost);
-}
+export const siliconRepairDiamondCost = repairDiamondCost;
 async function maintenance(client, protocol, config, player, options, snapshot) {
   const settings = options.getSettings(), p = settings.silicon, ledger = options.ledger;
   if (snapshot.reason || capReason(snapshot, p) || !siliconInWindow(p.windows, snapshot.checkedAt)) return;
@@ -389,7 +389,8 @@ async function maintenance(client, protocol, config, player, options, snapshot) 
     const repair = policy.repairSpeedUp && fleet.state === 4 && fleet.repairing?.endTs > snapshot.checkedAt && ledger.keyRecords()['silicon-repair:' + snapshot.worldId + ':' + fleetNumber(policy.id)]?.confirmed;
     const march = policy.marchSpeedUp && fleet.state === 2 && prior?.confirmed && prior.details?.active && fleet.targetGridIdx === prior.details.gridId && fleet.moveEndTs - snapshot.checkedAt > (policy.marchTargetSeconds ?? 60);
     if (!repair && !march) continue;
-    const cost = repair ? siliconRepairDiamondCost(config, Math.ceil((fleet.repairing.endTs - snapshot.checkedAt) / 60), watchSiliconMining(client).repairMinutes()) : rows(config, 'WorldParamCfg').find(row => row.paramName === '行军加速消耗')?.paramValue;
+    const cost = repair ? siliconRepairDiamondCost(config, Math.ceil((fleet.repairing.endTs - snapshot.checkedAt) / 60),
+      conservativeRepairMinutes(watchSiliconMining(client).repairMinutes(), recordsInWorld(ledger.keyRecords(), snapshot.worldId))) : rows(config, 'WorldParamCfg').find(row => row.paramName === '行军加速消耗')?.paramValue;
     if (!integer(cost, 1) || !settings.resources?.allowDiamonds || !(p.dailyDiamondLimit > 0)) continue;
     const resources = await get(client, protocol, 'AllResource'), ruby = resources.list?.filter(row => row.res === 4);
     if (ruby?.length !== 1 || !integer(quantity(ruby[0].amount)) || quantity(ruby[0].amount) - (ledger.pendingCounters().diamonds ?? 0) - cost < settings.resources.diamondThreshold || settings !== options.getSettings() || !options.enabled()) continue;

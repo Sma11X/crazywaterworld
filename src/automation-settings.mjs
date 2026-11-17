@@ -9,6 +9,7 @@ import { treasureRewardOptions } from './treasure-reward-filter.mjs';
 import { activityAutomationDefaults } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
 import { validateLineupSettings } from './saved-lineups.mjs';
+import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
 
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
@@ -60,6 +61,7 @@ export const DEFAULT_SETTINGS = {
   lineups: { presets: [], mainlinePresetId: '', trialPresets: [] },
   trials: { paid: false, ads: false, raidIds: ['1','2','3'], paidPerRaidLimit: 1, dailyDiamondBudget: 450, maxSingleCost: 50 },
   fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon'] },
+  fleetSpeed: { enabled: false, dailyDiamondLimit: 0, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
   worldBoss: { enabled: false, fleetIds: [], minDurabilityPercent: 80, petrolReserve: 0 },
   radar: { runEnabled:true, enabled:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, petrolReserve:1000, dailyPetrolLimit:10000, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
@@ -86,6 +88,8 @@ export const DEFAULT_SETTINGS = {
 const int = (max = 1_000_000_000, min = 0) => ({ kind: 'number', min, max });
 const strings = (max = 300) => ({ kind: 'list', max });
 const constraints = {
+  'fleetSpeed.dailyDiamondLimit': int(1000000), 'fleetSpeed.fleets': { kind: 'fleetSpeeds' },
+  ...Object.fromEntries([0,1,2].flatMap(index => Object.entries(FLEET_SPEED_NUMBERS).map(([key, rule]) => ['fleetSpeed.fleets.' + index + '.' + key, rule]))),
   ...EXTENDED_CONSTRAINTS,
   ...Object.fromEntries([0, 1, 2].flatMap(index => Object.entries(SILICON_FLEET_NUMBERS).map(([key, rule]) => ['silicon.fleets.' + index + '.' + key, rule]))),
   'login.intervalSeconds': int(86400, 1), 'login.jitterSeconds': int(86400),
@@ -212,7 +216,7 @@ export function nativeTaskValues(settings, current) {
 }
 
 export function hasExtraWork(settings) {
-  if (settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
+  if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
   return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && (settings.museum.enabled || settings.museum.upgrade) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
     || (settings.progression?.enabled && (settings.progression.mainline || settings.progression.trials)) || settings.pirateHunt?.enabled);
 }
@@ -263,6 +267,9 @@ export function validateSettings(input, { partial = false, catalog = null } = {}
         else output[group][key] = [...value];
       } else if (rule?.kind === 'siliconFleets') {
         const fleets = validateSiliconFleets(value, errors, catalog);
+        if (fleets) output[group][key] = fleets;
+      } else if (rule?.kind === 'fleetSpeeds') {
+        const fleets = validateFleetSpeeds(value, errors);
         if (fleets) output[group][key] = fleets;
       } else if (rule?.kind === 'crops') {
         if (!Array.isArray(value) || value.length > 100) errors[name] = '作物列表不合法';
@@ -433,7 +440,7 @@ export function migrateSettingsVersion(settings, version, { source = 'import' } 
   }
   if (source === 'stored') return input;
 
-  const addedGroups = ['login', 'treasure', 'cityWar', 'forge', 'antique', 'trials', 'pirateHunt',
+  const addedGroups = ['fleetSpeed', 'login', 'treasure', 'cityWar', 'forge', 'antique', 'trials', 'pirateHunt',
     'radar', 'worldBoss', 'pirateSweep', 'eventActions', 'activityAutomation', 'merchant', 'weekOrder', 'ads', 'appointments', 'lineups', ...Object.keys(EXTENDED_DEFAULTS)];
   for (const group of addedGroups) {
     if (!Object.hasOwn(input, group)) input[group] = copy(DEFAULT_SETTINGS[group]);

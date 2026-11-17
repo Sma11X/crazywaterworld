@@ -1,4 +1,5 @@
 import {settleFleetSnapshot} from './fleet-settlement.mjs';
+import {sendRepairAndConfirm} from './fleet-repair-confirmation.mjs';
 // 战后补满：只维修现有配置所选的空闲舰队，不要求下一次出征目标或城战时段。
 import {exactAutomationId} from './automation-policy.mjs';
 import {rewardData} from './missing-rewards.mjs';
@@ -48,7 +49,9 @@ export async function readFleetMaintenance(client,player,settings,ledger){
  const pending=ledger.pendingCounters();for(const name of ['treasurePetrol','cityWarPetrol','radarPetrol','piratePetrol','worldBossPetrol','siliconPetrol']){if(!valid(pending[name]??0)){snapshot.reason='待确认汽油记录异常';return snapshot;}snapshot.pendingFuel+=pending[name]??0;}
  const watch=watchFleetMaintenance(client);watch.seedFleets(own.fleets);watch.seedItems(bag.items);
  for(const policy of policies){
-  const matches=own.fleets.filter(f=>f.buildingId===policy.buildingId),fleet=matches[0],row={id:policy.buildingId,name:fleetName(policy.buildingId),policy,fleet,cost:null,condition:'',state:'waiting'};snapshot.rows.push(row);
+  const matches=own.fleets.filter(f=>f.buildingId===policy.buildingId),fleet=matches[0];
+  if(!matches.length)continue; // 完整舰队快照中不存在：旧配置的未解锁舰队，不制造维修状态或占用。
+  const row={id:policy.buildingId,name:fleetName(policy.buildingId),policy,fleet,cost:null,condition:'',state:'waiting'};snapshot.rows.push(row);
   if(matches.length!==1){row.condition='舰队数据缺失或重复';row.state='unknown';continue;}
   if(fleet.owner&&exactAutomationId(fleet.owner.playerId)!==ownId){row.condition='舰队归属未确认';row.state='unknown';continue;}
   if(!valid(fleet.durability)||!valid(fleet.maxDura)||fleet.maxDura===0||fleet.durability>fleet.maxDura){row.condition='耐久数据未确认';row.state='unknown';continue;}
@@ -91,14 +94,20 @@ export function planFleetMaintenance(snapshot,settings,client){
   result.actions.push(step);view.state='ready';view.condition='汽油满足，准备普通维修';available-=row.cost;spent[policy.counter]=(spent[policy.counter]??0)+row.cost;
  }return result;
 }
-function reconcile(snapshot,ledger){
- if(!snapshot.reason)settleFleetSnapshot(ledger,{worldId:snapshot.worldId,fleets:snapshot.rows.map(r=>r.fleet).filter(Boolean),now:snapshot.checkedAt,kinds:['cityDispatch','cityRepair','treasureRepair']});
+function reconcile(snapshot,ledger,onStep){
+ if(snapshot.reason)return;
+ const before=ledger.keyRecords();
+ const changes=settleFleetSnapshot(ledger,{worldId:snapshot.worldId,fleets:snapshot.rows.map(r=>r.fleet).filter(Boolean),now:snapshot.checkedAt,kinds:['cityDispatch','cityRepair','treasureRepair']});
+ for(const key of new Set(changes.map(c=>c.key))){const record=before[key],d=record?.details;if(!record?.confirmed&&d?.postBattle){
+  const fleet=snapshot.rows.find(r=>r.id===d.buildingId)?.fleet;
+  onStep?.({step:{kind:d.kind,buildingId:d.buildingId,label:fleetName(d.buildingId)+'战后维修复查'},ok:true,status:'confirmed',note:fleet?.durability>=fleet?.maxDura?'后续复查已确认耐久补满':'后续复查已确认普通维修'});
+ }}
 }
-export async function runFleetMaintenance(client,player,{getSettings,ledger,enabled=()=>true,onStep,onView}={}){
+export async function runFleetMaintenance(client,player,{getSettings,ledger,enabled=()=>true,onStep,onView,sleep}={}){
  if(!enabled()||!fleetMaintenanceEnabled(getSettings?.())||active.has(client))return null;
  active.add(client);const failures=refused.get(client)??new Map();refused.set(client,failures);
  try{
-  const initial=await readFleetMaintenance(client,player,getSettings(),ledger);reconcile(initial,ledger);initial.keys=ledger.keyRecords();
+  const initial=await readFleetMaintenance(client,player,getSettings(),ledger);reconcile(initial,ledger,onStep);initial.keys=ledger.keyRecords();
   const plan=planFleetMaintenance(initial,getSettings(),client),watch=watchFleetMaintenance(client);watch.setMinimum(plan.minimumFuel);
   const selected=new Set(maintenancePolicies(getSettings()).map(p=>p.buildingId));
   watch.hold(plan.reason?[...selected]:plan.rows.filter(r=>selected.has(r.id)&&!['full','busy'].includes(r.state)).map(r=>r.id));let remaining=initial.fuel;
@@ -106,7 +115,7 @@ export async function runFleetMaintenance(client,player,{getSettings,ledger,enab
    if(!enabled()||!client.connected)break;
    const settings=getSettings(),fresh=await readFleetMaintenance(client,player,settings,ledger);
    if(fresh.reason){const row=plan.rows.find(r=>r.id===proposed.buildingId);row.condition=fresh.reason;row.state='unknown';continue;}
-   reconcile(fresh,ledger);fresh.keys=ledger.keyRecords();fresh.fuel=Math.min(fresh.fuel,remaining);
+   reconcile(fresh,ledger,onStep);fresh.keys=ledger.keyRecords();fresh.fuel=Math.min(fresh.fuel,remaining);
    const reviewed=planFleetMaintenance(fresh,settings,client),step=reviewed.actions.find(a=>a.uniqueKey===proposed.uniqueKey&&a.cost===proposed.cost&&a.beforeDurability===proposed.beforeDurability);
    if(!step||settings!==getSettings()||!enabled()||!client.connected)continue;
    const signature=JSON.stringify([step.cost,fresh.fuel,step.beforeDurability,step.maxDura,step.policy]),failure=failures.get(step.uniqueKey),view=plan.rows.find(r=>r.id===step.buildingId);
@@ -117,15 +126,19 @@ export async function runFleetMaintenance(client,player,{getSettings,ledger,enab
    if(!enabled()||settings!==getSettings()||!client.connected){ledger.cancel(ticket);break;}
    let entry;
    try{
-    await client.sendWatch('RepairFleetRequest',step.body,{window:600});
-    const after=rewardData(await client.request('MyFleetsRequest',{},'MyFleetsResponse',8000));watch.seedFleets(after.fleets);
-    const fleet=after.fleets?.find(f=>f.buildingId===step.buildingId),confirmed=(fleet?.state===4&&fleet.repairing?.endTs>now(client))||valid(fleet?.durability)&&fleet.durability>step.beforeDurability;
+    const owner=exactAutomationId(player.playerId),world=exactAutomationId(player.worldId);
+    const fleet=await sendRepairAndConfirm(client,{...step,sentAt:fresh.checkedAt},{now:()=>now(client),sleep,seed:watch.seedFleets,
+     enabled:()=>enabled()&&exactAutomationId(player.playerId)===owner&&exactAutomationId(player.worldId)===world});
+    const confirmed=!!fleet;
     if(confirmed)ledger.confirm(ticket);
-    entry={step,ok:!!confirmed,status:confirmed?'confirmed':'unknown',note:confirmed?'服务器已确认普通维修，继续监控至满耐久':'维修已发送但结果未确认，保留汽油和舰队锁'};
-   }catch(error){const rejected=error.prompt&&error.request==='RepairFleetRequest';if(rejected){ledger.cancel(ticket);failures.set(step.uniqueKey,{until:Date.now()+300000,signature});}entry={step,ok:false,status:rejected?'rejected':'unknown',error:error.message};}
-   onStep?.(entry);view.state=entry.status==='confirmed'?'repairing':entry.status==='unknown'?'unknown':'waiting';view.condition=entry.note||entry.error;
+    entry={step,ok:confirmed,status:confirmed?'confirmed':'unknown',full:confirmed&&fleet.durability>=fleet.maxDura,note:confirmed?(fleet.durability>=fleet.maxDura?'服务器已确认耐久补满':'服务器已确认普通维修，继续监控至满耐久'):'维修已发送，短时复查仍未确认；继续自动核对，期间不重复扣汽油'};
+    if(confirmed){view.durability=fleet.durability;view.maxDura=fleet.maxDura;}
+   }catch(error){const rejected=error.repairRejected;if(rejected){ledger.cancel(ticket);failures.set(step.uniqueKey,{until:Date.now()+300000,signature});}entry={step,ok:false,status:rejected?'rejected':'unknown',error:error.message};}
+   onStep?.(entry);view.state=entry.full?'full':entry.status==='confirmed'?'repairing':entry.status==='unknown'?'unknown':'waiting';view.condition=entry.note||entry.error;
    if(entry.status!=='rejected')remaining-=step.cost;if(entry.status==='unknown')break;
   }
+  if(!enabled()||!client.connected)watch.hold([]);
+  else if(!plan.reason)watch.hold(plan.rows.filter(r=>selected.has(r.id)&&!['full','busy'].includes(r.state)).map(r=>r.id));
   onView?.(plan);return plan;
  }finally{active.delete(client);}
 }

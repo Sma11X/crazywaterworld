@@ -80,7 +80,11 @@ try {
     const { groups, activityFields }=new Function(src.slice(0,src.indexOf('function configGet('))+'\nreturn {groups:configGroups,activityFields:activityOwnedSettings};')();
     const fields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
     const s=defaultSettings();for(const group of ['alliance','guildShip','guildFort','silicon'])for(const key of Object.keys(s[group])){
-      if(key==='fleets')for(let i=0;i<3;i++)for(const name of Object.keys(s.silicon.fleets[i]))assert(fields.has('silicon.fleets.'+i+'.'+name));
+      if(key==='fleets')for(let i=0;i<3;i++)for(const name of Object.keys(s.silicon.fleets[i])){
+        // 直接编辑已建成的实际舰队，不再用三个可重分配的编号槽位冒充已解锁队伍。
+        if(name==='id')assert(!fields.has('silicon.fleets.'+i+'.id'));
+        else {const field=groups.flatMap(g=>g.fields).find(f=>f.key==='silicon.fleets.'+i+'.'+name);assert(field);assert.equal(field.fleetGroup,'silicon');assert.equal(field.fleetIndex,i);}
+      }
       else assert(fields.has(group+'.'+key),group+'.'+key);
     }
     for(const key of Object.keys(s.heroRaid)){

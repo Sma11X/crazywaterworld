@@ -299,7 +299,7 @@ export function planTreasureLoot(snapshot, config, settings, { usage = { counter
   keys=recordsInWorld(keys,snapshot.worldId);
   const p = settings?.treasure;
   const plan = { actions: [], notes: [], counts: { treasures: snapshot.targets.length, fleets: snapshot.fleets.length },
-    targets: [], fleets: (p?.fleetIds ?? []).map(buildingId => {
+    targets: [], fleets: (p?.fleetIds ?? []).filter(id=>snapshot.fleets.some(fleet=>fleet.buildingId===id)).map(buildingId => {
       const fleet = snapshot.fleets.find(row => row.buildingId === buildingId);
       return { name: fleetName(buildingId), state: fleet ? ({ 1: fleet.curGridIdx > 0 ? '驻守在外' : '空闲', 2: '行军中', 3: '战斗中', 4: '维修中', 5: '排队中' })[fleet.state] || '未知' : '未取得',
         autoFight: fleet ? fleet.autoFight?.isOn === true : null, durability: fleet?.durability, maxDura: fleet?.maxDura,
@@ -364,6 +364,7 @@ export function planTreasureLoot(snapshot, config, settings, { usage = { counter
   if (!integer(count) || !integer(repairPetrol)) { plan.notes.push('今日出征或维修用量记录异常，停止派遣'); return plan; }
   for (const buildingId of p.fleetIds) {
     const fleet = snapshot.fleets.find(row => row.buildingId === buildingId);
+    if (!fleet) continue;
     if (p.marchSpeedUp && !acceleratedFleetIds.includes(buildingId) && fleet?.state === 2 && fleet.treasureLootUid > 0) {
       const speed = planTreasureSpeed(snapshot, config, settings, fleet, keys, usage, pendingDiamonds, plannedDiamonds);
       const reason = unavailableFleets[buildingId] || (reservedFleetIds.includes(buildingId) ? '城战时段保留给城战接续' : '') ||

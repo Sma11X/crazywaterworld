@@ -12,6 +12,8 @@ const baseFamilies = [
 const configLegacyGroups = new Map();
 const familyGroups = new Map();
 const configCollapsed = new Set();
+const configDisclosureSeen = new Set();
+const configOpenSections = new Set();
 const configField = (key, label, kind = 'switch', options = {}) => ({ key, label, kind, ...options });
 function configPlacePanel(root, panel) {
   root.classList.remove('open-up');
@@ -109,7 +111,7 @@ const configGroups = [
     configField('silicon.pursuitMinutes','三日奖励周期重置后追击窗口','number',{unit:'分钟',help:'按服务器三日奖励周期起点计算。只追击黑名单中已在本账号确认击败的对手，不换空矿或新对手；低等矿与只占空位时不追击。'}),
     ...[0,1,2].flatMap(i=>{
       const key='silicon.fleets.'+i+'.',label='舰队'+(i+1)+' · ',when=d=>d.silicon.fleets[i].enabled;
-      return [configField(key+'enabled',label+'启用'),configField(key+'id',label+'远征舰队','choice',{options:[['1远征船','远征舰队1'],['2远征船','远征舰队2'],['3远征船','远征舰队3']],parent:key+'enabled',when}),
+      return [configField(key+'enabled',label+'启用'),
         configField(key+'tier',label+'硅矿等级','choice',{options:[['BLUE','初等'],['PURPLE','中等'],['ORANGE','高等']],parent:key+'enabled',when}),
         configField(key+'emptyOnly',label+'只占空位','switch',{parent:key+'enabled',when,help:'启用后不攻击占领者，也不追击；初等矿始终不攻击占领者。'}),
         configField(key+'opponentOrder',label+'对手战力排序','choice',{options:[['powerDesc','战力从高到低'],['powerAsc','战力从低到高']],parent:key+'enabled',when}),
@@ -122,7 +124,7 @@ const configGroups = [
         configField(key+'safePlayers',label+'安全玩家','names',{parent:key+'enabled',when,help:'完整昵称，每行一个，忽略大小写；不主动攻击这些玩家。'}),configField(key+'safeGuilds',label+'安全联盟编号','names',{parent:key+'enabled',when,help:'游戏显示的联盟数字编号，每行一个；矿位协议不包含联盟名称。'}),
         configField(key+'minDurabilityPercent',label+'最低耐久','number',{unit:'%',parent:key+'enabled',when}),configField(key+'autoRepair',label+'自动维修','switch',{parent:key+'enabled',when}),
         configField(key+'maxRepairCost',label+'单次维修汽油上限','number',{parent:key+'autoRepair',when,help:'0 表示不额外限制；关闭自动维修可禁止维修消费。'}),configField(key+'repairSpeedUp',label+'允许加速维修','switch',{parent:key+'enabled',when}),
-        configField(key+'marchSpeedUp',label+'允许行军加速','switch',{parent:key+'enabled',when}),configField(key+'marchTargetSeconds',label+'行军剩余目标','number',{unit:'秒',parent:key+'marchSpeedUp',when})];
+        configField(key+'marchSpeedUp',label+'允许行军加速','switch',{parent:key+'enabled',when}),configField(key+'marchTargetSeconds',label+'行军剩余目标','number',{unit:'秒',parent:key+'marchSpeedUp',when})].map(field=>({...field,fleetIndex:i,fleetGroup:'silicon'}));
     }),
   ]},
   {id:'ad-rewards',title:'广告奖励',category:'daily',fields:[
@@ -336,13 +338,13 @@ const configGroups = [
     configField('pirateHunt.fuelBudget','本次推进汽油预算','number',{unit:'汽油',help:'一次挂机或手动连续推进期间的出征预算，跨轮次与重连累计，不在每轮清零。0表示不限额；未知请求仍保留汽油占用，实际库存及保留量仍检查。'}),
     configField('pirateHunt.checkEverySeconds','手动推进战果检查间隔','number',{unit:'秒',help:'手动连续推进按此间隔检查，自动讨伐随挂机每轮检查。连续战败达到失败停止次数或结果不明时停止；已出征舰队不会强制召回。'}),
   ] },
-  { id: 'cityWar', title: '联盟/城战', category: 'world', fields: [
+  { id: 'cityWar', title: '联盟城战', category: 'world', fields: [
     configField('schedule.guildWelfare', '领取联盟福利礼包'),
     configField('schedule.guildTitleReward', '联盟每日职级礼包', 'switch', { help:'默认开启。按服务器提供的可领取职级核对每日礼包，不以当前职位替代；确认奖励回执及当日领取时间后才记为成功。' }),
     configField('schedule.worldOnlineRewards', '领取城战在线奖励', 'switch', { help: '在服务器城战时段内，按实际计时逐档领取免费在线奖励。独立于下方城战接续开关；默认关闭，保存后随挂机检查，不自动启动挂机。请求结果未知时等待计数确认，不重复领取。' }),
-    configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟/城战”；不会宣战或改变集结目标。' }),
+    configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟城战”；不会宣战或改变集结目标。' }),
     configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队' }),
-    configField('cityWar.defenceFleetIds', '各舰队城战职责', 'cityWarRoles', { help: '为已选舰队分别选择进攻或防守；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
+    configField('cityWar.defenceFleetIds', '各舰队城战职责', 'cityWarRoles', { wide: true, help: '为已选舰队分别选择进攻或防守；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
     configField('cityWar.nativeCommissionLimit', '原生委任次数', 'number', { unit: '次', help: '-1 表示按服务器 VIP 规则等待额度用尽。0 表示关闭所选舰队的原生委任，由工具立即接续。N 表示先让原生委任使用 N 次（不超过 VIP 额度），再关闭开关并由工具接续。原生委任跟随联盟集结，攻守职责与各自目标配置在工具接管后生效。需要立即按设置执行时设为 0，工具会先回读确认关闭。' }),
     configField('cityWar.targetMode', '进攻目标来源', 'choice', { options: [['alliance', '跟随联盟有效进攻目标'], ['selected', '只选择指定城市']], help: '进攻队使用本组目标来源、城市和优先策略。目标须为本盟已宣战且当前属于敌方的城市。攻守目标设置在工具接管后生效，需要立即执行时将原生委任次数设为 0。' }),
     configField('cityWar.targetPriority', '进攻目标优先', 'choice', { options: [['fewestAllied', '按队数与距离选择'], ['original', '沿用集结／指定城市顺序']], help: '按攻方队列、本盟正在交战和已同步在途舰队总数选城，本轮安排也计入。以队数最少的城为基准，相差 0–9 队时选较近目标，差 10 队及以上时优先队列较少的城。多联盟同攻时进攻人数无法拆分，或数量无法确认时跳过。发送前重新核对。' }),
@@ -358,6 +360,22 @@ const configGroups = [
     configField('cityWar.dailyDispatchLimit', '每日工具接续出战上限', 'number', { unit: '次', help: '至少1次，不包含游戏原生委任次数。原生额度按账号真实 VIP 规则读取，不固定为4；上方原生委任次数设为 0 时，工具会先关闭所选舰队的原生委任。' }),
     configField('cityWar.reserveDuringWar', '城战期间为所选舰队保留任务', 'switch', { help: '城战时段存在符合舰队职责的有效目标时，为对应舰队保留任务；没有防守目标时不预留防守队，没有进攻目标时不预留进攻队。已在执行巨轮或其他任务的舰队等待空闲，不主动召回。' }),
     configField('cityWar.checkEverySeconds', '城战检查间隔', 'number', { unit: '秒' }),
+
+    configField('fleetSpeed.enabled','开启城战逐队加速','switch',{help:'默认关闭，需开启联盟城战。仅处理城战参与名单中勾选的队伍：城战行军及现有维修（含手动维修）；不加速返航、巨轮、硅矿行军或其他玩法已确认发起的维修。'}),
+    configField('fleetSpeed.dailyDiamondLimit','城战加速每日总上限','number',{unit:'钻石',help:'0 禁止花钻；还受资源页钻石总开关、每日总预算和保留量约束。未确认消费继续占用预算。'}),
+    ...[0,1,2].flatMap(i=>{
+      const key='fleetSpeed.fleets.'+i+'.', label='舰队'+(i+1)+' · ';
+      return ['repair','march'].flatMap(mode=>{
+        const title=mode==='repair'?'维修':'派遣',when=d=>d.fleetSpeed.fleets[i][mode];
+        return [configField(key+mode,label+'允许'+title+'加速','switch'),
+          configField(key+mode+'SmartSave',label+title+'智能省钻','switch',{parent:key+mode,when,help:mode==='repair'?'仅控制本队维修。开启后在分钟计费边界短等一次，例如2:01等到1:59。关闭后预算足够且超过剩余时间阈值就直接加速，不影响派遣省钻。':'仅控制本队派遣。逐次加速并回读，最后接近目标时短等一次，省掉下一次固定费用；节省时间太少也不花钻。关闭不影响维修省钻。'}),
+          configField(key+mode+'SmartWaitSeconds',label+title+'省钻最多等待','number',{unit:'秒',parent:key+mode+'SmartSave',when:d=>when(d)&&d.fleetSpeed.fleets[i][mode+'SmartSave'],help:'默认5秒。每次维修或整段航程只允许一次短等，截止时间固定，避免反复等待耽误效率；重连不重新计时。'}),
+          configField(key+mode+'SkipSeconds',label+title+'剩余多少秒不加速','number',{unit:'秒',parent:key+mode,when,help:'剩余时间小于等于此值直接等待，不花钻。默认60秒；0表示以完成为目标，智能省钻开启时仍可短等。'}),
+          ...(mode==='march'?[configField(key+'marchMinSavedSeconds',label+'每次至少节省多少秒','number',{unit:'秒',parent:key+'marchSmartSave',when:d=>when(d)&&d.fleetSpeed.fleets[i].marchSmartSave,help:'仅派遣智能省钻开启时生效。行军每次速度翻倍；预计节省不足此值就不花钻，防止为几秒钟反复付费。'})]:[]),
+          configField(key+mode+'MaxDiamonds',label+(mode==='repair'?'每次维修':'整段派遣航程')+'钻石上限','number',{unit:'钻石',parent:key+mode,when,help:mode==='repair'?'0 禁止。钻石维修一次完成，按分钟进位及全角色共享的当天阶梯费率计价，不能指定部分加速。其他队伍或硅矿维修加速也会推高档位；累计量缺失或前次结果未知时按最高档预算。':'0 禁止。同一航程多次加速累计计入此上限，每次回读确认后才决定下一次，达到剩余时间目标立即停止。'}),
+          configField(key+mode+'DailyDiamonds',label+title+'每日钻石上限','number',{unit:'钻石',parent:key+mode,when,help:'0 禁止。该队此种加速独立计数，与城战加速日上限、全局钻石日预算同时生效；北京时间换日。'})];
+      }).map(field=>({...field,fleetIndex:i,fleetGroup:'fleetSpeed',section:label+'加速'}));
+    })
   ] },
   { id: 'guild-orders', title: '联盟订单', category: 'world', fields: [
     configField('schedule.guildOrders', '自动提交联盟订单', 'switch', { help: '每轮最多提交一单，仅使用现有材料并预留其他订单用料。默认关闭。' }),
@@ -410,12 +428,22 @@ const configGroups = [
   ] },
 ];
 
+
+// 世界页常用玩法置前；不覆盖用户已保存的实际派遣顺序。
+const worldFirst = ['cityWar','treasure','silicon'];
+configGroups.sort((a,b)=>(worldFirst.includes(a.id)?worldFirst.indexOf(a.id):3)-(worldFirst.includes(b.id)?worldFirst.indexOf(b.id):3));
+for (const field of configGroups.find(g=>g.id==='cityWar').fields) {
+  field.section ||= field.key.startsWith('fleetSpeed.') ? '城战逐队加速' :
+    ['cityWar.targetMode','cityWar.targetPriority','cityWar.cityRefs'].includes(field.key) ? '进攻策略' :
+    ['cityWar.defenceTargetMode','cityWar.defenceTargetPriority','cityWar.defenceCityRefs'].includes(field.key) ? '防守策略' :
+    ['cityWar.autoRepair','cityWar.repairBelowPercent','cityWar.maxRepairCost','cityWar.petrolReserve','cityWar.dailyPetrolLimit','cityWar.dailyDispatchLimit','cityWar.reserveDuringWar','cityWar.checkEverySeconds'].includes(field.key) ? '维修与派遣限制' : '参与舰队与职责';
+}
+
 function configGet(key) { return key.split('.').reduce((value, part) => value?.[part], configEditor.draft); }
 function configSet(key, value) {
   const parts = key.split('.'), field = parts.pop();
   const target = parts.reduce((object, part) => object[part], configEditor.draft);
   target[field] = value;configEditor.previewSummary=null;
-  configCollapsed.delete(key);
   if (key === 'cityWar.fleetIds') {
     configEditor.draft.cityWar.defenceFleetIds = (configEditor.draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
     delete configEditor.errors['cityWar.defenceFleetIds'];
@@ -567,6 +595,7 @@ function configUpdateVisibility() {
       const childHasError = update(child, active);
       hasError = hasError || childHasError;
     }
+    if(hasError)configRevealSection(widget);
     widget.row.hidden = !visible && !hasError;
     widget.node.hidden = widget.row.hidden;
     if (widget.spec.kind === 'switch') configPaintSwitch(widget.control, !!configGet(key));
@@ -617,6 +646,7 @@ function configRenderFields(fields, host) {
     widget.children = [];
     const childFields = children.get(spec.key) ?? [];
     if (!childFields.length) return widget;
+    if(!configDisclosureSeen.has(spec.key)){configDisclosureSeen.add(spec.key);configCollapsed.add(spec.key);}
     const branch = el('div', 'config-branch'); branch.dataset.configBranch = spec.key;
     const panel = el('div', 'config-children'); panel.id = widget.control.id + '-children';
     panel.setAttribute('role', 'group'); panel.setAttribute('aria-labelledby', widget.control.id + '-label');
@@ -638,7 +668,24 @@ function configRenderFields(fields, host) {
     branch.append(row, panel);
     return widget;
   };
-  for (const field of children.get(null) ?? []) host.append(render(field).node);
+  let section = null, sectionHost=host;
+  for (const field of children.get(null) ?? []) {
+    if (field.section && field.section!==section) {
+      section=field.section; const details=el('details','config-field-section'),heading=el('summary','config-subheading',section);
+      details.id='config-section-'+field.key.replaceAll('.','-');details.open=configOpenSections.has(details.id);
+      details.ontoggle=()=>{if(details.open)configOpenSections.add(details.id);else configOpenSections.delete(details.id);};
+      details.append(heading);host.append(details);sectionHost=details;
+    }else if(!field.section){section=null;sectionHost=host;}
+    sectionHost.append(render(field).node);
+  }
+}
+
+function configRevealSection(widget) {
+  for(let node=widget?.node?.parentElement;node;node=node.parentElement){
+    if(node.classList?.contains('config-field-section')){
+      node.open=true;configOpenSections.add(node.id);
+    }
+  }
 }
 
 function configRender() {
@@ -647,12 +694,16 @@ function configRender() {
   configEditor.fields.clear(); configEditor.widgets.clear(); configEditor.groups.clear(); configEditor.playerWidgets = [];
   const root = clear($('config-fields'));
   const groups = configGroups.map(group => ({ ...group, fields: [...group.fields] }));
+  const fleetIds = configEditor.data.catalog?.expeditionFleets?.map(row=>row.value);
+  if (fleetIds) for (const group of groups) group.fields = group.fields.filter(field => field.fleetIndex===undefined ||
+    fleetIds.includes(configEditor.draft[field.fleetGroup].fleets[field.fleetIndex].id)).map(field => field.fleetIndex===undefined ? field : {
+      ...field,label:field.label.replace(/^舰队\d+/, '舰队'+configEditor.draft[field.fleetGroup].fleets[field.fleetIndex].id.replace('远征船','')) });
   const hiddenFields = new Set(configEditor.data.rules?.hiddenFields ?? []);
   for (const group of groups) group.fields = group.fields.filter(field => !hiddenFields.has(field.key) && !activityOwnedSettings.has(field.key));
   const mapped = new Set(configEditor.data.rules?.mappedTasks ?? []);
   const staticFields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
   const tasks = (configEditor.data.tasks ?? []).filter(task => !mapped.has(task.key)&&!hiddenFields.has('schedule.'+task.key)&&!activityOwnedSettings.has('schedule.'+task.key)&&!staticFields.has('schedule.'+task.key)).map(task => ['freeRecruit', 'ticketRecruit'].includes(task.key) ? { ...task, group: '招募' } : task);
-  const destinations = { '联盟': ['cityWar', '联盟/城战'], '海面': ['building', '建筑'], '领奖': ['rewards', '任务与领奖'],
+  const destinations = { '联盟': ['cityWar', '联盟城战'], '海面': ['building', '建筑'], '领奖': ['rewards', '任务与领奖'],
     '周期活动': ['daily-weekly', '周期活动'], '限时活动': ['daily-events', '限时活动'], '藏品': ['daily-collections', '日常招募'],
     '招募': ['daily-collections', '日常招募'], '日常': ['daily-actions', '日常行动'], '挑战': ['daily-challenges', '挑战与扫荡'] };
   configLegacyGroups.clear();
@@ -728,6 +779,10 @@ function configRender() {
       if (!direct) {
         const heading = el('div', 'config-group-heading title-with-help'); const title = el('h3', '', group.title); title.id = section.id + '-title'; heading.append(title);
         section.append(heading);
+      }
+      if (['cityWar','silicon','treasure'].includes(group.id)) {
+        const known=configEditor.data.catalog?.fleetAvailability?.known;
+        section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新载入配置；已保存设置会保留。'));
       }
       if (group.movedCount || group.id === 'pirate-hunt') {
         const jump=el('button','config-small-button','前往挂机启停');jump.type='button';
@@ -902,7 +957,7 @@ async function configLoad(force = false) {
   if (force) configCancelSaveTimer();
   configEditor.loading = true; configBusy(true); configMessage(''); configUpdateState();
   try {
-    const [data,runtime]=await Promise.all([call('/api/settings'),call('/api/loop').catch(()=>null)]);
+    const [data,runtime]=await Promise.all([call('/api/settings?fleets=1'),call('/api/loop').catch(()=>null)]);
     if (account !== current || version !== configEditor.serial) return;
     if((!force || JSON.stringify(configEditor.draft)!==original)&&configEditor.owner===account&&configEditor.draft&&
       (configIsDirty() || (data.revision===configEditor.data?.revision && data.baseRevision===configEditor.data?.baseRevision && JSON.stringify(data.settings)===JSON.stringify(configEditor.baseline) && JSON.stringify(data.catalog)===JSON.stringify(configEditor.data.catalog)))){
@@ -914,6 +969,7 @@ async function configLoad(force = false) {
       return;
     }
     configEditor.runtime=runtime;configEditor.previewSummary=null;
+    if(force||configEditor.owner!==account){configCollapsed.clear();configDisclosureSeen.clear();configOpenSections.clear();}
     configEditor.owner = account; configEditor.data = data; configEditor.draft = structuredClone(data.settings); configEditor.baseline = structuredClone(data.settings); configEditor.errors = {};
     configCancelSaveTimer(); configEditor.saveError = null; configEditor.saveRetries = 0;
     configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = '';
@@ -940,7 +996,7 @@ function configAccountChanged() {
   configEditor.serial++; configEditor.owner = null; configEditor.data = null; configEditor.draft = null; configEditor.baseline = null; configEditor.loading = false; configEditor.errors = {};
   configEditor.runtime=null;configEditor.previewSummary=null;
   configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = ''; configEditor.playerWidgets = [];
-  configCollapsed.clear();
+  configCollapsed.clear();configDisclosureSeen.clear();configOpenSections.clear();
   clear($('config-fields')).append(el('p', 'config-empty', '正在切换账号配置…')); clear($('config-preview-result')); clear($('config-usage')); configBusy(false); configUpdateState();
   if (configVisible()) void configLoad(true);
 }
@@ -953,7 +1009,7 @@ function configErrors(error, { focus = true } = {}) {
     const lookup = key === 'factory.speedUpSources' ? 'factory.demandPriority' : key;
     const widget = configEditor.widgets.get(lookup);
     if (!widget) continue;
-    widget.row.hidden = false; widget.error.textContent = text; widget.error.hidden = false; widget.control?.setAttribute('aria-invalid', 'true'); first ??= widget;
+    widget.row.hidden = false; widget.error.textContent = text; widget.error.hidden = false; widget.control?.setAttribute('aria-invalid', 'true');configRevealSection(widget); first ??= widget;
   }
   configUpdateVisibility();
   if (focus && first) { configActivate(first.spec.category); configActivateGroup(first.spec.groupId); first.control?.focus?.(); first.row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -1067,13 +1123,14 @@ function configCityWarRoles(spec, id) {
   let signature = null;
   const inputs = new Map();
   root.refresh = () => {
-    const fleetIds = configGet('cityWar.fleetIds') ?? [], defenceIds = configGet(spec.key) ?? [];
+    const available = configEditor.data.catalog.expeditionFleets ?? [];
+    const fleetIds = (configGet('cityWar.fleetIds') ?? []).filter(id=>available.some(row=>row.value===id)), defenceIds = configGet(spec.key) ?? [];
     const next = JSON.stringify(fleetIds);
     if (signature !== next) {
       signature = next; clear(root); inputs.clear();
       for (const [index, buildingId] of fleetIds.entries()) {
         const name = (configEditor.data.catalog.expeditionFleets ?? []).find(item => item.value === buildingId)?.label || buildingId;
-        const row = el('div', 'config-dispatch-row'), select = el('select', 'config-select');
+        const row = el('div', 'config-dispatch-row config-war-role'), select = el('select', 'config-select');
         const label = el('label', 'config-order-name', name); select.id = id + '-' + index; label.htmlFor = select.id;
         select.setAttribute('aria-label', name + '城战职责');
         for (const [value, text] of [['attack', '进攻'], ['defence', '防守']]) { const option = el('option', '', text); option.value = value; select.append(option); }
@@ -1081,7 +1138,12 @@ function configCityWarRoles(spec, id) {
           const others = (configGet(spec.key) ?? []).filter(value => value !== buildingId);
           configSet(spec.key, select.value === 'defence' ? [...others, buildingId] : others);
         };
-        inputs.set(buildingId, select); row.append(el('span', 'config-order-num', String(index + 1)), label, select); root.append(row);
+        const configure=el('button','config-small-button','配置策略');configure.type='button';configure.onclick=()=>{
+          const key=select.value==='defence'?'cityWar.defenceTargetMode':'cityWar.targetMode';
+          const target=configEditor.widgets.get(key);configRevealSection(target);target?.control.focus({preventScroll:true});target?.row.scrollIntoView({behavior:'smooth',block:'center'});
+        };
+        configure.setAttribute('aria-label',name+'配置攻守策略');
+        inputs.set(buildingId, select); row.append(label,select,configure); root.append(row);
       }
       if (!fleetIds.length) root.append(el('p', 'config-help', '先选择城战参与舰队，再逐队设置进攻或防守。'));
     }
@@ -1100,11 +1162,11 @@ function configMultiselect(spec, id) {
   const more = configButton('显示更多选项', () => { limit += 120; paintList(); });
   const all = () => {
     const options = [...(configEditor.data.catalog[spec.catalog] ?? [])];
-    for (const value of configGet(spec.key)) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
+    if (spec.catalog!=='expeditionFleets') for (const value of configGet(spec.key)) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
     return options;
   };
   function paintSummary() {
-    const values = configGet(spec.key), options = all();
+    const options = all(), values = configGet(spec.key).filter(value=>spec.catalog!=='expeditionFleets'||options.some(item=>item.value===value));
     const names = values.map(value => options.find(item => item.value === value)?.label || value);
     summary.textContent = names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 项' : '') : spec.empty || '请选择';
   }
@@ -1112,13 +1174,13 @@ function configMultiselect(spec, id) {
     const oldScroll = list.scrollTop; clear(list);
     const query = search.value.trim().toLocaleLowerCase();
     const matches = all().filter(item => (item.label + ' ' + item.value).toLocaleLowerCase().includes(query));
-    const selected = new Set(configGet(spec.key));
+    const selected = new Set(configGet(spec.key).filter(value=>spec.catalog!=='expeditionFleets'||all().some(item=>item.value===value)));
     for (const item of matches.slice(0, limit)) {
       const label = el('label', 'config-option'); const input = el('input'); input.type = 'checkbox'; input.checked = selected.has(item.value);
       input.onchange = () => {
         const values = configGet(spec.key);
         configSet(spec.key, input.checked ? [...values, item.value] : values.filter(value => value !== item.value));
-        paintSummary(); count.textContent = '已选 ' + configGet(spec.key).length + ' 项 · 匹配 ' + matches.length + ' 项';
+        paintSummary(); count.textContent = '已选 ' + configGet(spec.key).filter(value=>all().some(item=>item.value===value)).length + ' 项 · 匹配 ' + matches.length + ' 项';
       };
       label.append(input, el('span', '', item.label)); list.append(label);
     }
@@ -1420,7 +1482,7 @@ async function configPreview() {
     const list = el('ol', 'config-preview-list');
     for (const action of data.actions) { const row = el('li', '', action.label); if (action.costs.length) row.append(el('span', 'config-preview-cost', '消耗：' + action.costs.map(cost => cost.name + ' ×' + cost.num).join('、'))); list.append(row); }
     root.append(list);
-    if (data.notes.length) { const details = el('details'); details.open = !!data.viewOnly; details.append(el('summary', '', (data.viewOnly ? '状态说明（' : '查看跳过原因与条件（') + data.notes.length + '）')); const notes = el('ul'); for (const text of data.notes) notes.append(el('li', '', text)); details.append(notes); root.append(details); }
+    if (data.notes.length) { const details = el('details'); details.append(el('summary', '', (data.viewOnly ? '状态说明（' : '查看跳过原因与条件（') + data.notes.length + '）')); const notes = el('ul'); for (const text of data.notes) notes.append(el('li', '', text)); details.append(notes); root.append(details); }
     configMessage(data.viewOnly ? '已读取状态说明，没有执行游戏动作。' : '已读取真实状态并计算计划，没有执行游戏动作。', 'success');
   } catch (error) {
     if (account === current) {

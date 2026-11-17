@@ -17,6 +17,8 @@ import { watchHeroRaidPushes } from './hero-raid-automation.mjs';
 import { watchSiliconMining } from './silicon-mining.mjs';
 import { previewExtended } from './extended-preview.mjs';
 import {watchFleetMaintenance,fleetMaintenanceEnabled} from './fleet-maintenance.mjs';
+import {watchFleetSpeed,readFleetSpeed,planFleetSpeed} from './fleet-speed.mjs';
+import {observeOwnedFleets,ownedFleetCatalog} from './fleet-catalog.mjs';
 import {readPirateSweeps} from './pirate-sweeps.mjs';
 import {readWorldTarget} from './world-target.mjs';
 import {readWorldBoss} from './world-boss.mjs';
@@ -594,7 +596,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     });
     const baseRevision = createHash('sha256').update(JSON.stringify([session.loop.tasks, session.loop.rounds, session.loop.everyMs, session.loop.fishingGoldReserve])).digest('hex');
     const availability = activityAvailability(session.client);
-    return { settings, revision: saved.revision, savedAt: saved.savedAt, baseRevision, catalog: settingsCatalog(loadConfigSafe()),
+    return { settings, revision: saved.revision, savedAt: saved.savedAt, baseRevision, catalog: ownedFleetCatalog(session,settingsCatalog(loadConfigSafe())),
       tasks: automationTasks.filter(task => !availability.hiddenTasks.includes(task.key)), rules: { ...settingsUiRules(), hiddenFields: availability.hiddenFields },
       usage: usageFor(session).snapshot(), pendingUsage: usageFor(session).pendingCounters(), running: session.loop.running };
   }
@@ -821,6 +823,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     watchHeroRaidPushes(instance);
     watchSiliconMining(instance);
     instance.on('message', ({name,body}) => {
+      if (session.client===instance && ['MyFleetsResponse','SCMyFleetUpdate'].includes(name))
+        observeOwnedFleets(session,body?.fleets,{complete:name==='MyFleetsResponse'});
       if(name==='RecruitInfoResponse')instance.freeRecruitTimes={hero:body.hero?.freeEndTimeSeconds,antique:body.antique?.freeEndTimeSeconds};
       if(name==='RecruitStartResponse'||name==='AntiqueRecruitResponse'){
         instance.freeRecruitTimes??={};instance.freeRecruitTimes[name==='RecruitStartResponse'?'hero':'antique']=body.recruitData?.freeEndTimeSeconds;
@@ -831,6 +835,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     watchFreeRewardClock(instance);
     watchTreasureTravel(instance);
     watchFleetMaintenance(instance);
+    watchFleetSpeed(instance);
     // 任务已停或关闭自动派遣时也处理返航。合并同一批推送，进入账号原有的串行队列。
     let settlementTimer=null, settlementBusy=false, settlementDirty=false;
     const current=()=>session.client===instance && instance.connected && session.player && !session.paused && !session.productionSyncRequired;
@@ -844,7 +849,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         settlementBusy=true;
         enqueue(session,async()=>{
           settlementDirty=false;
-          if(current())await checkFleetSettlement(instance,session.player,usageFor(session),{afterPush:true});
+          if(current()){const changes=await checkFleetSettlement(instance,session.player,usageFor(session),{afterPush:true});
+            for(const change of changes)if(change.repairRecovery)emit(session,'info','战后维修 · '+change.buildingId+' · '+change.reason+'（已确认）');}
         }).catch(error=>{if(current())emit(session,'warn','舰队归队状态待核对：'+error.message);}).finally(()=>{
           settlementBusy=false;
           if(settlementDirty&&current())scheduleSettlement();
@@ -1720,6 +1726,14 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if (route === 'GET /api/settings') {
         const { session } = scoped_(parsed);
+        const client=session.client;
+        if (parsed.searchParams.get('fleets')==='1' && client?.connected && session.player && (!session.ownedFleets || Date.now()-session.ownedFleets.checkedAt>30000 ||
+          session.ownedFleets.worldId!==exactAutomationId(session.player.worldId) || session.ownedFleets.playerId!==exactAutomationId(session.player.playerId))) {
+          try { await readJob(session,async()=>{
+            const response=await client.request('MyFleetsRequest',{},'MyFleetsResponse',8000);
+            if(session.client===client)observeOwnedFleets(session,response.fleets,{complete:true});
+          }); } catch { /* 读取失败保留上次已确认名单；从未同步时不展示虚构舰队。 */ }
+        }
         json(settingsView(session));
         return;
       }
@@ -1944,7 +1958,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const payload = jsonBody();
         const current = settingsView(session);
         if (!current.revision && payload.baseRevision !== current.baseRevision) throw new SettingsError({ revision: '现有挂机开关已变化，请重新载入后再保存' });
-        const entry = saveAutomationSettings(session.id, payload.settings, { revision: payload.revision, catalog: current.catalog });
+        const entry = saveAutomationSettings(session.id, payload.settings, { revision: payload.revision, catalog: settingsCatalog(loadConfigSafe()) });
         adoptPreferences(session, entry);
         if (session.client) for (const task of automationTasks) rewardSchedule(session.client).clearTask(task.key);
         emit(session, 'info', '游戏配置已保存。正在运行的任务从下次检查开始使用新配置。');
@@ -1958,7 +1972,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!config) throw new Error('缺少游戏配置表，暂时不能预览');
         const settings = validateSettings(payload.settings ?? settingsView(session).settings, { catalog: settingsCatalog(config) });
         const category = payload.category ?? 'base';
-        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid'].includes(category)) throw new Error('不支持的预览分类');
+        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid'].includes(category)) throw new Error('不支持的预览分类');
 
         if (category === 'runtime') {
           json({ checkedAt: new Date().toISOString(), usage: usageFor(session).snapshot(), actions: [], counts: {}, viewOnly: true, scopeLabel: '运行安排（仅查看，不执行）',
@@ -1980,6 +1994,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           if(['radar','pirateHunt','worldBoss'].includes(category)&&settings.cityWar.enabled&&settings.cityWar.reserveDuringWar){
             const war=await readCityWar(client,protocol,config,session.player,settings.cityWar);
             previewCityReserved=war.reason?[...settings.cityWar.fleetIds]:cityWarReservedFleets(war,settings);
+          }
+          if(category==='fleetSpeed'){
+            const snapshot=await readFleetSpeed(client,session.player);
+            const plan=planFleetSpeed(snapshot,config,settings,usageFor(session));
+            return {...output(plan,{fleets:plan.rows.length},'联盟城战 · 逐队加速'),viewOnly:true,fleetSpeed:{rows:plan.rows}};
           }
           if(category==='fleetDispatch'){
             const own=await client.request('MyFleetsRequest',{},'MyFleetsResponse');
@@ -2035,7 +2054,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               if (guild.welfareCount > 0) plan.actions.push({ kind: 'guildWelfare', label: `领取联盟福利礼包（${guild.welfareCount}份）`, costs: [] });
               else plan.notes.push('联盟福利：' + (guild.reason || (guild.welfareCount === 0 ? '当前无待领礼包' : '待领数量未确认')));
             }
-            return { ...output(plan, { fleets: state.fleets.length, targets: state.targets.length }, '联盟/城战'), onlineReward: online, cityWar: {
+            if (settings.fleetSpeed.enabled) {
+              const speed=planFleetSpeed(await readFleetSpeed(client,session.player),config,settings,ledger);
+              plan.actions.push(...speed.actions);plan.notes.push(...speed.notes);
+            }
+            return { ...output(plan, { fleets: state.fleets.length, targets: state.targets.length }, '联盟城战'), onlineReward: online, cityWar: {
               fleets: plan.fleets, targets: plan.targets, nativeLimit: state.nativeLimit, nativeCommissionLimit: plan.nativeCommissionLimit,
               nativeOffFleetIds: plan.nativeOffFleetIds, startTime: state.startTime,
               endTime: state.endTime, inWindow: state.inWindow, fuel: state.fuel, reservedFleetIds: plan.reservedFleetIds } };
@@ -3430,7 +3453,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (payload.revision !== current.revision) throw new SettingsError({ revision: '配置已变化，请刷新挂机设置后再操作' });
         const next = structuredClone(current.settings);
         next.loop.everySeconds = everySeconds;
-        adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: current.revision, catalog: current.catalog }));
+        adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: current.revision, catalog: settingsCatalog(loadConfigSafe()) }));
         emit(session, 'info', `挂机间隔已保存为 ${everySeconds} 秒，下次检查使用新设置`);
         json(loopView(session));
         return;
@@ -3484,7 +3507,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const current=settingsView(session);
         if(payload.revision!==current.revision) throw new SettingsError({revision:'配置已变化，请刷新挂机设置后再操作'});
         const next=setAutomationControl(current.settings,payload.key,payload.enabled);
-        adoptPreferences(session,saveAutomationSettings(session.id,next,{revision:current.revision,catalog:current.catalog}));
+        adoptPreferences(session,saveAutomationSettings(session.id,next,{revision:current.revision,catalog:settingsCatalog(loadConfigSafe())}));
         if(session.client) for(const task of automationTasks) rewardSchedule(session.client).clearTask(task.key);
         emit(session,'info','挂机设置已保存，下次检查使用新设置');json(loopView(session));return;
       }

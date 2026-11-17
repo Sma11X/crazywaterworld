@@ -88,6 +88,31 @@ async function dispatchRound({ beforeWar = false, unknownCounts = false, opening
 }
 
 try {
+  await check('维修加速补满后同轮刷新占用并接续城战，不再等15秒检查周期',async()=>{
+    let clock=Math.floor(realNow()/1000)*1000;Date.now=()=>clock;
+    const stop=new AbortController();
+    try{
+      const f=warForgeFixture(),settings=warForgeSettings(),usage=ledger();f.client.setMaxListeners(32);
+      settings.forge.enabled=false;Object.assign(settings.cityWar,{fleetIds:['1远征船'],nativeCommissionLimit:0,checkEverySeconds:15});
+      Object.assign(settings.fleetSpeed,{enabled:true,dailyDiamondLimit:100});settings.resources.allowDiamonds=true;
+      Object.assign(settings.fleetSpeed.fleets[0],{repair:true,repairMaxDiamonds:100,repairDailyDiamonds:100});
+      f.config.resources={mapFiles:{1:mapFile}};f.config.tables.SpeedUpRubyCfg={data:[{minute:0,fleet:10},{minute:60,fleet:20}]};
+      Object.assign(f.state.fleets[0],{state:4,durability:1900,repairing:{startTs:clock/1000-100,endTs:clock/1000+121,endDura:2000}});
+      const send=f.client.sendWatch;let repairedAt=null,dispatchedAt=null,sleeps=0;
+      f.client.sendWatch=async(name,body)=>{
+        if(name==='SpeedUpRepairRequest'){
+          f.protocol[name].decode(f.protocol[name].encode(body).finish());f.client.writes.push({name,body});f.finishRepair(body.buildingId);repairedAt=clock;return;
+        }
+        await send(name,body);if(name==='MoveFleetsToCityRequest')dispatchedAt=clock;
+      };
+      await runLoop(f.client,f.protocol,{config:f.config,player:f.player,rounds:0,everyMs:60000,stop:stop.signal,
+        allowMutate:true,isEnabled:()=>false,getSettings:()=>settings,usageLedger:usage,
+        sleep:async ms=>{clock+=ms;if(++sleeps>12)stop.abort();},
+        onStep:entry=>{if(entry.step?.kind==='cityDispatch'&&entry.status==='confirmed')stop.abort();}});
+      assert(repairedAt!==null);assert.equal(dispatchedAt,repairedAt,'维修已确认后应当同轮派遣');
+      assert.equal(f.client.writes.filter(w=>w.name==='SpeedUpRepairRequest').length,1);
+    }finally{stop.abort();Date.now=realNow;}
+  });
   await check('多联盟进攻人数未知仍预留城战舰队，不能借给首杀', async () => {
     const f = warForgeFixture(), settings = warForgeSettings();
     multilateral(f);

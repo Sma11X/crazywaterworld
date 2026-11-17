@@ -230,6 +230,7 @@ export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys
   if (!p) return plan;
   for (const id of p.fleetIds) {
     const fleet = snapshot.fleets.find(row => row.buildingId === id), native = fleet ? nativeState(fleet, snapshot, p) : null;
+    if (!fleet) continue;
     plan.fleets.push({ buildingId: id, role: fleetRole(p, id), name: nameOf(id), state: fleet ? stateName(fleet) : '未取得', used: fleet?.autoFight?.todayTimes ?? null,
       limit: snapshot.nativeLimit, nativeMode: p.nativeCommissionLimit, nativeTarget: native?.target ?? null,
       durability: fleet?.durability, maxDura: fleet?.maxDura, reason: fleet ? fleetGate(fleet, snapshot, p) : '未取得舰队状态' });

@@ -9,6 +9,8 @@ const temporary = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cw-off
 const cases = [
   ['selftest-account-backup-http.mjs'],
   ['selftest-account-backup-ui.mjs'],
+  ['selftest-fleet-speed.mjs'],
+  ['selftest-fleet-speed-http.mjs'],
   ['selftest-storage-transactions.mjs'],
   ['selftest-settings-version.mjs'],
   ['selftest-settings-persistence.mjs'],

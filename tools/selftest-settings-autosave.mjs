@@ -15,6 +15,7 @@ const section = (from, to) => {
 const sources = [
   section('// 游戏配置编辑器', 'function configGet('),
   section('function configGet(', 'function configRevealTab('),
+  section('function configRevealSection(', 'function configRender()'),
   section('async function configLoad(', 'async function configRefreshPlayers('),
   section('function configSave(', 'async function configExport('),
 ].join('\n');
@@ -45,7 +46,7 @@ function fixture({ catalog = {} } = {}) {
       env.calls.push({ account, route, payload });
       if (route === '/api/settings/validate') return { settings: payload.document ? importAutomationSettings(payload.document) : validateSettings(payload.settings) };
       if (route === '/api/loop') return { controls: [] };
-      assert.equal(route, '/api/settings');
+      assert(['/api/settings','/api/settings?fleets=1'].includes(route));
       if (!payload) { const data = view(account); await env.onGet?.(); return data; }
       env.inFlight++; env.maxInFlight = Math.max(env.maxInFlight, env.inFlight);
       try {
@@ -592,7 +593,7 @@ await test('推关与试炼逐项选择阵容并查看，合并自动保存保�
   assert.deepEqual(saved.lineups.presets, lineupPresets);
   assert.equal(saved.lineups.mainlinePresetId, 'first');
   assert.deepEqual(saved.lineups.trialPresets, [{ raidId: '3', presetId: 'first' }, { raidId: '1', presetId: 'second' }]);
-  assert(f.env.calls.every(call => ['/api/settings', '/api/loop'].includes(call.route)));
+  assert(f.env.calls.every(call => ['/api/settings','/api/settings?fleets=1', '/api/loop'].includes(call.route)));
   await f.load(true);
   controls = lineupPickerFixture(f);
   assert.equal(controls.select('mainline').value, 'first');

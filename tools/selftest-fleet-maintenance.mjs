@@ -19,6 +19,12 @@ function fixture(){
  return Object.assign(f,{settings:s});
 }
 const run=(f,l,extra={})=>runFleetMaintenance(f.client,f.player,{getSettings:()=>f.settings,ledger:l,enabled:()=>true,...extra});
+await test('只有两队时不显示旧配置的第三队，不建立虚构维修锁且保留旧未知费用',async()=>{
+ const f=fixture(),l=ledger();f.state.fleets=f.state.fleets.slice(0,2);f.state.fleets.forEach(v=>v.durability=v.maxDura);
+ l.reserve({cityWarPetrol:60},{},{},{uniqueKey:'cityWar:1001001:3',details:{kind:'cityRepair',buildingId:'3远征船',beforeDurability:100}});
+ const result=await run(f,l);assert.deepEqual(result.rows.map(r=>r.id),['1远征船','2远征船']);
+ assert.deepEqual(watchFleetMaintenance(f.client).held(),[]);assert.equal(l.pendingCounters().cityWarPetrol,60);assert.equal(f.client.writes.length,0);
+});
 await test('1992汽油与三队真实耐久样本：完整报价2610/7800/2640，等待而不发请求',async()=>{
  const f=fixture(),l=ledger(),before=structuredClone(f.settings),view=await run(f,l);assert.deepEqual(view.rows.map(r=>r.cost),[2610,7800,2640]);assert(view.rows.every(r=>r.condition.includes('等待汽油')));assert.equal(view.minimumFuel,2610);assert.equal(f.client.writes.length,0);assert.deepEqual(f.settings,before);
  assert.match(dispatchReservationReason(f.client,f.settings,'treasure','1远征船'),/战后维修/);

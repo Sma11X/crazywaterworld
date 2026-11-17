@@ -2,8 +2,10 @@ import { exactAutomationId } from './automation-policy.mjs';
 import { normalize } from './worlds.mjs';
 import { reconcilePirateFlights } from './pirates.mjs';
 import { emitDiagnostic } from './trace-log.mjs';
+import { fleetRepairConfirmed } from './fleet-repair-confirmation.mjs';
+import { fleetSpeedConfirmed } from './fleet-speed-evidence.mjs';
 
-const fleetKey = /^(?:radar-send|world-boss|pirate-first|cityWar|treasureRepair|treasureFollow|treasureSpeed|treasure|silicon|silicon-repair|silicon-retreat|silicon-speed):(\d+):/;
+const fleetKey = /^(?:fleet-speed|fleet-speed-wait|radar-send|world-boss|pirate-first|cityWar|treasureRepair|treasureFollow|treasureSpeed|treasure|silicon|silicon-repair|silicon-retreat|silicon-speed):(\d+):/;
 const repairKinds = new Set(['cityRepair', 'treasureRepair']);
 const integer = Number.isSafeInteger;
 const dayOf = (seconds) => Math.floor((seconds + 28800) / 86400);
@@ -116,6 +118,7 @@ export function outstandingFleets(records, worldId) {
     if (!match || match[1] !== String(worldId) || r.expired || !d?.buildingId) return false;
     if (d.kind === 'radarSend' || d.kind === 'worldBoss') return d.active !== false;
     if (d.kind === 'pirateFirst') return !['won', 'lost'].includes(d.outcome);
+    if (d.kind === 'fleetSpeed') return !r.confirmed;
     return (
       repairKinds.has(d.kind) ||
       d.kind === 'treasureSpeed' ||
@@ -168,6 +171,14 @@ export function settleFleetSnapshot(
     if (own.length !== 1) continue;
     const fleet = own[0],
       home = fleetAtHome(fleet);
+    if (d.kind === 'fleetSpeed') {
+      if (fleetSpeedConfirmed(fleet, d, now)) {
+        ledger.resolveKey(key, true); changes.push({key,reason:'已确认舰队加速，保留本航程累计费用'});
+      } else if (home) {
+        ledger.resolveKey(key, false); changes.push({key,reason:'舰队已归队；未知加速费用仍预留，不误报加速成功'});
+      }
+      continue;
+    }
     if (d.kind === 'treasureSpeed') {
       if (treasureSpeedConfirmed(fleet, d)) {
         ledger.resolveKey(key, true);
@@ -287,17 +298,15 @@ export function settleFleetSnapshot(
       let confirmed = r.confirmed;
       if (!confirmed) {
         const observed = repairKinds.has(d.kind)
-          ? (fleet.state === 4 && fleet.repairing?.endTs > now) ||
-            (integer(fleet.durability) &&
-              integer(d.beforeDurability) &&
-              fleet.durability > d.beforeDurability)
+          ? fleetRepairConfirmed(fleet, d, now)
           : (fleet.state === 2 && fleet.targetCityId === d.cityId) ||
             (fleet.cityId === d.cityId &&
               ([3, 5].includes(fleet.state) || (fleet.state === 1 && fleet.curGridIdx > 0)));
         if (!observed) continue;
         ledger.resolveKey(key, true);
         confirmed = true;
-        changes.push({ key, reason: '确认城战或维修' });
+        changes.push({ key, reason: d.postBattle ? (fleet.durability >= fleet.maxDura ? '维修复查已确认耐久补满' : '维修复查已确认正在维修') : '确认城战或维修',
+          ...(d.postBattle ? { repairRecovery:true, buildingId:d.buildingId } : {}) });
       }
       if (confirmed && home) {
         ledger.releaseCompletedKey(key);

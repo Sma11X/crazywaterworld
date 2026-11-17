@@ -27,7 +27,7 @@ add('worldBoss.enabled','世界Boss每日首战派遣','世界与挑战',{help:'
 add('radar.runEnabled','联盟情报总开关','世界与挑战',{help:'统一暂停或恢复联盟情报的自动处理、旧规则派遣和旧规则维修，保留配置中的细项选择。请先点“配置”选择执行动作。'});
 add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'逐条领取已完成奖励，并用所选空闲舰队处理新情报。不会开启游戏原生月卡自动功能；消耗遵守情报预算。'});
 add('treasure.enabled','万吨巨轮自动参与','世界与挑战');
-add('cityWar.enabled','城战自动接续','世界与挑战');
+add('cityWar.enabled','联盟城战','世界与挑战');
 add('progression.enabled','推关与试炼总开关','世界与挑战',{help:'按统一配置自动挑战主线（闯关）和所选试炼。每轮继续推进，达到失败停止次数后本次挂机不再挑战该关；暂停后重新开始挂机可重试。扫荡仍按独立开关执行。'});
 add('progression.mainline','主线 / 闯关自动挑战','世界与挑战',{gates:['progression.enabled']});
 add('progression.trials','试炼自动推关','世界与挑战',{gates:['progression.enabled']});
@@ -63,7 +63,7 @@ const idleModules = {
  'pet.enabled':['基地','pet','海兽培育室'], 'museum.runEnabled':['基地','museum','博物馆探宝'],
  'forge.enabled':['基地','forge','装备锻造'], 'gold.enabled':['基地','gold','每日付费点金'],
  'worldBoss.enabled':['世界','worldBoss','世界Boss首战'], 'radar.runEnabled':['世界','radar','联盟情报'],
- 'treasure.enabled':['世界','treasure','万吨巨轮'], 'cityWar.enabled':['世界','cityWar','城战接续'],
+ 'treasure.enabled':['世界','treasure','万吨巨轮'], 'cityWar.enabled':['世界','cityWar','联盟城战'],
  'schedule.pirate':['世界','pirate-sweep','海盗日常扫荡'],
  'progression.enabled':['世界','progression','推关与试炼'],
  'pirateHunt.enabled':['世界','pirate-hunt','海盗讨伐'],

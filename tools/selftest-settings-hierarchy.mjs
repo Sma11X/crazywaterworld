@@ -122,6 +122,7 @@ function fixture({ navigation = false } = {}) {
   return {
     ...api, env,
     widget: key => api.editor.widgets.get(key),
+    expand(...keys) { for(const key of keys){const widget=api.editor.widgets.get(key);if(widget.disclosure.getAttribute('aria-expanded')!=='true')widget.disclosure.onclick();} },
     mount(fields) {
       const host = env.el();
       api.editor.fields.clear(); api.editor.widgets.clear();
@@ -131,7 +132,8 @@ function fixture({ navigation = false } = {}) {
   };
 }
 
-const visible = node => !node.hidden && (!node.parentElement || visible(node.parentElement));
+const visible = node => !node.hidden && (!node.parentElement ||
+  (!(node.parentElement.tagName==='DETAILS'&&!node.parentElement.open&&node.tagName!=='SUMMARY')&&visible(node.parentElement)));
 const keys = widgets => widgets.map(widget => widget.spec.key);
 let passed = 0;
 function test(name, run) { run(); passed++; console.log('通过：' + name); }
@@ -203,6 +205,20 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['treasure.marchTargetSeconds', 'treasure.marchSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.marchSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
 });
+test('城战所有分区默认收起，维修与派遣省钻分别嵌在对应加速中',()=>{
+  const f=fixture({navigation:true});f.editor.draft.cityWar.enabled=true;
+  f.editor.draft.fleetSpeed.enabled=true;Object.assign(f.editor.draft.fleetSpeed.fleets[0],{repair:true,march:true});
+  f.renderPage();f.activate('world');f.activateGroup('cityWar');
+  const sections=f.env.node('config-group-cityWar').querySelectorAll('.config-field-section');
+  assert(sections.length>=5);assert(sections.every(section=>!section.open));
+  for(const mode of ['repair','march']){
+    const smart=f.widget('fleetSpeed.fleets.0.'+mode+'SmartSave');
+    assert.equal(smart.parentKey,'fleetSpeed.fleets.0.'+mode);assert(!visible(smart.node));
+    assert.equal(f.widget('fleetSpeed.fleets.0.'+mode+'SmartWaitSeconds').parentKey,smart.spec.key);
+  }
+  assert(!f.editor.fields.has('fleetSpeed.fleets.0.smartSave'));
+  assert.equal(f.env.saves,0);
+});
 
 test('自动挑战阵容位于推关与试炼对应开关下，挂机迁移后仍可配置并保留管理入口', () => {
   const f = fixture({ navigation: true });
@@ -216,6 +232,7 @@ test('自动挑战阵容位于推关与试炼对应开关下，挂机迁移后�
   f.editor.draft.progression.mainline = true;
   f.editor.draft.progression.trials = true;
   f.renderPage(); f.activate('world'); f.activateGroup('progression');
+  f.expand('progression.mainline','progression.trials');
   const section = f.env.node('config-group-progression');
   for (const key of ['lineups.mainlinePresetId', 'lineups.trialPresets']) {
     assert(section.contains(f.widget(key).node));
@@ -258,6 +275,7 @@ test('三级开关关闭隐藏全部后代，重新启用保留子开关与预�
   ].includes(field.key)));
   const parent = f.widget('merchant.autoSpeedUp'), purchase = f.widget('merchant.autoBuyPointers');
   const budget = f.widget('merchant.pointerDailyDiamondLimit');
+  assert(!visible(budget.node),'已开启的配置也默认收起');f.expand('merchant.autoSpeedUp','merchant.autoBuyPointers');
   assert(visible(budget.node));
   f.set('merchant.autoSpeedUp', false);
   assert(!visible(purchase.node)); assert(!visible(budget.node));
@@ -278,6 +296,7 @@ test('巨轮加速开关控制秒数与预算显隐，关闭后保留配置', ()
   assert.equal(speed.spec.kind, 'switch'); assert.equal(seconds.spec.unit, '秒'); assert.equal(budget.spec.unit, '钻石');
   assert(!visible(seconds.node)); assert(!visible(budget.node));
   f.set('treasure.marchSpeedUp', true);
+  assert(!visible(seconds.node),'启用功能不自动展开配置');f.expand('treasure.marchSpeedUp');
   assert(visible(seconds.node)); assert(visible(budget.node));
   f.set('treasure.marchSpeedUp', false);
   assert(!visible(seconds.node)); assert(!visible(budget.node));
@@ -287,7 +306,7 @@ test('巨轮加速开关控制秒数与预算显隐，关闭后保留配置', ()
   assert(visible(seconds.node)); assert(visible(budget.node));
 });
 
-test('手动收起只改变展示状态，重新启用自动展开所属设置', () => {
+test('默认收起、按需展开；手动收起后重新启用不擅自展开', () => {
   const f = fixture(); f.editor.draft.merchant.autoSpeedUp = true;
   const fields = f.merchantFields.filter(field => [
     'merchant.autoSpeedUp', 'merchant.dailyPointerLimit',
@@ -295,17 +314,20 @@ test('手动收起只改变展示状态，重新启用自动展开所属设置',
   f.mount(fields);
   const parent = f.widget('merchant.autoSpeedUp'), child = f.widget('merchant.dailyPointerLimit');
   const before = structuredClone(f.editor.draft);
+  assert(!visible(child.node));parent.disclosure.onclick();assert(visible(child.node));
   parent.disclosure.onclick();
   assert(!visible(child.node)); assert.equal(parent.disclosure.getAttribute('aria-expanded'), 'false');
   assert.deepEqual(f.editor.draft, before); assert.equal(f.env.saves, 0);
   f.mount(fields);
   assert(!visible(f.widget('merchant.dailyPointerLimit').node), '重新渲染保留收起状态');
   f.set('merchant.autoSpeedUp', false); f.set('merchant.autoSpeedUp', true);
-  assert(visible(f.widget('merchant.dailyPointerLimit').node));
+  assert(!visible(f.widget('merchant.dailyPointerLimit').node));
   assert.equal(f.env.saves, 2);
+  f.expand('merchant.autoSpeedUp');assert(visible(f.widget('merchant.dailyPointerLimit').node));
+  f.mount(fields);assert(visible(f.widget('merchant.dailyPointerLimit').node),'普通重绘保留手动展开，不打断编辑');
 });
 
-test('更换已收起的下拉模式会展开对应参数，并收回隐藏输入的焦点', () => {
+test('更换已收起的下拉模式保持收起，显式展开后按条件显示并正确收回焦点', () => {
   const f = fixture(); f.editor.draft.merchant.firstDepartureMode = 'smart';
   f.mount(f.merchantFields.filter(field => [
     'merchant.firstDepartureMode', 'merchant.firstDepartureTime', 'merchant.firstDepartureWaitMinutes',
@@ -314,10 +336,11 @@ test('更换已收起的下拉模式会展开对应参数，并收回隐藏输�
   const wait = f.widget('merchant.firstDepartureWaitMinutes');
   const savedTime = f.editor.draft.merchant.firstDepartureTime;
   const savedWait = f.editor.draft.merchant.firstDepartureWaitMinutes;
-  assert(visible(wait.node)); assert(!visible(time.node));
+  assert(!visible(wait.node));f.expand('merchant.firstDepartureMode');assert(visible(wait.node)); assert(!visible(time.node));
   mode.disclosure.onclick();
   assert(!visible(wait.node)); assert(f.collapsed.has('merchant.firstDepartureMode'));
   f.set('merchant.firstDepartureMode', 'time');
+  assert(!visible(time.node));assert(f.collapsed.has('merchant.firstDepartureMode'));f.expand('merchant.firstDepartureMode');
   assert(visible(time.node)); assert(!visible(wait.node));
   assert(!f.collapsed.has('merchant.firstDepartureMode'));
   assert.equal(mode.disclosure.getAttribute('aria-expanded'), 'true');
@@ -337,6 +360,7 @@ test('收起子组与关闭多层开关时焦点回到仍可见的父控件', ()
   ].includes(field.key)));
   const parent = f.widget('merchant.autoSpeedUp'), purchase = f.widget('merchant.autoBuyPointers');
   const budget = f.widget('merchant.pointerDailyDiamondLimit');
+  f.expand('merchant.autoSpeedUp','merchant.autoBuyPointers');
   budget.control.focus(); purchase.disclosure.onclick();
   assert(!visible(budget.node)); assert.equal(f.env.focused, purchase.control);
   assert.equal(f.env.saves, 0);
@@ -357,7 +381,7 @@ test('父项迁往挂机页后子项回到组级，各字段只渲染一次', ()
       assert(host.contains(widget.node), field.key);
       if (field.parent && !fields.some(item => item.key === field.parent)) {
         assert(!widget.parentKey, field.key + ' 缺少父项时必须成为根节点');
-        assert.equal(widget.node.parentElement, host, field.key);
+        assert(widget.node.parentElement===host||widget.node.parentElement.classList.contains('config-field-section'),field.key);
       }
     }
   }
@@ -389,7 +413,7 @@ test('本地输入校验展开隐藏的错误项，后台校验保持当前焦�
   const f = fixture(); f.editor.draft.sample = { enabled: true, purchase: true, budget: 1 };
   f.mount(nestedFields);
   const budget = f.widget('sample.budget'), parent = f.widget('sample.enabled');
-  parent.disclosure.onclick(); budget.control.valid = false;
+  assert(!visible(budget.node));budget.control.valid = false;
   const previous = f.env.el(); previous.focus();
   assert.equal(f.check({ focus: false }), false);
   assert(visible(budget.node)); assert.equal(f.env.focused, previous);

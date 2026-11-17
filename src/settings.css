@@ -17,6 +17,7 @@
 .config-section { margin:0 24px; padding:16px 0; border:0; scroll-margin-top:calc(var(--header-h) + 64px); min-width:0 }
 .config-section h3 { font-size:16px; font-weight:600; line-height:1.4 }
 .config-group-heading { margin-bottom:4px }
+.config-subheading { margin:20px 0 8px; scroll-margin-top:calc(var(--header-h) + 64px) }
 .config-section-intro { color:var(--muted-foreground); margin:0 0 12px; max-width:70ch }
 
 .config-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,420px); align-items:center; gap:6px 24px; padding:8px 0; min-height:44px; border-bottom:1px solid var(--border); scroll-margin-top:calc(var(--header-h) + 64px) }
@@ -70,6 +71,7 @@
 .config-order-row:last-child { border-bottom:0 }
 .config-dispatch-row { display:grid; grid-template-columns:20px minmax(0,1fr) auto; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border) }
 .config-dispatch-row:last-child { border-bottom:0 }
+.config-war-role { grid-template-columns:minmax(0,1fr) 84px auto }
 .config-dispatch-row .config-order-tools { grid-column:auto; flex-wrap:nowrap }
 .config-dispatch-row .config-order-name { overflow-wrap:normal; word-break:normal }
 .config-order-num { color:var(--muted-foreground); font-size:12px; font-variant-numeric:tabular-nums }

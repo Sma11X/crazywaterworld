@@ -10,6 +10,7 @@ type AutoTask = { key: string; label: string; group: string; help?: string; idle
 
 export function idlePanel(tasks: AutoTask[]) {
   const modules=tasks.filter(t=>t.idleGroup);
+  const worldPriority=['cityWar.enabled','treasure.enabled','silicon.enabled'];
   const groups=["基地","世界","英雄","日常与活动"];
   return renderToStaticMarkup(<div className="grid gap-3">
     <div className="bar idle-filter-bar"><Input id="idle-search" type="search" aria-label="查找功能" placeholder="查找功能名称" /><label htmlFor="idle-filter">显示</label><select id="idle-filter" defaultValue="all"><option value="all">全部</option><option value="enabled">已开启</option></select><span id="idle-filter-count" role="status" /></div>
@@ -19,7 +20,7 @@ export function idlePanel(tasks: AutoTask[]) {
     {groups.map((group,index) => <section key={group} id={'idle-group-'+index} data-idle-panel={index} role="tabpanel" aria-labelledby={'idle-tab-'+index} hidden={index!==0}>
       <Card><CardHeader><CardTitle>{group}</CardTitle></CardHeader>
       <CardContent className="task-grid idle-module-grid">
-        {modules.filter(t => t.idleGroup === group).map(t => <div className="task-setting" key={t.key}>
+        {modules.filter(t => t.idleGroup === group).sort((a,b)=>group==='世界' ? (worldPriority.includes(a.key)?worldPriority.indexOf(a.key):3)-(worldPriority.includes(b.key)?worldPriority.indexOf(b.key):3) : 0).map(t => <div className="task-setting" key={t.key}>
           <div className="task-label-block"><div className="task-label-line"><label htmlFor={'auto-' + t.key}>{t.idleLabel||t.label}</label>{t.help && t.key !== 'gather.enabled' && <HelpTip title={t.label}>{t.help}</HelpTip>}</div><span className="dim" data-module-note="" hidden /></div>
           <div className="idle-module-actions"><a href={"#config-group-"+t.configTarget} aria-label={"配置"+(t.idleLabel||t.label)}>配置</a><Switch id={'auto-' + t.key} data-auto-task={t.key} data-setting-control="" className="p-0" disabled /></div>
         </div>)}
