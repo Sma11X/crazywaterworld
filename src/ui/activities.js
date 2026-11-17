@@ -335,7 +335,7 @@ function renderActivityTask(box, row, task) {
     const field = el('label', 'activity-auto');
     field.append(el('span', null, '每次使用'), spinInput, el('span', null, '张'));
     bar.append(field);
-    if (activitiesData.compassSpinEditable === false) bar.appendChild(el('span', 'dim', '在游戏配置中修改'));
+    if (activitiesData.compassSpinEditable === false) bar.appendChild(el('span', 'dim', '在挂机配置中修改'));
   }
   bar.appendChild(button);
   if (row.weekType !== 5) {

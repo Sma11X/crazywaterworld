@@ -359,6 +359,14 @@ html[data-theme="dark"] {
   html[data-theme="dark"] [data-variant=destructive] { @apply bg-red-700 text-white; }
   html[data-theme="dark"] :is(button, a)[data-variant=destructive]:hover { @apply bg-red-800; }
 
+  /* 与手机布局使用相同的 768px 边界，避免输入框在临界宽度恢复桌面尺寸。 */
+  @media (max-width: 768px) {
+    .hosting-controls #loop-every { @apply h-10 w-full min-w-0 px-1; }
+    .hosting-controls > button { @apply h-10 min-w-0 px-1.5 text-xs; }
+    .hosting-controls #logs-open { @apply gap-1; }
+    .hosting-controls #logs-open > svg { @apply hidden; }
+  }
+
 }
 
 /* 四列以上的表格在窄屏变成一行一张卡片，避免内容被挤成竖排。 */

@@ -35,7 +35,7 @@ export function giftCodesPage() {
 
 export function overviewPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="运行概览" help="按功能分别查看当前进度与当前条件。这里只读展示；开关与参数在对应游戏配置中设置。">
+    <Panel title="运行概览" help="按功能分别查看当前进度与当前条件。这里只读展示；开关与参数在对应挂机配置中设置。">
       <div className="bar overview-task-filter"><Input id="overview-task-search" type="search" aria-label="查找运行状态" placeholder="功能名称或状态" /><label htmlFor="overview-task-filter">显示</label><select id="overview-task-filter" defaultValue="enabled"><option value="enabled">已开启</option><option value="issues">异常 / 受总控限制</option><option value="all">全部项目</option></select></div>
       <p id="overview-task-summary" className="dim" role="status">等待读取运行状态</p>
       <div id="overview-task-groups" />
@@ -156,7 +156,7 @@ export function accountPage() {
       <div id="account-export-list" role="group" aria-label="选择要导出的账号" />
       <div className="grid gap-3">
         <Button id="account-export-only" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>仅账号</strong><span className="text-xs font-normal">保存登录凭据、备注和角色资料</span></span></Button>
-        <Button id="account-export-settings" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>账号及配置</strong><span className="text-xs font-normal">同时保存每个账号的游戏配置和阵容预设</span></span></Button>
+        <Button id="account-export-settings" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>账号及配置</strong><span className="text-xs font-normal">同时保存每个账号的挂机配置和阵容预设</span></span></Button>
       </div>
       <p className="dim">文件含登录凭据，请妥善保管。配置不包含用量账本和运行状态。</p>
       <p id="account-export-error" className="warn" role="alert" hidden />
@@ -227,7 +227,7 @@ export function accountPage() {
               <section id="phone-success" aria-labelledby="phone-success-title" hidden>
                 <h3 id="phone-success-title" tabIndex={-1}>账号已保存</h3>
                 <p id="phone-saved-account" />
-                <p id="phone-success-next" className="dim">点击页面顶部的「连接」进入所选角色，随后可前往「游戏配置」设置任务。</p>
+                <p id="phone-success-next" className="dim">点击页面顶部的「连接」进入所选角色，随后可前往「挂机配置」设置任务。</p>
                 <Button id="phone-add-another" type="button" variant="outline">添加其他 APP 账号</Button>
               </section>
             </div>

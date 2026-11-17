@@ -540,10 +540,10 @@ function renderHostingControl() {
   const pending = !current || hostingActions.has(current);
   $('loop-toggle').disabled = pending || !!snapshot.paused || !!snapshot.loopStopping || (!running && loopAccount !== current);
   $('loop-toggle').textContent = snapshot.loopStopping ? '暂停中…' : running ? '暂停挂机' : '开始挂机';
-  $('loop-toggle').title = snapshot.paused ? '请先恢复托管' : running ? '停止自动循环，保留游戏连接和手动操作' : '按已保存的任务和轮数开始挂机';
+  $('loop-toggle').title = snapshot.paused ? '请先恢复托管' : running ? '停止自动循环，保留游戏连接和手动操作' : '按已保存的任务持续挂机，直到手动暂停';
   $('account-pause').disabled = pending || ((resume || !hosting) && (!!snapshot.loopStopping || loopAccount !== current));
   $('account-pause').textContent = resume ? '恢复托管' : hosting ? '暂停托管' : '开始托管';
-  $('account-pause').title = resume ? '重新登录游戏并按已保存的任务和轮数开始托管' : hosting ? '停止任务并断开游戏连接，方便自行上号' : '按已保存的任务和轮数开始托管';
+  $('account-pause').title = resume ? '重新登录游戏并按已保存的任务开始持续托管' : hosting ? '停止任务并断开游戏连接，方便自行上号' : '按已保存的任务开始持续托管';
 }
 function renderAccountSelect() {
   appointmentsAccountChanged();

@@ -335,7 +335,7 @@ try {
     await running(f.id);
   });
 
-  await test('页头开始托管可启动旧账号并按配置轮数运行，重复开始共用循环', async () => {
+  await test('页头开始托管忽略旧账号有限轮数并持续运行，重复开始共用循环', async () => {
     const f = account({ enabled: false, rounds: 2 });
     await launch([f]);
     const started = await api(f.id, 'accounts/pause', { paused: false, start: true });
@@ -343,21 +343,21 @@ try {
     assert.equal(started.looping, true);
     await running(f.id);
     const job = session(f.id).loop.job;
-    assert.equal(session(f.id).loop.rounds, 2);
-    assert.equal(saved(f.id).autoStart, false);
+    assert.equal(session(f.id).loop.rounds, 0);
+    assert.equal(saved(f.id).autoStart, true);
     await api(f.id, 'accounts/pause', { paused: false, start: true });
     assert.equal(session(f.id).loop.job, job);
     assert.equal(f.state.logins, 1);
   });
 
-  await test('页头恢复托管使用保存的有限轮数，普通恢复继续遵循自动开始偏好', async () => {
+  await test('页头恢复托管改为持续运行，普通恢复继续遵循自动开始偏好', async () => {
     const finite = account({ paused: true, autoStart: true, rounds: 3 });
     const stopped = account({ paused: true, autoStart: false });
     await launch([finite, stopped]);
     await api(finite.id, 'accounts/pause', { paused: false, start: true });
     await running(finite.id);
-    assert.equal(session(finite.id).loop.rounds, 3);
-    assert.equal(saved(finite.id).autoStart, false);
+    assert.equal(session(finite.id).loop.rounds, 0);
+    assert.equal(saved(finite.id).autoStart, true);
     const resumed = await api(stopped.id, 'accounts/pause', { paused: false });
     assert.equal(resumed.looping, false);
     assert.equal(stopped.state.logins, 0);
@@ -365,6 +365,23 @@ try {
     await running(stopped.id);
     assert.equal(session(stopped.id).loop.rounds, 0);
     assert.equal(saved(stopped.id).autoStart, true);
+  });
+
+  await test('网页开始挂机覆盖已保存的有限轮数，连续执行至手动暂停且暂停后重启不续跑', async () => {
+    const f = account({ autoStart: false, rounds: 1 });
+    saveAutomationSettings(f.id, settingsFromNative(tasks, { rounds: 1, everySeconds: 1 }), { revision: 0 });
+    await launch([f]);
+    await api(f.id, 'loop/start', {});
+    await waitFor(() => session(f.id).loop.completed >= 2, '超过旧设置的一轮上限');
+    assert.equal(session(f.id).loop.running, true);
+    assert.equal(session(f.id).loop.rounds, 0);
+    assert.equal(loadAutomationSettings(f.id).settings.loop.rounds, 0);
+    assert.equal(saved(f.id).autoStart, true);
+    await stop(f.id);
+    assert.equal(saved(f.id).autoStart, false);
+    await shutdown(); await launch();
+    assert.equal((await api(f.id, 'loop')).running, false);
+    assert.equal(f.state.logins, 1, '手动暂停后重启不自动登录或继续挂机');
   });
 
   await test('页头恢复等待旧循环退出，等待期间再次暂停优先生效', async () => {

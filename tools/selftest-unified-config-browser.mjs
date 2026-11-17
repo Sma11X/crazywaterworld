@@ -100,9 +100,8 @@ try {
   assert.equal(await page.locator('#config-field-museum-runEnabled-note').isVisible(), false);
   console.log('通过：英雄组合主控同时保存两层状态，博物馆未配置提示及时更新');
 
-  await page.locator('[data-config-tab=runtime]').click();
-  await page.locator('#config-field-loop-rounds').fill('12'); await saved();
-  assert.equal(loadAutomationSettings('config-a').settings.loop.rounds, 12);
+  assert.equal(await page.locator('[data-config-tab=runtime], #config-field-loop-rounds, #config-group-runtime').count(), 0);
+  assert.deepEqual(await page.locator('[data-config-tab]').allTextContents(), ['基地', '世界', '英雄', '日常与活动']);
   await page.locator('#account-picker-trigger').click();
   await page.locator('#account-picker-list [role=option]').filter({ hasText: '配置验收账号2' }).click();
   await page.locator('#config-account-name').filter({ hasText: '配置验收账号2' }).waitFor(); await saved();
@@ -114,7 +113,7 @@ try {
   await page.locator('#config-account-name').filter({ hasText: '配置验收账号1' }).waitFor(); await saved();
   await group('factory');
   assert.equal(await page.locator('#config-field-factory-keepStock').inputValue(), '432');
-  console.log('通过：运行安排可直接编辑，切换账号隔离且保留已保存配置');
+  console.log('通过：运行安排入口移除，切换账号隔离且保留已保存配置');
 
   // 外部页面改变版本后，组合开关的本地修改不能静默覆盖它。
   const external = loadAutomationSettings('config-a'); external.settings.factory.keepStock = 876;
@@ -142,6 +141,43 @@ try {
   assert.equal(loadAutomationSettings('config-a').settings.factory.enabled, false);
   await mobile.screenshot({ path: path.join(output, 'factory-mobile.png'), animations: 'disabled' });
   assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await mobile.locator('#config-state').filter({ hasText: '配置已同步' }).waitFor();
+  for (const width of [320, 360, 390, 430, 768]) {
+    await mobile.setViewportSize({ width, height: 844 });
+    await mobile.evaluate(() => {
+      window.scrollTo(0, 0);
+      document.querySelector('#log-top-count').textContent = '99999';
+      document.querySelector('#loop-every').value = '86400';
+    });
+    const layout = await mobile.evaluate(() => {
+      const controls = ['loop-every', 'loop-toggle', 'account-pause', 'logs-open'].map(id => {
+        const node = document.getElementById(id), box = node.getBoundingClientRect();
+        return { id, top: box.top, bottom: box.bottom, left: box.left, right: box.right, height: box.height, overflow: node.scrollWidth > node.clientWidth + 1 };
+      });
+      const bar = document.querySelector('.config-tabs').getBoundingClientRect();
+      const tabs = [...document.querySelectorAll('[data-config-tab]')].map(node => {
+        const box = node.getBoundingClientRect();
+        return { top: box.top, left: box.left, right: box.right, visible: box.left >= bar.left && box.right <= bar.right + 1 && box.top >= bar.top && box.bottom <= bar.bottom + 1, overflow: node.scrollWidth > node.clientWidth + 1 };
+      });
+      return { controls, tabs, overflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    assert.equal(layout.overflow, false, width + 'px 页面无横向溢出');
+    assert(layout.controls.every(item => Math.abs(item.top - layout.controls[0].top) <= 1 && item.height >= 40 && item.left >= 0 && item.right <= width && !item.overflow), JSON.stringify({ width, layout }));
+    assert.equal(layout.tabs.length, 4);
+    assert(layout.tabs.every(item => item.visible && !item.overflow && Math.abs(item.top - layout.tabs[0].top) <= 1), JSON.stringify({ width, layout }));
+    assert.equal(await mobile.evaluate(() => [...document.querySelectorAll('.config-subtabs,.config-families')].filter(node => node.getClientRects().length).every(bar => {
+      const bounds = bar.getBoundingClientRect();
+      return [...bar.children].filter(node => node.getClientRects().length).every(node => {
+        const box = node.getBoundingClientRect(); return box.top >= bounds.top && box.bottom <= bounds.bottom + 1;
+      });
+    })), true, width + 'px 触屏子页签的按钮完整位于底座内');
+    for (const category of ['daily', 'heroes', 'world', 'base']) {
+      await mobile.locator('[data-config-tab=' + category + ']').tap();
+      assert.equal(await mobile.locator('[data-config-tab=' + category + ']').getAttribute('aria-selected'), 'true');
+    }
+    await mobile.screenshot({ path: path.join(output, 'header-tabs-' + width + '.png'), animations: 'disabled' });
+  }
+  console.log('通过：320–768px 手机顶部四项操作同排，四个配置分类完整显示并可点击，大日志数和最大间隔不撑破布局');
   assert.deepEqual(errors, []); assert.equal(connections, 0);
   console.log('通过：360px手机导航、启停和参数无横向溢出，无脚本错误或游戏连接');
 } finally {

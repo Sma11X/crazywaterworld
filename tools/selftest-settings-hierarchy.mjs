@@ -391,7 +391,7 @@ test('模块主控单独置顶后子项回到组级，各字段只渲染一次',
   }
 });
 
-test('所有模块主控与参数在同组，英雄组合主控保留细项且运行安排可导航', () => {
+test('所有模块主控与参数在同组，英雄组合主控保留细项，运行安排入口移除', () => {
   const f = fixture({ navigation: true }); f.renderPage();
   for (const control of settingsUiRules().moduleControls) {
     const widget = f.widget(control.key), group = f.env.node('config-group-' + control.configTarget);
@@ -410,8 +410,9 @@ test('所有模块主控与参数在同组，英雄组合主控保留细项且�
   f.activate('heroes'); f.activateGroup('antique');
   assert(visible(f.widget('antique.activate').node), '暂停藏品模块仍可调整执行动作');
   f.env.hash = '#config-group-runtime'; f.applyHash();
-  assert.equal(f.editor.category, 'runtime');
-  assert(visible(f.widget('loop.rounds').node));
+  assert.equal(f.editor.category, 'heroes', '旧运行安排链接不切到空白页');
+  assert.equal(f.editor.groups.has('runtime'), false);
+  assert.equal(f.editor.widgets.has('loop.rounds'), false);
 });
 
 const nestedFields = [

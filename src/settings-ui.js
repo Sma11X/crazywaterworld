@@ -1,6 +1,6 @@
 // 游戏配置编辑器：按账号合并连续输入，校验后自动保存，预览仍使用独立只读接口。
 const configEditor = { owner: null, data: null, draft: null, baseline: null, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
-const configCategories = { base: '基地', world: '世界', heroes: '英雄', daily: '日常与活动', runtime: '运行安排' };
+const configCategories = { base: '基地', world: '世界', heroes: '英雄', daily: '日常与活动' };
 const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const baseFamilies = [
@@ -16,11 +16,37 @@ const configDisclosureSeen = new Set();
 const configCollapsedSections = new Set();
 const configField = (key, label, kind = 'switch', options = {}) => ({ key, label, kind, ...options });
 function configPlacePanel(root, panel) {
-  root.classList.remove('open-up');
-  if (!root.open || !panel) return;
-  const rect = root.getBoundingClientRect();
-  const height = Math.min(panel.scrollHeight, window.innerHeight * 0.7);
-  if (rect.bottom + height + 12 > window.innerHeight && rect.top - height - 12 > 0) root.classList.add('open-up');
+  if (!root.open || !panel || !root.isConnected) return;
+  const summary = root.querySelector('summary');
+  if (!summary.getClientRects().length) { root.open = false; return; }
+  const rect = summary.getBoundingClientRect(), viewport = window.visualViewport;
+  const left = (viewport?.offsetLeft ?? 0) + 8;
+  let top = (viewport?.offsetTop ?? 0) + 8;
+  let bottom = top + (viewport?.height ?? innerHeight) - 16;
+  const right = left + (viewport?.width ?? document.documentElement.clientWidth) - 16;
+  // 避开吸顶工具栏和手机底栏，软键盘出现时使用实际可视区域。
+  for (const bar of [document.querySelector('header'), root.closest('#config-root')?.querySelector('.config-toolbar')]) {
+    if (bar && getComputedStyle(bar).position === 'sticky') top = Math.max(top, bar.getBoundingClientRect().bottom + 4);
+  }
+  const tabs = $('tabs');
+  if (tabs && getComputedStyle(tabs).position === 'fixed') bottom = Math.min(bottom, tabs.getBoundingClientRect().top - 8);
+  if (rect.bottom <= top || rect.top >= bottom) { root.open = false; return; }
+  // 原地保留 DOM 和表单事件，通过浏览器顶层摆脱卡片裁切和层叠上下文。
+  if (typeof panel.showPopover === 'function') {
+    panel.setAttribute('popover', 'manual');
+    if (!panel.matches(':popover-open')) panel.showPopover();
+  }
+  const floating = panel.hasAttribute('popover');
+  if (floating) panel.style.width = Math.max(0, Math.min(rect.width, right - left)) + 'px';
+  const height = Math.min(panel.scrollHeight + 2, 420);
+  const below = Math.max(0, bottom - rect.bottom - 4), above = Math.max(0, rect.top - top - 4);
+  const up = height > below && above > below;
+  if (root.classList.contains('open-up') !== up) root.classList.toggle('open-up', up);
+  panel.style.maxHeight = Math.min(420, up ? above : below) + 'px';
+  if (floating) {
+    panel.style.left = Math.max(left, Math.min(rect.left, right - panel.getBoundingClientRect().width)) + 'px';
+    panel.style.top = (up ? rect.top - 4 - panel.getBoundingClientRect().height : rect.bottom + 4) + 'px';
+  }
 }
 const configZeroHints={
  'gather.fishingGoldReserve':'0 表示不保留强化金币。','forge.materialReserve':'0 表示不保留普通材料。','forge.universalReserve':'0 表示不保留万能材料。','forge.goldReserve':'0 表示不保留金币。',
@@ -422,11 +448,6 @@ const configGroups = [
     configField('worldBoss.petrolReserve','汽油保留量','number',{unit:'汽油',help:'0表示不保留，仍核对实际库存和其他任务待确认费用。'}),
   ]},
   { id:'fleet-dispatch',title:'舰队调度',category:'world',fields:[configField('fleetDispatch.priority','任务优先顺序','dispatchOrder',{wide:true,help:'从上到下检查，已出征舰队不抢占。有效城战时段预留优先；已启动首杀对较低优先级任务预留舰队，无目标后释放。巨轮跟随独立排序；当天世界Boss首战完成后释放舰队。'})]},
-  { id: 'runtime', title: '运行安排', category: 'runtime', fields: [
-    configField('loop.rounds', '运行轮数', 'number', { unit: '轮', help: '0 表示持续运行。保存后点击页头的开始托管或恢复托管时生效。' }),
-    configField('loop.everySeconds', '每轮间隔', 'number', { unit: '秒', help: '保存后下一轮使用新间隔。已有到期领奖与生产检查仍按游戏状态调度。' }),
-    configField('loop.tasks', '领取主线、支线与成就'), configField('loop.dailies', '日常行动与钻石点金', 'switch', { help: '控制英雄免费/招募券招募、免费点金、竞技场、海盗日常、折扣店及钻石点金。开启本项不会单独触发消费：钻石点金还需开启基地中的付费点金及钻石总开关，并满足次数、余额和预算限制。' }), configField('loop.world', '基地生产与收取', 'switch', { help: '控制建筑、工厂、居民订单、农田、贸易港、漂浮物与采集船等基地动作，各分项开关仍有效。不是整个挂机的总开关；暂停全部托管请用页面的“暂停托管”。' }),
-  ] },
 ];
 
 
@@ -805,7 +826,6 @@ function configRender() {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
         section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新载入配置；已保存设置会保留。'));
       }
-      if (group.id === 'runtime') section.append(el('p', 'config-help', '挂机启停和每轮间隔在页头调整，各模块开关在对应配置中设置。'));
       configRenderFields(group.fields.map(spec => ({ ...spec, category, groupId: group.id })), section);
       if (group.id === 'progression') {
         const lineups = el('button', 'config-small-button', '管理自定义阵容'); lineups.type = 'button';
@@ -946,7 +966,7 @@ function configLineupPicker(spec, id) {
     line.append(select, view); root.append(line);
     controls.push({ ...entry, select, view });
   }
-  if (!entries.length) root.append(el('p', 'config-help', '副本列表暂未载入，请刷新游戏配置。'));
+  if (!entries.length) root.append(el('p', 'config-help', '副本列表暂未载入，请刷新挂机配置。'));
   root.refresh = () => {
     for (const { raidId, select, view } of controls) {
       select.value = raidId === null ? configGet(spec.key) : configGet(spec.key).find(binding => binding.raidId === raidId)?.presetId ?? '';
@@ -997,7 +1017,7 @@ async function configLoad(force = false) {
     configEditor.owner = account; configEditor.data = data; configEditor.draft = structuredClone(data.settings); configEditor.baseline = structuredClone(data.settings); configEditor.errors = {};
     configCancelSaveTimer(); configEditor.saveError = null; configEditor.saveRetries = 0;
     configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = '';
-    $('config-account-name').textContent = (accounts.find(row => row.id === account)?.title || '当前账号') + '的游戏配置';
+    $('config-account-name').textContent = (accounts.find(row => row.id === account)?.title || '当前账号') + '的挂机配置';
     configRender();
   } catch (error) { if (account === current && version === configEditor.serial) configMessage(error.message, 'error'); }
   finally {
@@ -1135,7 +1155,7 @@ function configPlayerPicker(spec, id) {
   }
   search.oninput = paintList;
   details.ontoggle = () => {
-    if (details.open) { paintList(); configPlacePanel(details, panel); if (!configEditor.playerData) void configRefreshPlayers(); search.focus(); }
+    if (details.open) { paintList(); configPlacePanel(details, panel); if (!configEditor.playerData) void configRefreshPlayers(); search.focus({ preventScroll: true }); }
     else details.classList.remove('open-up');
   };
   details.onkeydown = event => { if (event.key === 'Escape') { details.open = false; summary.focus(); event.stopPropagation(); } };
@@ -1220,7 +1240,7 @@ function configMultiselect(spec, id, options = {}) {
   }
   search.oninput = () => { limit = 120; paintList(); };
   root.ontoggle = () => {
-    if (root.open) { paintList(); configPlacePanel(root, panel); search.focus(); }
+    if (root.open) { paintList(); configPlacePanel(root, panel); search.focus({ preventScroll: true }); }
     else root.classList.remove('open-up');
   };
   root.onkeydown = event => { if (event.key === 'Escape') { root.open = false; summary.focus(); event.stopPropagation(); } };
@@ -1408,7 +1428,7 @@ async function configPreview() {
   configBusy(true); configUpdateState(); $('config-preview').textContent = '读取真实状态…';
   try {
     const selected=scope.startsWith('module:')?configEditor.groups.get(scope.slice(7)):null;
-    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-sweep':'pirateSweep','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes',runtime:'runtime'};
+    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-sweep':'pirateSweep','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
     const runtime=await call('/api/loop');
     const source=selected?dedicated[selected.id]:scope;
     let data;
@@ -1549,11 +1569,53 @@ window.addEventListener('hashchange', () => {
 document.addEventListener('pointerdown', event => {
   for (const root of document.querySelectorAll('details.config-multi[open]')) if (!root.contains(event.target)) root.open = false;
 });
-window.addEventListener('resize', () => {
-  for (const root of document.querySelectorAll('details.config-multi[open]')) {
-    const panel = root.querySelector('.config-multi-panel');
-    if (panel) configPlacePanel(root, panel);
+// 同时覆盖配置页、活动详情及联盟互助动态生成的多选框。
+let configPanelCleanup = null;
+document.addEventListener('toggle', event => {
+  const root = event.target;
+  if (!root.matches('details.config-multi')) return;
+  const panel = root.querySelector('.config-multi-panel');
+  if (!panel) return;
+  if (!root.open) {
+    if (typeof panel.hidePopover === 'function' && panel.matches(':popover-open')) panel.hidePopover();
+    return;
   }
-});
+  configPanelCleanup?.();
+  let frame = 0;
+  const place = () => {
+    frame = 0;
+    if (!root.isConnected || !root.open || !root.querySelector('summary').getClientRects().length) { cleanup(); return; }
+    configPlacePanel(root, panel);
+  };
+  const schedule = event => {
+    if (event?.type === 'scroll' && panel.contains(event.target)) return;
+    if (!frame) frame = requestAnimationFrame(place);
+  };
+  const resize = new ResizeObserver(schedule);
+  resize.observe(root); resize.observe(panel);
+  const changes = new MutationObserver(schedule);
+  // 切页、收起父分组、切号重绘后及时撤下顶层浮层。
+  changes.observe(document.body, { childList: true, subtree: true });
+  for (let parent = root; parent; parent = parent.parentElement) changes.observe(parent, { attributes: true, attributeFilter: ['hidden', 'class', 'open'] });
+  const close = () => { if (!root.open) cleanup(); };
+  const escape = event => {
+    if (event.key === 'Escape') { root.open = false; root.querySelector('summary').focus({ preventScroll: true }); event.preventDefault(); }
+  };
+  const blur = event => { if (event.relatedTarget && !root.contains(event.relatedTarget)) root.open = false; };
+  function cleanup() {
+    cancelAnimationFrame(frame); resize.disconnect(); changes.disconnect();
+    window.removeEventListener('scroll', schedule, true); window.removeEventListener('resize', schedule);
+    window.visualViewport?.removeEventListener('resize', schedule); window.visualViewport?.removeEventListener('scroll', schedule);
+    root.removeEventListener('toggle', close); root.removeEventListener('keydown', escape); root.removeEventListener('focusout', blur);
+    if (typeof panel.hidePopover === 'function' && panel.matches(':popover-open')) panel.hidePopover();
+    root.open = false;
+    if (configPanelCleanup === cleanup) configPanelCleanup = null;
+  }
+  configPanelCleanup = cleanup;
+  window.addEventListener('scroll', schedule, true); window.addEventListener('resize', schedule);
+  window.visualViewport?.addEventListener('resize', schedule); window.visualViewport?.addEventListener('scroll', schedule);
+  root.addEventListener('toggle', close); root.addEventListener('keydown', escape); root.addEventListener('focusout', blur);
+  place();
+}, true);
 window.addEventListener('beforeunload', event => { if (configIsDirty() || configEditor.saving) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('online', () => { if (configIsDirty() && configEditor.saveError && !configEditor.saveError.fields) { configEditor.saveRetries = 0; configScheduleSave(0); } });

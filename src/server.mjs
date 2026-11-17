@@ -3522,7 +3522,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { session } = scoped_(parsed);
         const { compassSpinCount } = jsonBody();
         if (!validSpinCount(compassSpinCount)) throw new Error('抽奖券张数必须是 1 到 ' + maxCompassSpinCount + ' 的整数');
-        if (session.preferences) throw new Error('请在游戏配置中修改罗盘每次抽奖次数');
+        if (session.preferences) throw new Error('请在挂机配置中修改罗盘每次抽奖次数');
         saveAutomation(session.id, { compassSpinCount });
         session.loop.compassSpinCount = compassSpinCount;
         emit(session, 'info', '风水罗盘每次最多使用 ' + compassSpinCount + ' 张抽奖券');
@@ -3628,7 +3628,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const loop = session.loop;
     if (loop.running) throw new Error('这个账号的挂机已在运行');
     const current = settingsView(session);
-    const rounds = options.rounds ?? current.settings.loop.rounds;
+    // 网页开始/恢复挂机一律持续循环；兼容旧配置时不再继承有限轮数。
+    // 显式 API 调用仍可指定轮数，供命令行和离线验收使用。
+    const rounds = options.rounds ?? 0;
     const everySeconds = options.everySeconds ?? current.settings.loop.everySeconds;
     if (!Number.isSafeInteger(rounds) || rounds < 0 || rounds > 100000) throw new Error('轮数必须是 0–100000 的整数');
     if (!Number.isSafeInteger(everySeconds) || everySeconds < 1 || everySeconds > 86400) throw new Error('间隔秒数需要为 1–86400 的整数');

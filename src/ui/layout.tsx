@@ -13,7 +13,7 @@ import { LOG_CATEGORIES, LOG_GROUPS } from "../log-categories.mjs"
 // 手机底栏只有约 55px 宽，所以另备短名。
 const tabs = [
   ["overview", "总览", "总览", LayoutDashboard],
-  ["settings", "游戏配置", "配置", Settings2], ["manual", "建筑一览", "建筑", Building2],
+  ["settings", "挂机配置", "配置", Settings2], ["manual", "建筑一览", "建筑", Building2],
   ["stages", "挑战", "挑战", Swords], ["resources", "资源与玩法", "资源", Boxes],
   ["account", "账号", "账号", CircleUserRound], ["login-settings", "登录设置", "登录", LogIn],
 ] as const
@@ -40,13 +40,13 @@ export function chrome() {
         </div>
         <Button id="connect" size="sm">连接</Button>
         <div className="hosting-controls">
-          <label className="hosting-interval" htmlFor="loop-every">间隔<Input id="loop-every" className="h-8 w-20 max-sm:w-16" type="number" min="1" max="86400" step="1" required defaultValue="60" disabled aria-label="挂机间隔（秒）" aria-describedby="loop-interval-status" title="按账号自动保存，下一轮使用新间隔" /><span>秒</span></label>
-          <Button id="loop-toggle" size="sm" variant="outline" disabled title="按已保存的任务和轮数开始挂机">开始挂机</Button>
-          <Button id="account-pause" size="sm" variant="outline" disabled title="按已保存的任务和轮数开始托管">开始托管</Button>
+          <label className="hosting-interval" htmlFor="loop-every"><span className="hosting-interval-label">间隔</span><Input id="loop-every" className="h-8 w-20" type="number" min="1" max="86400" step="1" required defaultValue="60" disabled aria-label="挂机间隔（秒）" aria-describedby="loop-interval-status" title="挂机间隔（秒），按账号自动保存，下一轮使用新间隔" /><span>秒</span></label>
+          <Button id="loop-toggle" size="sm" variant="outline" disabled title="按已保存的任务持续挂机，直到手动暂停">开始挂机</Button>
+          <Button id="account-pause" size="sm" variant="outline" disabled title="按已保存的任务开始持续托管">开始托管</Button>
+          <Button id="logs-open" size="sm" variant="outline" aria-haspopup="dialog" aria-controls="journal-dialog"><ScrollText aria-hidden="true" />日志 <span id="log-top-count">0</span></Button>
           <span id="loop-interval-status" className="sr-only" role="status" />
           <span id="loop-hint" className="sr-only" role="status" />
         </div>
-        <Button id="logs-open" size="sm" variant="outline" aria-haspopup="dialog" aria-controls="journal-dialog"><ScrollText aria-hidden="true" />日志 <span id="log-top-count">0</span></Button>
         <span id="hint" className="warn" />
         <div id="theme-picker" className="theme-picker">
           <Button id="theme-trigger" type="button" size="icon-sm" variant="outline" className="pointer-coarse:size-10" aria-label="切换主题，当前为跟随系统" title="切换主题，当前为跟随系统" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">
