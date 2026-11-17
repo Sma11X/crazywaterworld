@@ -753,12 +753,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     return { settings: current.settings.heroRaid, revision: current.revision, baseRevision: current.baseRevision };
   }
 
-  function siliconSettingsView(session) {
-    const current = settingsView(session);
-    return { settings: current.settings.silicon, revision: current.revision, baseRevision: current.baseRevision, savedAt: current.savedAt,
-      fleets: current.catalog.expeditionFleets, fleetAvailability: current.catalog.fleetAvailability, running: current.running };
-  }
-
   function guildShipSettingsView(session) {
     const current = settingsView(session);
     return {
@@ -1715,7 +1709,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       scoped = found.session;
       if (req.method === 'POST' && found.session.syncingProduction
         && !['/api/accounts/pause', '/api/disconnect', '/api/loop/stop', '/api/stages/stop', '/api/pirates/advance/stop',
-          '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/appointments/settings', '/api/silicon/settings', '/api/logs/clear',
+          '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/appointments/settings', '/api/logs/clear',
           '/api/lineup-presets/save', '/api/lineup-presets/delete', '/api/lineup-presets/bind'].includes(parsed.pathname)) {
         throw new Error('正在自动同步手动操作后的生产状态，请等待同步完成后操作');
       }
@@ -3064,38 +3058,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const {session}=scoped_(parsed);
         if(!session.client?.connected||session.paused)throw Error('请先连接当前账号，再读取目标详情');
         const result=await readJob(session,()=>readWorldTarget(session.client,protocol,loadConfigSafe(),session.player,settingsView(session).settings,usageFor(session),{layer:parsed.searchParams.get('layer'),key:parsed.searchParams.get('key'),pirateSpent:pirateRunState(session).spent??0}));json(result);return;
-      }
-      if (route === 'GET /api/silicon/settings') {
-        const { session } = scoped_(parsed);
-        json(siliconSettingsView(session)); return;
-      }
-      if (route === 'POST /api/silicon/settings') {
-        const payload = jsonBody();
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload)
-          || Object.keys(payload).some(key => !['key', 'value', 'fleetId', 'revision', 'baseRevision', 'confirm'].includes(key))
-          || !['enabled', 'tier', 'emptyOnly'].includes(payload.key)
-          || (payload.key === 'tier' ? !['BLUE', 'PURPLE', 'ORANGE'].includes(payload.value) : typeof payload.value !== 'boolean')
-          || (payload.fleetId === undefined ? payload.key !== 'enabled' : !/^[1-3]远征船$/.test(payload.fleetId))) {
-          throw new SettingsError({ settings: '请选择有效的硅矿快捷配置' });
-        }
-        needConfirm(payload);
-        const { session } = scoped_(parsed), current = settingsView(session);
-        if (!Number.isSafeInteger(payload.revision) || payload.revision !== current.revision
-          || !current.revision && payload.baseRevision !== current.baseRevision) {
-          throw new SettingsError({ revision: '硅矿配置已变化，请重新读取后再保存' });
-        }
-        const next = structuredClone(current.settings);
-        if (payload.fleetId !== undefined) {
-          if (!current.catalog.expeditionFleets.some(fleet => fleet.value === payload.fleetId)) {
-            throw new SettingsError({ fleetId: '该舰队尚未确认已建成，请连接并刷新硅矿' });
-          }
-          const fleet = next.silicon.fleets.find(row => row.id === payload.fleetId);
-          if (!fleet) throw new SettingsError({ fleetId: '舰队配置已变化，请重新读取' });
-          fleet[payload.key] = payload.value;
-        } else next.silicon.enabled = payload.value;
-        adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: current.revision }));
-        emit(session, 'info', '硅矿快捷配置已保存');
-        json(siliconSettingsView(session)); return;
       }
       if (route === 'POST /api/silicon/preview') {
         const { session } = scoped_(parsed), intent = jsonBody();

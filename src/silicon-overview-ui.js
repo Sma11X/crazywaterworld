@@ -1,17 +1,28 @@
 let siliconOwner = null, siliconData = null, siliconLoading = false, siliconSerial = 0;
-let siliconReceivedAt = 0, siliconLastAttempt = 0, siliconTimers = [], siliconSelections = new Map();
+let siliconReceivedAt = 0, siliconLastAttempt = 0, siliconTimers = [];
 let siliconAction = null;
+let siliconPopover = null, siliconPopoverTimer = null, siliconRestoringFocus = false;
+let siliconAutoRefresh = true, siliconRefreshSeconds = 30;
+try {
+  const saved = JSON.parse(localStorage.getItem('cw.silicon.refresh') || 'null');
+  if (typeof saved?.enabled === 'boolean') siliconAutoRefresh = saved.enabled;
+  if (Number.isInteger(saved?.seconds) && saved.seconds >= 5 && saved.seconds <= 300) siliconRefreshSeconds = saved.seconds;
+} catch { /* 浏览器不允许存储时仍可在本次页面使用。 */ }
+function applySiliconSnapshot(state) {
+  siliconOwner = state.siliconOwner; siliconData = state.siliconData; siliconLoading = state.siliconLoading;
+  siliconReceivedAt = state.siliconReceivedAt; siliconLastAttempt = state.siliconLastAttempt;
+}
+// 兼容现有页面与共享状态入口，刷新偏好不写入账号自动化设置。
+if (typeof bindConsoleSlice === 'function') bindConsoleSlice('silicon', { siliconOwner, siliconData, siliconLoading, siliconReceivedAt, siliconLastAttempt }, applySiliconSnapshot);
+function setSiliconSnapshot(patch) {
+  if (typeof patchConsoleSlice === 'function') patchConsoleSlice('silicon', patch);
+  else applySiliconSnapshot({ siliconOwner, siliconData, siliconLoading, siliconReceivedAt, siliconLastAttempt, ...patch });
+}
 const siliconNumber = value => Number.isSafeInteger(value) && value >= 0 ? fmt(value) : '未同步';
 const siliconConnected = () => !!current && snapshot.connected && !snapshot.paused && !disconnected.has(current);
 const siliconVisible = () => !document.hidden && !$('tab-overview').classList.contains('hidden');
-const siliconStale = () => siliconReceivedAt && Date.now() - siliconReceivedAt > 90000;
-bindConsoleSlice('silicon', { siliconOwner, siliconData, siliconLoading, siliconReceivedAt, siliconLastAttempt }, state => {
-  siliconOwner = state.siliconOwner;
-  siliconData = state.siliconData;
-  siliconLoading = state.siliconLoading;
-  siliconReceivedAt = state.siliconReceivedAt;
-  siliconLastAttempt = state.siliconLastAttempt;
-});
+const siliconStaleAfter = () => Math.max(90000, siliconAutoRefresh ? siliconRefreshSeconds * 3000 : 0);
+const siliconStale = () => siliconReceivedAt && Date.now() - siliconReceivedAt > siliconStaleAfter();
 
 function siliconDuration(seconds) {
   const value = Math.max(0, Math.ceil(seconds)), days = Math.floor(value / 86400), hours = Math.floor(value % 86400 / 3600);
@@ -32,18 +43,17 @@ function siliconTimer(endAt, label, finished) {
   return node;
 }
 function resetSiliconOverview() {
+  hideSiliconPopover();
   siliconAction = null; $('silicon-action-dialog').close(); $('silicon-feedback').hidden = true;
-  siliconSerial++; setConsoleValue('silicon', 'siliconOwner', null); setConsoleValue('silicon', 'siliconData', null); setConsoleValue('silicon', 'siliconLoading', false);
-  setConsoleValue('silicon', 'siliconReceivedAt', 0); setConsoleValue('silicon', 'siliconLastAttempt', 0); siliconTimers = []; siliconSelections.clear();
+  siliconSerial++; setSiliconSnapshot({ siliconOwner: null, siliconData: null, siliconLoading: false, siliconReceivedAt: 0, siliconLastAttempt: 0 }); siliconTimers = [];
   for (const id of ['silicon-summary', 'silicon-fleets', 'silicon-mines', 'silicon-notes']) clear($(id));
   $('silicon-overview').setAttribute('aria-busy', 'false');
 }
 function siliconAccountChanged() {
-  if (typeof siliconSettingsAccountChanged === 'function') siliconSettingsAccountChanged();
   if (siliconOwner !== null && (siliconOwner !== current || !siliconConnected())) resetSiliconOverview();
   updateSiliconControls();
   if (!siliconConnected()) $('silicon-status').textContent = !current ? '请选择账号查看硅矿' : snapshot.paused ? '账号已暂停，连接后可读取硅矿' : '连接账号后读取硅矿';
-  else if (!siliconData && !siliconLoading) $('silicon-status').textContent = '等待读取硅矿';
+  else if (!siliconData && !siliconLoading) $('silicon-status').textContent = siliconAutoRefresh ? '等待读取硅矿' : '自动刷新已关闭，请手动刷新';
 }
 function siliconFacts(root, entries) {
   const list = el('dl', 'silicon-facts');
@@ -54,13 +64,12 @@ function siliconFeedback(text, warning = false) {
   const node = $('silicon-feedback'); node.hidden = false; node.textContent = text; node.classList.toggle('warn', warning);
 }
 function updateSiliconControls() {
-  const busy = siliconAction !== null || siliconLoading || (typeof siliconSettingsEditor !== 'undefined' && siliconSettingsEditor.saving);
+  const busy = siliconAction !== null || siliconLoading;
   $('silicon-refresh').disabled = busy || !siliconConnected();
   for (const button of document.querySelectorAll('[data-silicon-action]')) {
     button.disabled = busy || !siliconConnected() || !!siliconStale() || !!button.dataset.unavailable;
     button.title = button.dataset.unavailable || (siliconStale() ? '信息已过期，请先刷新硅矿' : '');
   }
-  if (typeof paintSiliconSettingsState === 'function') paintSiliconSettingsState();
 }
 function siliconActionButton(label, intent, unavailable = '') {
   const button = smallButton(label); button.type = 'button'; button.dataset.siliconAction = intent.kind;
@@ -77,7 +86,8 @@ function closeSiliconAction() {
   $('silicon-action-dialog').close(); updateSiliconControls();
 }
 async function openSiliconAction(intent) {
-  if (!siliconConnected() || siliconAction || siliconLoading || siliconStale() || (typeof siliconSettingsEditor !== 'undefined' && siliconSettingsEditor.saving)) return;
+  if (!siliconConnected() || siliconAction || siliconLoading || siliconStale()) return;
+  hideSiliconPopover();
   const action = { account: current, intent, phase: 'preview', quote: null, fleetId: null };
   siliconAction = action; updateSiliconControls();
   $('silicon-action-title').textContent = intent.kind === 'dispatch' ? '派遣舰队采矿' : '撤回采矿舰队';
@@ -129,6 +139,52 @@ async function submitSiliconAction() {
     if (siliconAction === action) { siliconAction = null; updateSiliconControls(); if (current === action.account && siliconConnected()) await refreshSiliconOverview(); }
   }
 }
+function hideSiliconPopover(restoreFocus = false) {
+  clearTimeout(siliconPopoverTimer); siliconPopoverTimer = null;
+  const anchor = siliconPopover?.anchor; siliconPopover = null;
+  anchor?.setAttribute('aria-expanded', 'false');
+  $('silicon-slot-popover').hidden = true;
+  if (restoreFocus && anchor?.isConnected) {
+    siliconRestoringFocus = true; anchor.focus({ preventScroll: true }); siliconRestoringFocus = false;
+  }
+}
+function scheduleSiliconPopoverClose() {
+  clearTimeout(siliconPopoverTimer);
+  siliconPopoverTimer = setTimeout(() => {
+    const popup = $('silicon-slot-popover'), anchor = siliconPopover?.anchor;
+    if (!popup.matches(':hover') && !anchor?.matches(':hover') && !popup.contains(document.activeElement) && document.activeElement !== anchor) hideSiliconPopover();
+  }, 180);
+}
+function showSiliconPopover(mine, index, anchor) {
+  if (siliconAction) return;
+  clearTimeout(siliconPopoverTimer);
+  siliconPopover?.anchor.setAttribute('aria-expanded', 'false');
+  siliconPopover = { anchor }; anchor.setAttribute('aria-expanded', 'true');
+  const detail = clear($('silicon-slot-popover')), player = mine.positions.find(row => row.displayIndex === index)?.player;
+  const heading = el('div', 'silicon-popover-heading'), close = smallButton('关闭');
+  close.type = 'button'; close.setAttribute('aria-label', '关闭矿位详情'); close.onclick = () => hideSiliconPopover(true);
+  heading.append(el('strong', '', mine.name + ' · ' + (index + 1) + '号矿位'), close); detail.append(heading);
+  detail.append(el('p', 'dim', player ? ({ self: '我的舰队', ally: '同盟', other: '其他玩家' })[player.relation] : '空闲矿位'));
+  if (player) {
+    siliconFacts(detail, [['玩家', player.nickname], ['战力', siliconNumber(player.power)],
+      ['联盟', player.guildName || (player.guildIdx ? '联盟 #' + player.guildIdx + '（名称未同步）' : '无联盟')], ['本次占矿已采', player.rewardTimes + ' 次']]);
+    if (player.fleetId) detail.append(el('p', 'dim', player.fleetId.replace('远征船', '号舰队') + ' · ' + (player.rewardTimes > 0 ? '已满足首奖撤回条件' : '首奖后可撤回')), siliconRetreatButton(player.fleetId));
+  } else {
+    detail.append(el('p', 'dim', mine.personal ? '个人矿位，不参与抢占。' : '当前无人占领，可选择舰队采集。'));
+    detail.append(siliconActionButton('派遣采集', { kind: 'dispatch', gridId: mine.gridId, index }, !siliconData.reward ? '奖励额度未同步' : siliconData.reward.remaining <= 0 ? '本周期奖励额度已用完' : ''));
+  }
+  detail.hidden = false;
+  positionSiliconPopover(); updateSiliconControls();
+}
+function positionSiliconPopover() {
+  if (!siliconPopover) return;
+  const detail = $('silicon-slot-popover'), rect = siliconPopover.anchor.getBoundingClientRect(), gap = 8, edge = 12;
+  if (rect.bottom <= 0 || rect.top >= innerHeight) { hideSiliconPopover(); return; }
+  detail.style.maxHeight = Math.max(120, innerHeight - edge * 2) + 'px';
+  const box = detail.getBoundingClientRect();
+  detail.style.left = Math.max(edge, Math.min(rect.left, innerWidth - box.width - edge)) + 'px';
+  detail.style.top = Math.max(edge, Math.min(rect.bottom + gap + box.height <= innerHeight - edge ? rect.bottom + gap : rect.top - box.height - gap, innerHeight - box.height - edge)) + 'px';
+}
 function paintSiliconMine(mine) {
   const card = el('article', 'silicon-mine'); card.dataset.tier = mine.tier;
   const heading = el('div', 'silicon-mine-heading'), title = el('h3', '', mine.name), crystal = el('span', 'silicon-crystal');
@@ -137,23 +193,8 @@ function paintSiliconMine(mine) {
   if (mine.reason) card.append(el('p', 'warn', '矿位未同步：' + mine.reason));
   else {
     card.append(el('p', 'silicon-mine-count', (mine.personal ? '我的采集 ' : '已占 ') + mine.occupied + ' / ' + mine.positionCount + ' · 空位 ' + mine.empty));
-    const grid = el('div', 'silicon-slots'), detail = el('div', 'silicon-position-detail');
+    const grid = el('div', 'silicon-slots');
     grid.setAttribute('aria-label', mine.name + '矿位');
-    const show = index => {
-      siliconSelections.set(mine.gridId, index);
-      for (const button of grid.children) button.setAttribute('aria-pressed', String(Number(button.dataset.slot) === index));
-      clear(detail);
-      const position = mine.positions.find(row => row.displayIndex === index), player = position?.player;
-      detail.append(el('strong', '', (index + 1) + '号矿位 · ' + (player ? ({ self: '我的舰队', ally: '同盟', other: '其他玩家' })[player.relation] : '空闲')));
-      if (player) {
-        siliconFacts(detail, [['玩家', player.nickname], ['战力', siliconNumber(player.power)], ['联盟编号', String(player.guildIdx)], ['本次占矿已采', player.rewardTimes + ' 次']]);
-        if (player.fleetId) detail.append(el('p', 'dim', player.fleetId.replace('远征船', '号舰队') + ' · ' + (player.rewardTimes > 0 ? '已满足首奖撤回条件' : '首奖后可撤回')), siliconRetreatButton(player.fleetId));
-      } else {
-        detail.append(el('p', 'dim', mine.personal ? '可供自己的舰队采集，不参与抢占。' : '当前无人占领，可选择舰队采集。'));
-        detail.append(siliconActionButton('派遣采集', { kind: 'dispatch', gridId: mine.gridId, index }, !siliconData.reward ? '奖励额度未同步' : siliconData.reward.remaining <= 0 ? '本周期奖励额度已用完' : ''));
-      }
-      updateSiliconControls();
-    };
     // 异常的大容量也不生成数千个按钮；真实矿位总数仍完整显示。
     const shown = Math.min(mine.positionCount, 96);
     for (let index = 0; index < shown; index++) {
@@ -162,15 +203,21 @@ function paintSiliconMine(mine) {
       const button = el('button', 'silicon-slot'); button.type = 'button'; button.dataset.relation = relation; button.dataset.slot = String(index);
       button.dataset.siliconFocus = mine.gridId + ':' + index;
       button.setAttribute('aria-label', mine.name + ' ' + (index + 1) + '号矿位：' + (player ? player.nickname + '，' + label + '，战力 ' + siliconNumber(player.power) : label));
-      button.setAttribute('aria-pressed', 'false'); button.append(el('span', '', String(index + 1)), el('small', '', label));
-      button.onclick = () => show(index); grid.append(button);
+      button.setAttribute('aria-expanded', 'false'); button.setAttribute('aria-haspopup', 'dialog'); button.setAttribute('aria-controls', 'silicon-slot-popover');
+      button.append(el('span', '', String(index + 1)), el('small', '', label));
+      button.onpointerenter = event => { if (event.pointerType !== 'touch') showSiliconPopover(mine, index, button); };
+      button.onpointerleave = scheduleSiliconPopoverClose;
+      button.onfocus = () => { if (!siliconRestoringFocus) showSiliconPopover(mine, index, button); };
+      button.onblur = scheduleSiliconPopoverClose;
+      button.onclick = () => showSiliconPopover(mine, index, button);
+      button.onkeydown = event => {
+        if (event.key === 'Tab' && !event.shiftKey && siliconPopover?.anchor === button) { event.preventDefault(); $('silicon-slot-popover').querySelector('button')?.focus(); }
+      };
+      grid.append(button);
     }
     card.append(grid);
     if (shown < mine.positionCount) card.append(el('p', 'dim', '展示前 ' + shown + ' 个矿位'));
-    detail.setAttribute('aria-live', 'polite'); card.append(detail);
-    const selected = siliconSelections.get(mine.gridId) ?? mine.positions.find(row => row.player.relation === 'self')?.displayIndex;
-    if (selected !== undefined && selected < shown) show(selected);
-    else detail.append(el('p', 'dim', '点击矿位查看玩家与战力'));
+    card.append(el('p', 'silicon-slot-help dim', '悬停或轻触矿位查看详情'));
   }
   if (mine.rewards.length) {
     const rewards = el('div', 'silicon-rewards'); rewards.append(el('span', 'dim', '每轮可能产出'));
@@ -181,6 +228,7 @@ function paintSiliconMine(mine) {
   return card;
 }
 function paintSiliconOverview(data) {
+  hideSiliconPopover();
   siliconTimers = [];
   const focus = document.activeElement?.dataset.siliconFocus;
   const summary = clear($('silicon-summary')), fleets = clear($('silicon-fleets')), mines = clear($('silicon-mines'));
@@ -213,28 +261,28 @@ function paintSiliconOverview(data) {
 }
 async function refreshSiliconOverview() {
   if (!siliconConnected() || siliconLoading || siliconAction) return;
-  const account = current, serial = ++siliconSerial; setConsoleValue('silicon', 'siliconOwner', account); setConsoleValue('silicon', 'siliconLoading', true); setConsoleValue('silicon', 'siliconLastAttempt', Date.now());
+  hideSiliconPopover();
+  const account = current, serial = ++siliconSerial; setSiliconSnapshot({ siliconOwner: account, siliconLoading: true, siliconLastAttempt: Date.now() });
   $('silicon-refresh').disabled = true; $('silicon-status').textContent = '正在同步硅矿…'; $('silicon-overview').setAttribute('aria-busy', 'true');
   try {
     const data = await call('/api/silicon/overview');
     if (account !== current || serial !== siliconSerial || !siliconConnected()) return;
-    setConsoleValue('silicon', 'siliconData', data); setConsoleValue('silicon', 'siliconReceivedAt', Date.now()); paintSiliconOverview(data);
-    if (typeof refreshSiliconSettings === 'function') void refreshSiliconSettings();
+    setSiliconSnapshot({ siliconData: data, siliconReceivedAt: Date.now() }); paintSiliconOverview(data);
     $('silicon-status').textContent = (data.notes.length || data.mines.some(mine => mine.reason) ? '部分信息未同步 · ' : '更新 ') + new Date(data.checkedAt * 1000).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
     if (data.reason && !data.mines.length) $('silicon-status').textContent = data.reason;
   } catch (error) {
     if (account === current && serial === siliconSerial) {
       $('silicon-status').textContent = '同步失败：' + error.message + (siliconData ? '；下方为上次同步结果' : '');
-      if (siliconData) setConsoleValue('silicon', 'siliconReceivedAt', Date.now() - 90001);
+      if (siliconData) setSiliconSnapshot({ siliconReceivedAt: Date.now() - siliconStaleAfter() - 1 });
     }
   } finally {
-    if (serial === siliconSerial) { setConsoleValue('silicon', 'siliconLoading', false); setConsoleValue('silicon', 'siliconLastAttempt', Date.now()); updateSiliconControls(); $('silicon-overview').setAttribute('aria-busy', 'false'); }
+    if (serial === siliconSerial) { setSiliconSnapshot({ siliconLoading: false, siliconLastAttempt: Date.now() }); updateSiliconControls(); $('silicon-overview').setAttribute('aria-busy', 'false'); }
   }
 }
 function maybeRefreshSilicon() {
   siliconAccountChanged();
-  if (typeof maybeRefreshSiliconSettings === 'function') maybeRefreshSiliconSettings();
-  if (siliconVisible() && siliconConnected() && !siliconLoading && !siliconAction && Date.now() - siliconLastAttempt >= 30000) void refreshSiliconOverview();
+  if (!siliconVisible()) hideSiliconPopover();
+  if (siliconAutoRefresh && siliconVisible() && siliconConnected() && !siliconLoading && !siliconAction && !siliconPopover && Date.now() - siliconLastAttempt >= siliconRefreshSeconds * 1000) void refreshSiliconOverview();
 }
 setInterval(() => {
   maybeRefreshSilicon();
@@ -250,3 +298,36 @@ $('silicon-refresh').onclick = refreshSiliconOverview;
 $('silicon-action-cancel').onclick = closeSiliconAction;
 $('silicon-action-dialog').oncancel = event => { event.preventDefault(); closeSiliconAction(); };
 $('silicon-action-confirm').onclick = submitSiliconAction;
+function paintSiliconRefresh() {
+  const button = $('silicon-auto-refresh'); button.setAttribute('aria-pressed', String(siliconAutoRefresh));
+  button.textContent = '自动刷新：' + (siliconAutoRefresh ? '开' : '关');
+  button.title = '仅在总览可见时刷新硅矿，查看矿位详情时暂缓；不改变挂机设置。';
+  $('silicon-refresh-seconds').value = String(siliconRefreshSeconds);
+}
+function saveSiliconRefresh() {
+  try { localStorage.setItem('cw.silicon.refresh', JSON.stringify({ enabled: siliconAutoRefresh, seconds: siliconRefreshSeconds })); } catch {}
+}
+$('silicon-auto-refresh').onclick = () => {
+  siliconAutoRefresh = !siliconAutoRefresh; paintSiliconRefresh(); saveSiliconRefresh();
+  if (siliconAutoRefresh) { setSiliconSnapshot({ siliconLastAttempt: 0 }); maybeRefreshSilicon(); }
+};
+$('silicon-refresh-seconds').onchange = event => {
+  const input = event.target, seconds = Number(input.value);
+  if (!input.value || !Number.isInteger(seconds) || seconds < 5 || seconds > 300) {
+    input.setCustomValidity('请输入 5–300 之间的整数秒数'); input.reportValidity(); return;
+  }
+  input.setCustomValidity(''); siliconRefreshSeconds = seconds; saveSiliconRefresh(); maybeRefreshSilicon();
+};
+$('silicon-refresh-seconds').oninput = event => event.target.setCustomValidity('');
+$('silicon-slot-popover').onpointerenter = () => clearTimeout(siliconPopoverTimer);
+$('silicon-slot-popover').onpointerleave = scheduleSiliconPopoverClose;
+$('silicon-slot-popover').onfocusout = scheduleSiliconPopoverClose;
+document.addEventListener('pointerdown', event => {
+  if (siliconPopover && !$('silicon-slot-popover').contains(event.target) && !siliconPopover.anchor.contains(event.target)) hideSiliconPopover();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && siliconPopover) { event.preventDefault(); hideSiliconPopover(true); }
+});
+window.addEventListener('resize', () => hideSiliconPopover());
+document.addEventListener('scroll', event => { if (!$('silicon-slot-popover').contains(event.target)) positionSiliconPopover(); }, true);
+paintSiliconRefresh();

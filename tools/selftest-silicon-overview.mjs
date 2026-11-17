@@ -17,12 +17,27 @@ let passed = 0, app;
 const read = (f, options) => readSiliconOverview(f.client, f.protocol, f.config, f.player, options);
 const test = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 try {
-  await test('总览独立于自动化配置，只读取四类硅矿和舰队消息', async () => {
+  await test('总览独立于自动化配置，只读取硅矿、舰队和联盟摘要', async () => {
     const f = siliconFixture(); f.state.fuel = 0; f.state.merge.matchMaking = true;
     const data = await read(f);
     assert.equal(data.mines.length, 3); assert.equal(data.fleets.length, 3); assert.equal(data.reason, '');
-    assert.deepEqual([...new Set(f.client.reads.map(row => row.name))].sort(), ['ChipMineListRequest', 'ChipMineRequest', 'ChipMineRewardRequest', 'MyFleetsRequest']);
+    assert.deepEqual([...new Set(f.client.reads.map(row => row.name))].sort(), ['AllGuildAbstractionRequest', 'ChipMineListRequest', 'ChipMineRequest', 'ChipMineRewardRequest', 'MyFleetsRequest']);
     assert.deepEqual(f.client.writes, []);
+  });
+  await test('真实联盟名称按64位联盟ID对应编号，无联盟和未同步分别展示', async () => {
+    const f = siliconFixture(); f.occupy('1远征船'); f.enemy(1, '其他船长', 900, 8); f.enemy(2, '独行船长', 900, 0);
+    const data = await read(f);
+    assert.deepEqual(data.mines[2].positions.map(row => row.player.guildName), ['潮汐联盟', '深海联盟', '无联盟']);
+    f.state.guilds[1].name = '';
+    assert.equal((await read(f)).mines[2].positions[1].player.guildName, null);
+  });
+  await test('联盟名称读取失败不影响矿位，重叠编号不猜测名称', async () => {
+    const f = siliconFixture(); f.enemy(0);
+    f.beforeRead = name => { if (name === 'AllGuildAbstractionRequest') throw Error('模拟联盟读取失败'); };
+    const data = await read(f); assert.equal(data.mines[2].positions[0].player.guildName, null);
+    assert.equal(data.mines[2].positions[0].player.guildIdx, 8); assert(data.notes.some(note => note.includes('联盟名称未同步')));
+    f.beforeRead = null; f.state.guilds.push({ id: '8008', name: '同编号其他联盟' });
+    assert.equal((await read(f)).mines[2].positions[0].player.guildName, null); assert.deepEqual(f.client.writes, []);
   });
   await test('初等矿按客户端三个个人位展示，原始大索引不当作个人位下标', async () => {
     const f = siliconFixture(); f.occupy('1远征船', 3000, 123, 2);

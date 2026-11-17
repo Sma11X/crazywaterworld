@@ -37,9 +37,20 @@ export async function readSiliconOverview(client, protocol, config, player, { en
     try { return await get(name); }
     catch { check(); view.notes.push(label + '未同步，可稍后刷新'); return null; }
   };
-  const [list, reward, own] = await Promise.all([
+  const [list, reward, own, guildList] = await Promise.all([
     safe('ChipMineList', '矿区列表'), safe('ChipMineReward', '奖励额度'), safe('MyFleets', '舰队状态'),
+    safe('AllGuildAbstraction', '联盟名称'),
   ]);
+  const guildNames = new Map(), ambiguousGuilds = new Set();
+  for (const guild of Array.isArray(guildList?.guilds) ? guildList.guilds : []) {
+    const id = exactAutomationId(guild.id), name = typeof guild.name === 'string' ? guild.name.trim() : '';
+    if (!id || !name) continue;
+    const index = Number(BigInt(id) % 1000n);
+    if (index <= 0) continue;
+    if (guildNames.has(index) && guildNames.get(index) !== name) ambiguousGuilds.add(index);
+    guildNames.set(index, name);
+  }
+  for (const index of ambiguousGuilds) guildNames.delete(index);
   view.reward = rewardInfo(reward?.rewardInfo);
   let cycleChanged = false;
   const types = config?.tables?.ChipMineCfg?.data ?? [];
@@ -71,7 +82,8 @@ export async function readSiliconOverview(client, protocol, config, player, { en
         if (!integer(position.index) || !integer(p.guildIdx) || !integer(p.rewardTimes) || power === null
           || typeof p.nickname !== 'string') throw Error('占领玩家信息不完整');
         return { index: position.index, displayIndex: mine.personal ? offset : position.index,
-          player: { nickname: p.nickname, power, guildIdx: p.guildIdx, rewardTimes: p.rewardTimes, fleetId: p.fleetId || '',
+          player: { nickname: p.nickname, power, guildIdx: p.guildIdx, guildName: p.guildIdx === 0 ? '无联盟' : guildNames.get(p.guildIdx) || null,
+            rewardTimes: p.rewardTimes, fleetId: p.fleetId || '',
             relation: p.fleetId ? 'self' : ownGuild > 0 && p.guildIdx === ownGuild ? 'ally' : 'other' } };
       });
       const capacity = mine.personal ? 3 : detail.positionNum;

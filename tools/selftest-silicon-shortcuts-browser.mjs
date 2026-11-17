@@ -29,19 +29,20 @@ try {
   for (const [name, width, theme] of [['desktop', 1440, 'light'], ['dark', 1440, 'dark'], ['mobile', 390, 'light'], ['small-mobile', 320, 'light']]) {
     for (const id of ['1远征船', '2远征船', '3远征船']) f.returnFleet(id);
     f.occupy('1远征船', 5000, 0, 2);
-    const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
+    const page = await browser.newPage({ viewport: { width, height: 1000 }, hasTouch: width <= 600, isMobile: width <= 600 }); page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
     await page.route('**/api/world/overview?*', route => route.fulfill({ json: { checkedAt: Math.floor(Date.now() / 1000), scenario: 1, width: 1, height: 1, regions: [], owners: [], points: [], routes: [], fleets: [], cityWars: [], treasures: [], layers: {}, notes: [] } }));
     await page.route('**/api/overview?*', async route => { const status = await (await fetch(base + '/api/loop?account=shortcut-ui')).json(); await route.fulfill({ json: { player: { nickname: '硅矿验收船长', level: 36 }, resources: [], status } }); });
     await page.goto(base); await page.locator('#silicon-mines .silicon-mine').nth(2).waitFor();
     await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
     const orange = page.locator('.silicon-mine[data-tier=ORANGE]'), dialog = page.locator('#silicon-action-dialog');
-    await orange.locator('.silicon-slot').nth(1).click(); await orange.getByRole('button', { name: '派遣采集', exact: true }).click();
+    const openDispatch = async index => { const slot = orange.locator('.silicon-slot').nth(index); if (width <= 600) await slot.tap(); else await slot.click(); await page.locator('#silicon-slot-popover').getByRole('button', { name: '派遣采集', exact: true }).click(); };
+    await openDispatch(1);
     await page.waitForFunction(() => siliconAction?.phase === 'ready');
     assert.match(await dialog.textContent(), /500 汽油/); assert.match(await dialog.textContent(), /撤回后可能再次派遣/);
     assert.equal(await dialog.locator('input[value="1远征船"]').isDisabled(), true);
     assert.equal(await dialog.locator('input[value="2远征船"]').isDisabled(), false);
     const beforeCancel = f.client.writes.length; await page.locator('#silicon-action-cancel').click(); assert.equal(f.client.writes.length, beforeCancel);
-    await orange.getByRole('button', { name: '派遣采集', exact: true }).click(); await page.waitForFunction(() => siliconAction?.phase === 'ready');
+    await openDispatch(1); await page.waitForFunction(() => siliconAction?.phase === 'ready');
     await dialog.locator('input[value="3远征船"]').check();
     assert.equal(await dialog.evaluate(node => node.scrollWidth > node.clientWidth + 1), false, name + ' 确认框无横向溢出');
     const bounds = await dialog.boundingBox(); assert(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
@@ -64,13 +65,13 @@ try {
     await card.screenshot({ path: path.join(output, 'overview-' + name + '.png') });
     if (name === 'desktop') {
       // 超时确认不能继续提交，切号会关闭确认窗口，迟到的预览不会重新打开。
-      await orange.locator('.silicon-slot').nth(2).click(); await orange.getByRole('button', { name: '派遣采集', exact: true }).click(); await page.waitForFunction(() => siliconAction?.phase === 'ready');
+      await openDispatch(2); await page.waitForFunction(() => siliconAction?.phase === 'ready');
       await page.evaluate(() => { siliconAction.quote.expiresAt = Date.now() - 1; });
       await page.waitForFunction(() => document.querySelector('#silicon-action-confirm').disabled);
       assert.match(await page.locator('#silicon-action-expiry').textContent(), /过期/); await page.locator('#silicon-action-cancel').click();
       let entered, release; const started = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
       await page.route('**/api/silicon/preview?*', async route => { const response = await route.fetch(); entered(); await gate; await route.fulfill({ response }); });
-      await orange.getByRole('button', { name: '派遣采集', exact: true }).click(); await started;
+      await openDispatch(2); await started;
       await page.evaluate(() => { current = null; siliconAccountChanged(); });
       assert.equal(await dialog.isVisible(), false); release(); await page.waitForTimeout(80); assert.equal(await dialog.isVisible(), false);
     }

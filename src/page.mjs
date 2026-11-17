@@ -16,7 +16,6 @@ const inventoryScript=readFileSync(new URL('./inventory-ui.js',import.meta.url),
 const productionPlanningScript = readFileSync(new URL('./production-planning-ui.js', import.meta.url), 'utf8');
 const worldMapScript=readFileSync(new URL('./world-map-ui.js',import.meta.url),'utf8');
 const siliconOverviewScript = readFileSync(new URL('./silicon-overview-ui.js', import.meta.url), 'utf8');
-const siliconSettingsScript = readFileSync(new URL('./silicon-settings-ui.js', import.meta.url), 'utf8');
 const siliconOverviewCss = readFileSync(new URL('./silicon-overview.css', import.meta.url), 'utf8');
 import {mapMotionPosition} from './world-map-geometry.mjs';
 const phoneLoginScript = readFileSync(new URL('./phone-login-ui.js', import.meta.url), 'utf8');
@@ -2119,7 +2118,6 @@ ${siliconOverviewScript}
 ${inventoryScript}
 ${productionPlanningScript}
 ${settingsScript}
-${siliconSettingsScript}
 ${appointmentsScript}
 // ---- 登录设置 --------------------------------------------------------------
 // Kept for DOM diagnostics; React subscribes directly to the shared store.

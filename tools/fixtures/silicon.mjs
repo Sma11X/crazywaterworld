@@ -17,6 +17,7 @@ export function siliconFixture() {
     reward: { myRewardTimes: 0, maxRewardTimes: 100, rewardResetTime: now + 86400 },
     mines: [3, 4, 5].map(color => ({ gridId: color * 1000, color, occupiedNum: 0, positionNum: color === 3 ? 999 : 3 })),
     positions: { 3000: [], 4000: [], 5000: [] }, blacklist: [], reports: [], reportDetails: {},
+    guilds: [{ id: '9007199254741007', name: '潮汐联盟' }, { id: '9007199254741008', name: '深海联盟' }],
     merge: { worldIds: [], executeTs: 0, matchMaking: false },
     buildings: [1, 2, 3].map(n => ({ buildingId: n + '远征船', level: 1, fleet: { formation: { heroPositions: [{ heroId: '兰博', pos: { x: 0, y: 0 } }] } } })),
     fleets: [1, 2, 3].map(n => ({ buildingId: n + '远征船', state: 1, durability: 2000, maxDura: 2000, power: 1000, curGridIdx: 0, targetGridIdx: 0, treasureLootUid: 0, owner: { playerId, guildId: player.guildId } })),
@@ -38,6 +39,7 @@ export function siliconFixture() {
       case 'ChipMineRewardRequest': result = { rewardInfo: state.reward }; break;
       case 'ChipMineRequest': { const mine = state.mines.find(row => row.gridId === body.gridId); result = { occupiedNum: state.positions[mine.gridId].length, positionNum: mine.positionNum, occupiedPositions: state.positions[mine.gridId], rewardInfo: state.reward, fightTimes: state.fightTimes, maxFightTimes: state.maxFightTimes }; break; }
       case 'MyFleetsRequest': result = { fleets: state.fleets }; break;
+      case 'AllGuildAbstractionRequest': result = { guilds: state.guilds }; break;
       case 'OnWaterRequest': result = { building: state.buildings }; break;
       case 'AllItemRequest': result = { items: [{ itemId: '汽油', num: state.fuel }] }; break;
       case 'AllResourceRequest': result = { list: [{ res: 4, amount: state.ruby }] }; break;

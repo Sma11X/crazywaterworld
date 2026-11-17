@@ -1,16 +1,6 @@
-.silicon-toolbar,.silicon-mine-heading,.silicon-fleet-heading,.silicon-settings-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px }
-.silicon-settings { margin-bottom:20px; padding-bottom:18px; border-bottom:1px solid var(--border); font-size:12px }
-.silicon-settings-heading h3 { font-size:14px; font-weight:600 }
-.silicon-settings-fleets { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px }
-.silicon-settings-fleet { min-width:0; display:grid; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--radius) }
-.silicon-settings-fleet h4 { font-weight:600; font-size:13px }
-.silicon-settings-control { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0 }
-.silicon-settings-control select { width:100px; max-width:60%; min-width:0; font-size:12px }
-.silicon-settings-control [role=switch] { flex:none }
-.silicon-settings-help { margin-block:12px; line-height:1.7 }
-.silicon-settings-offline { grid-column:1/-1 }
-.silicon-settings-fleet p { line-height:1.6; overflow-wrap:anywhere }
+.silicon-toolbar,.silicon-mine-heading,.silicon-fleet-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px }
 .silicon-toolbar { margin-bottom:16px; font-size:12px }
+#silicon-refresh-seconds { width:72px }
 .silicon-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:18px }
 .silicon-summary:empty,.silicon-fleets:empty,.silicon-mines:empty { display:none }
 .silicon-stat { display:flex; flex-direction:column; gap:5px; min-width:0; padding-left:12px; border-left:2px solid var(--border) }
@@ -45,17 +35,22 @@
 .silicon-slot[data-relation=self] { background:var(--success-muted); color:var(--success); border-color:var(--success-border) }
 .silicon-slot[data-relation=ally] { color:var(--mine-color); background:color-mix(in srgb,var(--mine-color) 9%,var(--card)) }
 .silicon-slot[data-relation=other] { background:var(--muted); color:var(--foreground) }
-.silicon-slot[aria-pressed=true] { outline:2px solid var(--mine-color); outline-offset:1px }
+.silicon-slot[aria-expanded=true] { outline:2px solid var(--mine-color); outline-offset:1px }
 .silicon-slot:focus-visible { outline:2px solid var(--ring); outline-offset:3px }
-.silicon-position-detail { margin-top:14px; font-size:12px; overflow-wrap:anywhere }
-.silicon-position-detail>strong { font-weight:600 }
+.silicon-slot-help { margin-top:10px; font-size:11px }
+#silicon-slot-popover { position:fixed; z-index:100; width:min(310px,calc(100vw - 24px)); padding:14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--popover); color:var(--popover-foreground); box-shadow:0 8px 28px #0002; font-size:12px; overflow:auto; overscroll-behavior:contain; overflow-wrap:anywhere }
+#silicon-slot-popover[hidden] { display:none }
+.silicon-popover-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px }
+.silicon-popover-heading strong { font-weight:600; min-width:0 }
+.silicon-popover-heading button { flex:none }
+#silicon-slot-popover .silicon-facts { grid-template-columns:auto minmax(0,1fr) }
 .silicon-rewards { margin-top:auto; padding-top:14px; font-size:11px }
 .silicon-rewards ul { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px }
 .silicon-rewards li { background:var(--muted); padding:3px 6px; border-radius:4px }
 .silicon-empty { grid-column:1/-1; padding-block:8px }
 #silicon-notes { font-size:12px; line-height:1.7 }
 .silicon-feedback { margin-bottom:14px; padding:10px 12px; border:1px solid var(--border); border-radius:6px; font-size:13px; overflow-wrap:anywhere }
-.silicon-position-detail [data-silicon-action],.silicon-fleet [data-silicon-action] { margin-top:10px }
+#silicon-slot-popover [data-silicon-action],.silicon-fleet [data-silicon-action] { margin-top:10px }
 #silicon-action-dialog { width:min(520px,calc(100vw - 32px)) }
 #silicon-action-body { display:grid; gap:12px; margin-block:18px; font-size:13px; overflow-wrap:anywhere }
 .silicon-action-cost { font-weight:600; font-variant-numeric:tabular-nums }
@@ -68,4 +63,4 @@
 .silicon-action-fleet .dim,.silicon-action-fleet small { font-size:12px }
 .silicon-action-fleet input { flex:none }
 @media(max-width:900px) { .silicon-mines { grid-template-columns:repeat(2,minmax(0,1fr)) } .silicon-summary { grid-template-columns:repeat(2,minmax(0,1fr)) } }
-@media(max-width:600px) { .silicon-fleets,.silicon-mines,.silicon-settings-fleets { grid-template-columns:minmax(0,1fr) } .silicon-stat>strong { font-size:18px } .silicon-summary { gap:14px 10px } }
+@media(max-width:600px) { .silicon-fleets,.silicon-mines { grid-template-columns:minmax(0,1fr) } .silicon-stat>strong { font-size:18px } .silicon-summary { gap:14px 10px } }
