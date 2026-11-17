@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';import vm from 'node:vm';
 import {mapMotionPosition} from '../src/world-map-geometry.mjs';
 import {readWorldOverview} from '../src/world-overview.mjs';
+import {readSiliconOverview} from '../src/silicon-overview.mjs';
+import {siliconFixture} from './fixtures/silicon.mjs';
 import {commentsEighteenFixture} from './fixtures/comments-eighteen.mjs';
 import {PAGE} from '../src/page.mjs';
 let count=0;const test=async(name,fn)=>{await fn();count++;console.log('通过：'+name);};
@@ -16,6 +18,10 @@ await test('空联盟名按游戏出生主城取名，不再使用联盟2/4；�
  for(const id of [3,4])f.responses.WorldInfoRequest.cities.push({id:cities.find(c=>c.guildIndex===id).id,guildIdx:id,battlePoints:[],attackFleetNum:0,defenceFleetNum:0});
  f.responses.AllGuildAbstractionRequest.guilds=[{id:1001,name:'自定义联盟'},{id:1002},{id:1003,name:'青玄'},{id:1004}];
  const d=await readWorldOverview(f.client,f.config,f.player,f.settings,ledger,{mapLoader:async()=>f.map});assert.equal(d.owners.find(o=>o.id===2).name,'铁锈湾');assert.equal(d.owners.find(o=>o.id===4).name,'风栖港');assert.match(d.owners.find(o=>o.id===1).name,/自定义联盟/);
+ const silicon=siliconFixture();silicon.config.tables['1_CityCfg']=f.config.tables['1_CityCfg'];silicon.state.guilds=f.responses.AllGuildAbstractionRequest.guilds;
+ for(const [slot,id] of [2,4,1].entries())silicon.enemy(slot,'船长'+id,900,id);
+ const view=await readSiliconOverview(silicon.client,silicon.protocol,silicon.config,silicon.player);
+ for(const {player} of view.mines[2].positions){const owner=d.owners.find(o=>o.id===player.guildIdx);assert.equal(player.guildName,owner.name.replace('（我盟）',''));assert.equal(player.guildDefaultName,owner.defaultName);}
 });
 await test('本日已确认耗油不重复加巨轮维修，未决费用单列',async()=>{
  const f=await commentsEighteenFixture(),d=await readWorldOverview(f.client,f.config,f.player,f.settings,ledger,{mapLoader:async()=>f.map});assert.equal(d.fuelUsage.confirmed,12300);assert.equal(d.fuelUsage.pending,2000);assert.equal(d.fuelUsage.activities.length,6);assert.equal(d.fuelUsage.stock,99999);

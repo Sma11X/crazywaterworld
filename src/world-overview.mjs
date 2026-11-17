@@ -3,6 +3,7 @@ import {mapDimensions,mapPosition,mapRegions} from './world-map-geometry.mjs';
 import { loadMapAsset } from './world.mjs';
 import { normalize } from './worlds.mjs';
 import { exactAutomationId } from './automation-policy.mjs';
+import { createGuildNameResolver } from './guild-name.mjs';
 import { fleetRecordReason, dispatchReservationReason, fleetDispatchView } from './fleet-availability.mjs';
 
 // 只读概览：静态资源只提供位置，归属和状态仅取本次服务器返回。
@@ -16,7 +17,6 @@ export async function readWorldOverview(client,config,player,settings,ledger,{ma
  const add=(layer,key,name,grid,detail,extra={})=>{const at=pos(grid);if(at && (['cities','fields'].includes(layer)||grid>0))points.push({layer,key,name,grid,...at,detail,...extra});};
 
  const cityCfg=config.tables[scenario+'_CityCfg']?.data??[];
- const defaultGuildNames=new Map(cityCfg.filter(c=>c.guildIndex>0).map(c=>[c.guildIndex,c.name]));
  const cityNameAt=(id,grid,fallback='位置未同步')=>cityCfg.find(c=>c.id===(id||map?.cityAt?.(grid)))?.name||fallback;
  const treasureName=t=>config.tables.TreasureLootCfg?.data?.find(c=>c.quality===({3:'BLUE',4:'PURPLE',5:'ORANGE'})[t.color])?.name||'货轮';
  const makeMotion=raw=>{
@@ -29,12 +29,12 @@ export async function readWorldOverview(client,config,player,settings,ledger,{ma
  layers.cities=map&&Array.isArray(world?.cities)?'已同步':'未同步';
  layers.regions=map?.cityAt?(Array.isArray(world?.cities)?'已同步':'边界已读取，归属未同步'):'未同步';
  const ownGuildId=exactAutomationId(player.guildId),ownGuildIdx=ownGuildId?Number(BigInt(ownGuildId)%1000n):null;
- const guildNames=new Map((guildList?.guilds??[]).map(g=>{const id=exactAutomationId(g.id);return[id?Number(BigInt(id)%1000n):null,g.name];}));
+ const resolveGuildName=createGuildNameResolver(config,scenario,guildList?.guilds);
  const ownerIds=[...new Set((world?.cities??[]).map(c=>c.guildIdx).filter(id=>Number.isSafeInteger(id)&&id>0))].sort((a,b)=>a-b);
  const palette=['#d5bf53','#bb806b','#a18bbb','#779fc0','#c18fab','#91a86f'];
- const owners=ownerIds.map((id,i)=>({id,name:(guildNames.get(id)||defaultGuildNames.get(id)||'阵营 '+id)+(id===ownGuildIdx?'（我盟）':''),defaultName:!guildNames.get(id),color:id===ownGuildIdx?'#69b3a5':palette[i%palette.length]}));
+ const owners=ownerIds.map((id,i)=>{const guild=resolveGuildName(id);return{id,name:(guild.name||'阵营 '+id)+(id===ownGuildIdx?'（我盟）':''),defaultName:guild.defaultName,color:id===ownGuildIdx?'#69b3a5':palette[i%palette.length]};});
  const ownerColor=id=>owners.find(o=>o.id===id)?.color??(id===0?'#c4d7df':'#e1e7e8');
- const guildName=id=>id===0?'未占领':guildNames.get(id)||defaultGuildNames.get(id)||'阵营 '+id;
+ const guildName=id=>id===0?'未占领':resolveGuildName(id).name||'阵营 '+id;
  const quantity=value=>Number.isSafeInteger(value)&&value>=0?String(value):'未同步';
  const declarations=war?.declarations??[],warOpen=war&&war.startTime<=now&&now<war.endTime;
  const marchFleets=Array.isArray(world?.fleets)?world.fleets:[];

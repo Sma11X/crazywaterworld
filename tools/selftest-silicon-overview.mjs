@@ -31,6 +31,36 @@ try {
     f.state.guilds[1].name = '';
     assert.equal((await read(f)).mines[2].positions[1].player.guildName, null);
   });
+  await test('联盟空名或摘要缺项时使用当前场景主城默认名，自定义名优先', async () => {
+    const f = siliconFixture(); f.occupy('1远征船'); f.enemy(1, '其他船长', 900, 8); f.enemy(2, '独行船长', 900, 0);
+    f.config.tables['1_CityCfg'] = { data: [{ guildIndex: 7, name: '旧主城' }, { guildIndex: 8, name: '旧港口' }] };
+    f.config.tables['2_CityCfg'] = { data: [{ guildIndex: 7, name: '新主城' }, { guildIndex: 8, name: '新港口' }] };
+    f.player.scenarioId = 2; f.state.guilds[1].name = '   ';
+    const players = (await read(f)).mines[2].positions.map(row => row.player);
+    assert.deepEqual(players.map(p => p.guildName), ['潮汐联盟', '新港口', '无联盟']);
+    assert.deepEqual(players.map(p => p.guildDefaultName), [false, true, false]);
+    assert.deepEqual(players.map(p => p.relation), ['self', 'other', 'other']);
+    f.state.guilds = [];
+    assert.deepEqual((await read(f)).mines[2].positions.map(row => row.player.guildName), ['新主城', '新港口', '无联盟']);
+    f.player.scenarioId = 0;
+    assert.equal((await read(f)).mines[2].positions[1].player.guildName, '旧港口');
+    f.player.scenarioId = 3;
+    assert.equal((await read(f)).mines[2].positions[1].player.guildName, null, '不套用其他场景的主城名');
+    assert.deepEqual(f.client.writes, []);
+  });
+  await test('联盟摘要失败或编号冲突仍可显示已知默认名，未知编号保留未同步', async () => {
+    const f = siliconFixture(); f.enemy(0); f.enemy(1, '未知联盟船长', 900, 9);
+    f.config.tables['1_CityCfg'] = { data: [{ guildIndex: 8, name: '默认港口' }] };
+    f.beforeRead = name => { if (name === 'AllGuildAbstractionRequest') throw Error('模拟联盟读取失败'); };
+    const data = await read(f);
+    assert.equal(data.mines[2].positions[0].player.guildName, '默认港口');
+    assert.equal(data.mines[2].positions[0].player.guildDefaultName, true);
+    assert.equal(data.mines[2].positions[1].player.guildName, null);
+    assert(data.notes.some(note => note.includes('联盟名称未同步')));
+    f.beforeRead = null; f.state.guilds.push({ id: '8008', name: '同编号其他联盟' });
+    assert.equal((await read(f)).mines[2].positions[0].player.guildName, '默认港口');
+    assert.deepEqual(f.client.writes, []);
+  });
   await test('联盟名称读取失败不影响矿位，重叠编号不猜测名称', async () => {
     const f = siliconFixture(); f.enemy(0);
     f.beforeRead = name => { if (name === 'AllGuildAbstractionRequest') throw Error('模拟联盟读取失败'); };

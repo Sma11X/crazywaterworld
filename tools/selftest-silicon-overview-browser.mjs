@@ -16,6 +16,8 @@ Object.assign(f.state.reward, { myRewardTimes: 42, maxRewardTimes: 130 }); f.sta
 f.state.mines[1].positionNum = 7; f.state.mines[2].positionNum = 16;
 f.enemy(0, '海风船长', 32198765, 7, 4000); f.enemy(2, '<img src=x onerror=alert(1)>', 843210, 8, 4000);
 f.enemy(0, '深蓝舰长', 42138900, 8); f.enemy(4, '星河船长', 21580000, 7);
+f.config.tables['1_CityCfg'] = { data: [{ guildIndex: 9, name: '风栖港' }] };
+f.state.guilds.push({ id: '9007199254741009', name: '' }); f.enemy(1, '默认联盟船长', 900, 9, 4000);
 for (const [index, rewards] of [
   [['白芯片宝箱', 4], ['绿芯片宝箱', 1]],
   [['白芯片宝箱', 5], ['绿芯片宝箱', 1], ['蓝芯片宝箱', 1]],
@@ -78,6 +80,13 @@ try {
     assert.match(await popup.textContent(), /海风船长/); assert.match(await popup.textContent(), /潮汐联盟/);
     await page.keyboard.press('Tab'); assert.equal(await popup.getByRole('button', { name: '关闭矿位详情' }).evaluate(node => node === document.activeElement), true);
     await page.keyboard.press('Enter'); assert.equal(await popup.isVisible(), false);
+    if (width > 600) await purple.locator('.silicon-slot').nth(1).hover();
+    else await purple.locator('.silicon-slot').nth(1).tap();
+    await popup.waitFor(); assert.match(await popup.textContent(), /风栖港/);
+    assert.doesNotMatch(await popup.textContent(), /名称未同步/);
+    assert.equal(await popup.locator('dd[title="当前按游戏主城默认名显示"]').textContent(), '风栖港');
+    await popup.screenshot({ path: path.join(output, 'default-guild-' + name + '.png') });
+    await page.keyboard.press('Escape'); assert.equal(await popup.isVisible(), false);
     await page.locator('#silicon-refresh').click(); await page.waitForFunction(() => !siliconLoading);
     assert.equal(await popup.isVisible(), false); assert.equal(await page.locator('.silicon-position-detail').count(), 0);
     const card = page.locator('[data-slot=card]').filter({ has: page.locator('#silicon-overview') });

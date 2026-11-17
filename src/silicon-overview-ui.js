@@ -57,7 +57,11 @@ function siliconAccountChanged() {
 }
 function siliconFacts(root, entries) {
   const list = el('dl', 'silicon-facts');
-  for (const [label, value] of entries) list.append(el('dt', '', label), el('dd', '', value));
+  for (const [label, value, title] of entries) {
+    const content = el('dd', '', value);
+    if (title) content.title = title;
+    list.append(el('dt', '', label), content);
+  }
   root.append(list);
 }
 function siliconFeedback(text, warning = false) {
@@ -167,7 +171,8 @@ function showSiliconPopover(mine, index, anchor) {
   detail.append(el('p', 'dim', player ? ({ self: '我的舰队', ally: '同盟', other: '其他玩家' })[player.relation] : '空闲矿位'));
   if (player) {
     siliconFacts(detail, [['玩家', player.nickname], ['战力', siliconNumber(player.power)],
-      ['联盟', player.guildName || (player.guildIdx ? '联盟 #' + player.guildIdx + '（名称未同步）' : '无联盟')], ['本次占矿已采', player.rewardTimes + ' 次']]);
+      ['联盟', player.guildName || (player.guildIdx ? '联盟 #' + player.guildIdx + '（名称未同步）' : '无联盟'), player.guildDefaultName ? '当前按游戏主城默认名显示' : ''],
+      ['本次占矿已采', player.rewardTimes + ' 次']]);
     if (player.fleetId) detail.append(el('p', 'dim', player.fleetId.replace('远征船', '号舰队') + ' · ' + (player.rewardTimes > 0 ? '已满足首奖撤回条件' : '首奖后可撤回')), siliconRetreatButton(player.fleetId));
   } else {
     detail.append(el('p', 'dim', mine.personal ? '个人矿位，不参与抢占。' : '当前无人占领，可选择舰队采集。'));

@@ -1,4 +1,5 @@
 import { exactAutomationId } from './automation-policy.mjs';
+import { createGuildNameResolver } from './guild-name.mjs';
 import { siliconOpeningReason } from './silicon-mining.mjs';
 
 const integer = (value, min = 0) => Number.isSafeInteger(value) && value >= min;
@@ -41,16 +42,7 @@ export async function readSiliconOverview(client, protocol, config, player, { en
     safe('ChipMineList', '矿区列表'), safe('ChipMineReward', '奖励额度'), safe('MyFleets', '舰队状态'),
     safe('AllGuildAbstraction', '联盟名称'),
   ]);
-  const guildNames = new Map(), ambiguousGuilds = new Set();
-  for (const guild of Array.isArray(guildList?.guilds) ? guildList.guilds : []) {
-    const id = exactAutomationId(guild.id), name = typeof guild.name === 'string' ? guild.name.trim() : '';
-    if (!id || !name) continue;
-    const index = Number(BigInt(id) % 1000n);
-    if (index <= 0) continue;
-    if (guildNames.has(index) && guildNames.get(index) !== name) ambiguousGuilds.add(index);
-    guildNames.set(index, name);
-  }
-  for (const index of ambiguousGuilds) guildNames.delete(index);
+  const guildName = createGuildNameResolver(config, player.scenarioId, guildList?.guilds);
   view.reward = rewardInfo(reward?.rewardInfo);
   let cycleChanged = false;
   const types = config?.tables?.ChipMineCfg?.data ?? [];
@@ -81,8 +73,10 @@ export async function readSiliconOverview(client, protocol, config, player, { en
         const p = position.player, power = quantity(p.power);
         if (!integer(position.index) || !integer(p.guildIdx) || !integer(p.rewardTimes) || power === null
           || typeof p.nickname !== 'string') throw Error('占领玩家信息不完整');
+        const guild = guildName(p.guildIdx);
         return { index: position.index, displayIndex: mine.personal ? offset : position.index,
-          player: { nickname: p.nickname, power, guildIdx: p.guildIdx, guildName: p.guildIdx === 0 ? '无联盟' : guildNames.get(p.guildIdx) || null,
+          player: { nickname: p.nickname, power, guildIdx: p.guildIdx, guildName: p.guildIdx === 0 ? '无联盟' : guild.name,
+            guildDefaultName: guild.defaultName,
             rewardTimes: p.rewardTimes, fleetId: p.fleetId || '',
             relation: p.fleetId ? 'self' : ownGuild > 0 && p.guildIdx === ownGuild ? 'ally' : 'other' } };
       });
