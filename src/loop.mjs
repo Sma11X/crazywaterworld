@@ -71,8 +71,10 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { claimRewards } from './claim-rewards.mjs';
 import { claimWeekly, runLinkage, weekSchedule, readWeekOrder, runAutomaticWeekOrder } from './activities.mjs';
 import { automationTasks, dailyTaskKey, defaultFishingGoldReserve, defaultCompassSpinCount, worldTaskKey } from './automation.mjs';
+import { automationControls } from './automation-controls.mjs';
 import { activityTimeTasks, isActivityTaskAvailable, nextActivityBoundary } from './activity-availability.mjs';
 
+const automationControlLabels = new Map(automationControls.map(control => [control.key, control.label]));
 const defaultSleep = (ms, signal) => pause(ms, undefined, { signal });
 const dailyActionKeys = {
   1002: ['freeRecruit', 'ticketRecruit'], 1005: ['arena'], 1006: ['freeGold', 'paidGold'],
@@ -1141,7 +1143,8 @@ export async function runLoop(client, protocol, {
 }
 
 export function formatLoopStep(entry) {
-  const category = entry.category ?? ({ tasks: '任务', dailies: '日常', world: '海面' })[entry.phase] ?? '挂机';
+  const category = automationControlLabels.get(entry.category) ?? entry.category
+    ?? ({ tasks: '任务', dailies: '日常', world: '海面' })[entry.phase] ?? '挂机';
   const title = entry.step?.label || entry.title || entry.label;
   const action = [title, entry.note && entry.note !== title ? entry.note : null].filter(Boolean).join(' · ') || '检查任务';
   const message = category + ' · ' + action;

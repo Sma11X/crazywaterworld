@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 // 执行真实层次渲染与显隐函数，使用内存草稿检查依赖关系和错误定位。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -75,7 +76,7 @@ function fixture({ navigation = false } = {}) {
     if (!env.nodes.has(id)) env.nodes.set(id, env.el());
     return env.nodes.get(id);
   };
-  const api = new Function('env', definitions + `
+  const api = newStateFunction('env', definitions + `
     const $ = env.node, el = env.el;
     const current = 'hierarchy-fixture';
     const document = {

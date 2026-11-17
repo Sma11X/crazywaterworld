@@ -199,7 +199,7 @@ await test('多账号各自显示状态和颜色，当前账号使用snapshot并
   env.api.connectingAccounts.add('g');
   env.api.open();
   for (const [id, status, kind] of [
-    ['a', '已连接', 'done'], ['b', '已暂停 · 可自行上号', 'waiting'],
+    ['a', '已连接 · 未挂机', 'done'], ['b', '已暂停 · 可自行上号', 'waiting'],
     ['c', '异地登录 · 3 秒后重试', 'waiting'], ['d', '异地登录 · 等待恢复托管', 'waiting'],
     ['e', '正在同步生产状态', 'waiting'], ['f', '未连接', 'blocked'], ['g', '连接中…', 'waiting'],
   ]) {
@@ -208,12 +208,34 @@ await test('多账号各自显示状态和颜色，当前账号使用snapshot并
     assert.equal(env.option(id).getAttribute('aria-selected'), String(id === 'a'));
     assert.equal(env.field(id, 'check').hidden, id !== 'a');
   }
-  assert.equal(env.node('account-picker-status').textContent, '已连接');
+  assert.equal(env.node('account-picker-status').textContent, '已连接 · 未挂机');
   env.api.render('连接中…');
   assert.equal(env.node('account-picker-status').textContent, '连接中');
   assert.equal(env.field('a', 'status').textContent, '连接中…');
   assert.equal(env.calls.length, 0, '渲染和状态刷新只读，不触发账号或游戏操作');
   assert.equal(env.api.current(), 'a');
+});
+
+await test('页头和下拉选项区分挂机、空闲连接与暂停中，并保留各账号状态', async () => {
+  const env = fixture([
+    { id: 'a', title: '主号', status: { connected: true, looping: true } },
+    { id: 'b', title: '副号', status: { connected: true, looping: false } },
+  ]);
+  env.api.open();
+  for (const [status, label, kind] of [
+    [{ connected: true, looping: true }, '挂机中', 'done'],
+    [{ connected: true, looping: true, loopStopping: true }, '暂停中…', 'waiting'],
+    [{ connected: true, looping: false }, '已连接 · 未挂机', 'done'],
+    [{ state: 'CONNECTING', looping: true }, '连接中…', 'waiting'],
+    [{ connected: false, looping: true }, '挂机中 · 等待连接', 'waiting'],
+  ]) {
+    env.api.setSnapshot(status);
+    env.api.render();
+    assert.equal(env.node('account-picker-status').textContent, label === '连接中…' ? '连接中' : label);
+    assert.equal(env.field('a', 'status').textContent, label);
+    assert.equal(env.field('a', 'status').classList.contains(kind), true);
+    assert.equal(env.field('b', 'status').textContent, '已连接 · 未挂机');
+  }
 });
 
 await test('长账号标题按纯文本呈现，状态在独立字段中完整显示', async () => {
@@ -323,7 +345,7 @@ await test('轮询原位更新每项状态并保留聚焦，账号移除后聚�
   for (const [id, option] of original) assert.equal(env.option(id), option);
   assert.equal(env.node('account-picker-list').moves, moves);
   assert.equal(env.document.activeElement, original.get('b'));
-  assert.equal(env.field('b', 'status').textContent, '已连接');
+  assert.equal(env.field('b', 'status').textContent, '已连接 · 未挂机');
   assert.equal(env.field('b', 'status').classList.contains('waiting'), false);
   assert.equal(env.field('b', 'status').classList.contains('done'), true);
   env.api.setRows(env.rows.filter(row => row.id !== 'b'));

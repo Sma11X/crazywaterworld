@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useRef, useState } from "react";
+import { StrictMode, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge } from "../../badge";
 import { Button } from "../../button";
@@ -14,9 +14,19 @@ import {
 } from "../contracts/login-settings";
 import { ApiError, createAccountApi } from "../lib/api";
 import { formatGameTime } from "../lib/time";
+import { useConsoleSlice } from "../lib/use-console-slice";
 import styles from "./login-settings.module.css";
 
 type Notice = { text: string; kind: "" | "success" | "error" };
+type LoginFormState = {
+  data: LoginSettingsResponse | null;
+  draft: LoginSettingsDraft | null;
+  fields: FieldErrors;
+  notice: Notice;
+  loading: boolean;
+  saving: boolean;
+  loadAttempt: number;
+};
 
 function Field({
   id,
@@ -75,25 +85,36 @@ function LoginSettingsPage({
   accountId: string | null;
   active: boolean;
 }) {
-  const [data, setData] = useState<LoginSettingsResponse | null>(null);
-  const [draft, setDraft] = useState<LoginSettingsDraft | null>(null);
-  const [fields, setFields] = useState<FieldErrors>({});
-  const [notice, setNotice] = useState<Notice>({
-    text: accountId ? "正在载入…" : "请先选择账号",
-    kind: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const mounted = useRef(true);
+  const [
+    { data, draft, fields, notice, loading, saving, loadAttempt },
+    setField,
+  ] = useConsoleSlice<LoginFormState>(
+    `loginSettings:${accountId ?? "none"}`,
+    () => ({
+      data: null,
+      draft: null,
+      fields: {},
+      notice: { text: accountId ? "正在载入…" : "请先选择账号", kind: "" },
+      loading: false,
+      saving: false,
+      loadAttempt: 0,
+    }),
+  );
+  const setData = (value: LoginSettingsResponse | null) =>
+    setField("data", value);
+  const setDraft = (
+    value:
+      | LoginSettingsDraft
+      | null
+      | ((previous: LoginSettingsDraft | null) => LoginSettingsDraft | null),
+  ) => setField("draft", value);
+  const setFields = (value: FieldErrors) => setField("fields", value);
+  const setNotice = (value: Notice) => setField("notice", value);
+  const setLoading = (value: boolean) => setField("loading", value);
+  const setSaving = (value: boolean) => setField("saving", value);
+  const setLoadAttempt = (value: (previous: number) => number) =>
+    setField("loadAttempt", value);
   const savingLock = useRef(false);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: The explicit retry token restarts failed reads while data is still null.
   useEffect(() => {
@@ -125,6 +146,7 @@ function LoginSettingsPage({
       });
     return () => {
       controller.abort();
+      setLoading(false);
     };
   }, [accountId, active, data, loadAttempt]);
 
@@ -138,7 +160,7 @@ function LoginSettingsPage({
     setNotice({ text: "有未保存修改", kind: "" });
   }
   function reset() {
-    if (!data || savingLock.current) return;
+    if (!data || saving || savingLock.current) return;
     setDraft(toDraft(data.settings));
     setFields({});
     setNotice({
@@ -147,14 +169,14 @@ function LoginSettingsPage({
     });
   }
   function reload() {
-    if (savingLock.current) return;
+    if (saving || savingLock.current) return;
     setData(null);
     setDraft(null);
     setFields({});
     setLoadAttempt((value) => value + 1);
   }
   async function save() {
-    if (!accountId || !data || !draft || savingLock.current) return;
+    if (!accountId || !data || !draft || saving || savingLock.current) return;
     const result = validateDraft(draft);
     if (Object.keys(result.fields).length) {
       setFields(result.fields);
@@ -170,12 +192,10 @@ function LoginSettingsPage({
         result.settings,
         data.revision,
       );
-      if (!mounted.current) return;
       setData(response);
       setDraft(toDraft(response.settings));
       setNotice({ text: "设置已保存", kind: "success" });
     } catch (error) {
-      if (!mounted.current) return;
       setFields(error instanceof ApiError ? error.fields : {});
       setNotice({
         text:
@@ -186,7 +206,7 @@ function LoginSettingsPage({
       });
     } finally {
       savingLock.current = false;
-      if (mounted.current) setSaving(false);
+      setSaving(false);
     }
   }
 

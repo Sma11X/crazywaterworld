@@ -53,7 +53,7 @@ try{
   assert.match((await run(f)).reason,/活动结束/);assert.equal(f.state.writes.length,1);
  });
  await check('完整挂机循环独立调度商船，精确到开放边界唤醒，关闭后不参与',async()=>{
-  const {runLoop}=await import('../src/loop.mjs');
+  const {runLoop,formatLoopStep}=await import('../src/loop.mjs');
   for(const disable of [false,true]){
    const f=fixture(),originalNow=Date.now;let wall=f.state.now*1000;
    Date.now=()=>wall;f.advance(0);
@@ -77,6 +77,9 @@ try{
       }else stop.aborted=true;
      },onStep:row=>{reports.push(row);if(f.state.writes.length)stop.aborted=true;}});
     assert.equal(f.state.writes.length,disable?0:1);
+    const shipLogs=reports.filter(row=>row.category==='guildShip.enabled').map(formatLoopStep);
+    assert(shipLogs.length>0,'完整循环输出商船检查日志');
+    assert(shipLogs.every(message=>message.startsWith('联盟商船 · ')&&!message.includes('guildShip.enabled')));
     assert(!reports.some(row=>row.error&&!row.skipped),JSON.stringify(reports.filter(row=>row.error)));
     assert.equal(f.client.listenerCount('automationSettingsChanged'),0);
    }finally{Date.now=originalNow;}

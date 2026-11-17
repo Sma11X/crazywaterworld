@@ -423,10 +423,8 @@ $('phone-save').onclick = async () => {
     phoneSavedAccount = data.account;
     clearTimeout(phoneExpiryTimer);
     // 保存接口已切换服务端账号，客户端同步使用同一账号。
-    const index = accounts.findIndex(account => account.id === data.account.id);
-    if (index < 0) accounts.push(data.account);
-    else accounts[index] = { ...accounts[index], ...data.account };
-    if (!accounts.find(account => account.id === data.account.id)?.status?.connected) disconnected.add(data.account.id);
+    stateActions.upsertAccount({ ...accounts.find(account => account.id === data.account.id), ...data.account });
+    if (!accounts.find(account => account.id === data.account.id)?.status?.connected) stateActions.setFlag('disconnected', data.account.id, true);
     accountDetailsOwner = null;
     selectLoadedAccount(data.account.id);
     renderAccounts();

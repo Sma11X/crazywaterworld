@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import { PAGE } from '../src/page.mjs';
 import { describeAccount } from '../src/accounts.mjs';
@@ -169,7 +170,7 @@ function fixture(initial = sampleAccounts()) {
     return env.respond(route, payload);
   };
   env.makeNode = makeNode;
-  new Function('env', `
+  newStateFunction('env', `
     const $ = env.node, document = {hidden:false}, call = env.call, component = env.component;
     const Option = function(text,value) {this.text=text;this.value=value;};
     const clear = node => {node.textContent='';return node;};
@@ -195,18 +196,20 @@ function fixture(initial = sampleAccounts()) {
     const giftAccountChanged = () => {};
     const loginSettingsAccountChanged = () => {};
     const appointmentsAccountChanged = () => {};
+    const siliconAccountChanged = () => {};
     const resetWorldMap = () => {};
     const resetProductionPlan = () => {};
     let accounts=structuredClone(env.serverRows),current=env.selected,dailyAccount=current,dailyVersion=0;
     let worldMapOwner=null,productionPlanOwner=null,productionPlanBusy=false,loopAccount=current,loopVersion=0;
     ${accountScript}
     ${cardsScript}
-    snapshot=accounts.find(row=>row.id===current)?.status??{};
+    stateActions.replaceAccounts(structuredClone(env.serverRows), env.selected, { select: true });
     accountDetailsOwner=current;
     renderAccountSelect();
     env.api={renderAccounts,refreshAccountStatuses,selectLoadedAccount,setAccountStatus,
-      current:()=>current,rows:()=>accounts,snapshot:()=>snapshot,connectingAccounts,
-      replace(rows) {accounts=structuredClone(rows);snapshot=accounts.find(row=>row.id===current)?.status??{};renderAccounts();}};
+      current:()=>current,rows:()=>accounts,snapshot:()=>snapshot,
+      connectingAccounts: { has: id => connectingAccounts.has(id), add: id => stateActions.setFlag('connecting', id, true), delete: id => stateActions.setFlag('connecting', id, false) },
+      replace(rows) {stateActions.replaceAccounts(structuredClone(rows), current);renderAccounts();}};
   `)(env);
   env.card = id => env.node('accounts').children.find(card => card.accountId === id);
   env.field = (id, name) => env.card(id).querySelector('[data-account-field="' + name + '"]');
@@ -225,7 +228,7 @@ await test('每张卡片展示自己的资料、渠道和状态，默认不显�
   assert.equal(env.field(first.id, 'level').textContent, '28');
   assert.equal(env.field(first.id, 'power').textContent, '12,345');
   assert.equal(env.field(first.id, 'channel').textContent, '支付宝');
-  assert.equal(env.field(first.id, 'status').textContent, '已连接');
+  assert.equal(env.field(first.id, 'status').textContent, '已连接 · 未挂机');
   assert.equal(env.field(second.id, 'role').textContent, '星海船长');
   assert.equal(env.field(second.id, 'channel').textContent, '益世界 APP');
   assert.match(env.field(second.id, 'status').textContent, /已暂停/);
@@ -266,19 +269,38 @@ await test('状态标签紧跟区服且按账号原位更新，不重复创建',
     assert.deepEqual(world.parentNode.children, [world, status]);
     assert.equal(status.classList.contains('chip'), true);
   }
-  assert.equal(firstStatus.textContent, '已连接');
+  assert.equal(firstStatus.textContent, '已连接 · 未挂机');
   assert.match(secondStatus.textContent, /已暂停/);
   env.api.setAccountStatus('fixture-private-a', { connected: false });
   env.api.setAccountStatus('fixture-private-b', { connected: true });
   env.api.renderAccounts();
   assert.equal(firstStatus.textContent, '未连接');
-  assert.equal(secondStatus.textContent, '已连接');
+  assert.equal(secondStatus.textContent, '已连接 · 未挂机');
   assert.equal(firstWorld.textContent, '海港10服');
   assert.equal(secondWorld.textContent, '海港2服');
   assert.equal(env.field('fixture-private-a', 'status'), firstStatus);
   assert.equal(env.field('fixture-private-b', 'status'), secondStatus);
   assert.deepEqual(firstWorld.parentNode.children, [firstWorld, firstStatus]);
   assert.deepEqual(secondWorld.parentNode.children, [secondWorld, secondStatus]);
+});
+
+await test('挂机标签与按钮一致，连接、重连和暂停中的颜色与页头共用规则', async () => {
+  const env = fixture();
+  for (const [status, label, button, kind] of [
+    [{ connected: true, looping: true }, '挂机中', '暂停挂机', 'done'],
+    [{ connected: true, looping: false }, '已连接 · 未挂机', '开始挂机', 'done'],
+    [{ connected: true, looping: true, loopStopping: true }, '暂停中…', '暂停中…', 'waiting'],
+    [{ reconnecting: true }, '异地登录 · 等待重连', '暂停挂机', 'waiting'],
+    [{ state: 'CONNECTING' }, '连接中…', '开始挂机', 'waiting'],
+    [{ connected: false, looping: true }, '挂机中 · 等待连接', '暂停挂机', 'waiting'],
+  ]) {
+    env.api.replace(sampleAccounts().map(account => ({ ...account, status })));
+    for (const { id } of sampleAccounts()) {
+      assert.equal(env.field(id, 'status').textContent, label);
+      assert.equal(env.field(id, 'status').classList.contains(kind), true);
+      assert.equal(env.button(id, 'loop').textContent, button);
+    }
+  }
 });
 
 await test('空态和历史缺省资料可显示，删除最后一个账号后恢复空态', async () => {
@@ -317,7 +339,7 @@ await test('状态及角色资料轮询原位更新卡片并保留打开的菜�
   assert.equal(env.field(second.accountId,'world').textContent,'海灯3服');
   assert.equal(env.field(second.accountId,'level').textContent,'50');
   assert.equal(env.field(second.accountId,'power').textContent,'45,678');
-  assert.equal(env.field(second.accountId,'status').textContent,'已连接');
+  assert.equal(env.field(second.accountId,'status').textContent,'已连接 · 未挂机');
   assert.deepEqual(env.calls.map(call=>call.route),['/api/accounts']);
   env.api.replace([...env.api.rows()].reverse());
   assert.equal(env.node('accounts').children[0],second);

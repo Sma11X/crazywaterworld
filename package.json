@@ -42,13 +42,14 @@
     "test:alipay": "node tools/selftest-alipay-browser.mjs && node tools/selftest-alipay-login.mjs && node tools/selftest-alipay-login-http.mjs && node tools/selftest-alipay-login-ui.mjs",
     "test:lineups": "node tools/selftest-saved-lineups.mjs && node tools/selftest-lineup-runtime.mjs && node tools/selftest-lineup-challenges.mjs && node tools/selftest-lineup-presets-http.mjs && node tools/selftest-lineup-editor-ui.mjs && node tools/selftest-lineup-lifecycle-http.mjs",
     "test:lineups:browser": "npm run build:ui && node tools/selftest-lineup-editor-browser.mjs",
-    "build:server-ui": "esbuild src/ui/console.tsx --bundle --platform=node --format=esm --packages=external --outfile=src/ui/dist/console.mjs && tailwindcss -i src/ui/theme.css -o src/ui/dist/theme.css --minify",
+    "build:server-ui": "esbuild src/ui/console-store.mjs --bundle --platform=browser --format=iife --global-name=CWConsoleState --outfile=src/ui/dist/console-store.js && esbuild src/ui/console.tsx --bundle --platform=node --format=esm --packages=external --outfile=src/ui/dist/console.mjs && tailwindcss -i src/ui/theme.css -o src/ui/dist/theme.css --minify",
     "build:client": "vite build",
     "typecheck:ledger": "tsc -p tsconfig.ledger.json",
     "typecheck:ui": "tsc -p tsconfig.ui.json",
     "check:ui": "biome check .",
     "format:ui": "biome check --write .",
-    "test:client": "node tools/selftest-react-client.mjs",
+    "test:state": "node tools/selftest-console-state.mjs",
+    "test:client": "npm run test:state && node tools/selftest-react-client.mjs",
     "test:client:browser": "npm run build:ui && node tools/selftest-react-client-browser.mjs"
   },
   "keywords": [
@@ -75,7 +76,8 @@
     "protobufjs": "^7.6.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",

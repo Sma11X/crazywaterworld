@@ -297,10 +297,8 @@ $('alipay-save').onclick = async () => {
     ++alipayGeneration;
     clearTimeout(alipayTimer);
     alipayState = { phase: 'saved', account: data.account, selectedRole: data.selectedRole || choice };
-    const index = accounts.findIndex(account => account.id === data.account.id);
-    if (index < 0) accounts.push(data.account);
-    else accounts[index] = { ...accounts[index], ...data.account };
-    if (!data.account.status?.connected) disconnected.add(data.account.id);
+    stateActions.upsertAccount({ ...accounts.find(account => account.id === data.account.id), ...data.account });
+    if (!data.account.status?.connected) stateActions.setFlag('disconnected', data.account.id, true);
     accountDetailsOwner = null;
     selectLoadedAccount(data.account.id);
     renderAccounts();

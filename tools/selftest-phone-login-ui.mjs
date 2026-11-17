@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 // 执行真实登录界面脚本，使用可控时钟和模拟请求覆盖交互及失败恢复。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -134,7 +135,7 @@ function fixture({ detailOwner = 'previous-account', savedChannel = null, storag
     env.disconnectedAtSelection.push(env.disconnected.has(next));
   };
   env.render = () => env.renderCount++;
-  new Function('env', `
+  newStateFunction('env', `
     'use strict';
     const $ = env.node, el = env.element, clear = env.clear, call = env.call;
     const localStorage = env.storage;
@@ -144,7 +145,12 @@ function fixture({ detailOwner = 'previous-account', savedChannel = null, storag
     const clearTimeout = env.clearTimer, clearInterval = env.clearTimer;
     const openConfirm = env.confirm, configMayChangeAccount = env.mayChange;
     const loadAccounts = env.loadAccounts, renderAccounts = env.render;
-    const accounts = env.accounts, disconnected = env.disconnected;
+    let accounts = env.accounts;
+    stateActions.replaceAccounts(accounts, accounts[0]?.id);
+    consoleStore.subscribe(state => {
+      accounts = env.accounts = CWConsoleState.selectAccounts(state);
+      env.disconnected = state.disconnected;
+    });
     const accountAddChanged = env.wizard ? (...args) => env.wizardEvents.push(args) : undefined;
     let snapshot = {};
     let accountDetailsOwner = env.detailOwner;
@@ -619,7 +625,7 @@ await test('保存成功后列表刷新失败仍保持成功和当前账号，�
   assert.deepEqual(f.env.disconnectedAtSelection, [false], '保存已连接账号保持已有连接');
   assert.equal(f.env.accounts.length, 2);
   assert.equal(f.env.accounts[1].title, '保存的APP账号');
-  assert.equal(f.env.accounts[1].status, status);
+  assert.deepEqual(f.env.accounts[1].status, status);
   assert.equal(f.node('phone-success').hidden, false);
   assert.match(f.node('phone-success-next').textContent, /所选角色已连接/);
   assert.equal(f.node('phone-preview').hidden, true);
@@ -685,7 +691,7 @@ await test('同一APP切换角色采用保存后的断开状态并清除旧角�
   };
   await f.click('phone-save');
   assert.deepEqual(f.calls('/save')[0].payload, { confirm: true, id: 'preview-1', choiceId: 'choice-2' });
-  assert.equal(f.env.accounts[1].status, savedStatus);
+  assert.deepEqual(f.env.accounts[1].status, savedStatus);
   assert.equal(f.env.accounts[1].status.connected, false);
   assert.equal(previousStatus.connected, true);
   assert.deepEqual(f.env.selections, ['saved-account']);

@@ -68,11 +68,52 @@ try {
     const cards = page.locator('#accounts .account-card');
     const first = cards.nth(0).locator('[data-account-action="loop"]');
     const second = cards.nth(1).locator('[data-account-action="loop"]');
+    async function checkStatus(index, expected) {
+      await page.locator('#account-picker-trigger').click();
+      await page.waitForFunction(({ index, expected }) => {
+        const card = document.querySelectorAll('#accounts .account-card')[index];
+        const option = document.querySelectorAll('#account-picker-list [role="option"]')[index];
+        return card?.querySelector('[data-account-field="status"]').textContent === expected
+          && option?.querySelector('[data-picker-field="status"]').textContent === expected
+          && (index !== 0 || document.querySelector('#account-picker-status').textContent === expected);
+      }, { index, expected });
+      await page.locator('#account-picker-trigger').click();
+    }
     await second.filter({ hasText: '开始挂机' }).waitFor();
     assert.equal(loadStore().activeId, 'first');
     assert.equal(app.sessions.get('first')?.loop.running ?? false, false);
     assert.equal(app.sessions.get('second')?.loop.running ?? false, false);
     if (width === 1280) assert.equal(mailReads, 0, '打开页面读取资料不会执行挂机任务');
+
+    // No render function is called: a store update must reach all DOM consumers.
+    await page.locator('#account-picker-trigger').click();
+    const storeViews = await page.evaluate(async () => {
+      const { actions, accountsById } = window.cwConsoleStore.getState();
+      const original = accountsById.first.status;
+      const views = [];
+      try {
+        for (const looping of [true, false]) {
+          actions.patchStatus('first', { connected: true, looping, loopStopping: false });
+          // The DOM subscription paints in a microtask. Inspect before the next
+          // server poll can correctly replace this synthetic test status.
+          await Promise.resolve();
+          views.push([
+            document.querySelector('#account-picker-status').textContent,
+            document.querySelector('#account-picker-list [data-picker-field="status"]').textContent,
+            document.querySelector('#accounts [data-account-field="status"]').textContent,
+            document.querySelector('#loop-toggle').textContent,
+          ]);
+        }
+      } finally {
+        actions.setStatus('first', original);
+      }
+      return views;
+    });
+    assert.deepEqual(storeViews, [
+      ['挂机中', '挂机中', '挂机中', '暂停挂机'],
+      ['已连接 · 未挂机', '已连接 · 未挂机', '已连接 · 未挂机', '开始挂机'],
+    ]);
+    await page.locator('#account-picker-trigger').click();
 
     let release;
     const gate = new Promise(resolve => { release = resolve; });
@@ -95,6 +136,8 @@ try {
     assert.equal(loadStore().accounts[1].automation.autoStart, true);
     assert.match(await page.locator('#account-picker-title').textContent(), /当前验收账号/);
     assert.equal(await page.locator('#loop-toggle').textContent(), '开始挂机');
+    await checkStatus(0, '已连接 · 未挂机');
+    await checkStatus(1, '挂机中');
     await page.unroute('**/api/accounts/pause?account=second');
 
     await cards.nth(0).scrollIntoViewIfNeeded();
@@ -118,12 +161,20 @@ try {
     assert.equal(app.sessions.get('second').loop.running, false);
     assert.equal(app.sessions.get('second').client.connected, true, '暂停挂机保留连接');
     assert.equal(loadStore().accounts[1].automation.autoStart, false);
+    await checkStatus(1, '已连接 · 未挂机');
     await first.click();
     await first.filter({ hasText: '暂停挂机' }).waitFor();
     assert.equal(await page.locator('#loop-toggle').textContent(), '暂停挂机');
+    await checkStatus(0, '挂机中');
+    if (width === 1280) {
+      await page.locator('#account-picker-trigger').click();
+      await page.screenshot({ path: path.join(output, 'account-status-consistency.png'), fullPage: true, animations: 'disabled' });
+      await page.locator('#account-picker-trigger').click();
+    }
     await first.click();
     await first.filter({ hasText: '开始挂机' }).waitFor();
     assert.equal(loadStore().accounts[0].automation.autoStart, false);
+    await checkStatus(0, '已连接 · 未挂机');
     await page.reload();
     await page.locator('#tabs [data-tab="account"]').click();
     await first.filter({ hasText: '开始挂机' }).waitFor();

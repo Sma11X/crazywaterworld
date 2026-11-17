@@ -27,6 +27,28 @@ let activityAutomationData = null, activityAutomationOwner = null, activityAutom
 let activityAutomationStatus = '';
 const savingActivityAutomation = new Set();
 
+bindConsoleSlice('activities', { activitiesData, activitiesAccount, activitiesReceivedAt, selectedActivity, merchantSettingsData, merchantSettingsOwner, merchantSettingsStatus, heroRaidSettingsData, heroRaidSettingsOwner, heroRaidSettingsStatus, seaMerchantSettingsData, seaMerchantSettingsOwner, seaMerchantSettingsStatus, guildShipSettingsData, guildShipSettingsOwner, guildShipSettingsStatus, activityAutomationData, activityAutomationOwner, activityAutomationStatus }, state => {
+  activitiesData = state.activitiesData;
+  activitiesAccount = state.activitiesAccount;
+  activitiesReceivedAt = state.activitiesReceivedAt;
+  selectedActivity = state.selectedActivity;
+  merchantSettingsData = state.merchantSettingsData;
+  merchantSettingsOwner = state.merchantSettingsOwner;
+  merchantSettingsStatus = state.merchantSettingsStatus;
+  heroRaidSettingsData = state.heroRaidSettingsData;
+  heroRaidSettingsOwner = state.heroRaidSettingsOwner;
+  heroRaidSettingsStatus = state.heroRaidSettingsStatus;
+  seaMerchantSettingsData = state.seaMerchantSettingsData;
+  seaMerchantSettingsOwner = state.seaMerchantSettingsOwner;
+  seaMerchantSettingsStatus = state.seaMerchantSettingsStatus;
+  guildShipSettingsData = state.guildShipSettingsData;
+  guildShipSettingsOwner = state.guildShipSettingsOwner;
+  guildShipSettingsStatus = state.guildShipSettingsStatus;
+  activityAutomationData = state.activityAutomationData;
+  activityAutomationOwner = state.activityAutomationOwner;
+  activityAutomationStatus = state.activityAutomationStatus;
+});
+
 function isGuildShipActivity(row) {
   return (row.sourceId ?? row.id) === 'guildShip';
 }
@@ -126,7 +148,7 @@ function renderActivityTabs() {
   const rows = activityRows(), tabs = clear($('activity-tabs'));
   activityGroupSignature = rows.map(row => row.id + ':' + activityLifecycle(row)).join('|');
   const visible = rows.filter(row => activityLifecycle(row) === 'active' || activityGroupOpen(activityLifecycle(row)));
-  if (!visible.some(row => row.id === selectedActivity)) selectedActivity = visible[0]?.id;
+  if (!visible.some(row => row.id === selectedActivity)) setConsoleValue('activities', 'selectedActivity', visible[0]?.id);
   activitySelections.set(current, selectedActivity);
   const active = el('div', 'activity-current-tabs');
   tabs.appendChild(active);
@@ -209,7 +231,7 @@ function selectActivity(id, focus = false) {
     expanded.add(state);
     expandedActivityGroups.set(current, expanded);
   }
-  selectedActivity = id;
+  setConsoleValue('activities', 'selectedActivity', id);
   activitySelections.set(current, id);
   ++discoveryVersion;
   renderActivityTabs();
@@ -375,7 +397,7 @@ function spinCountInput(account) {
     if (count === saved) return;
     try {
       await call('/api/loop/compass-spin-count?account=' + encodeURIComponent(account), { method: 'POST', body: JSON.stringify({ compassSpinCount: count }) });
-      if (activitiesAccount === account && activitiesData) activitiesData.compassSpinCount = count;
+      if (activitiesAccount === account && activitiesData) mutateConsoleValue('activities', 'activitiesData', nextStateValue => (nextStateValue.compassSpinCount = count));
     } catch (error) {
       input.value = saved;
       reportError(error, '设置罗盘抽奖券用量');
@@ -433,11 +455,11 @@ async function refreshActivityAutomation(account) {
   try {
     const data = await call('/api/activities/settings?account=' + encodeURIComponent(account));
     if (account !== current || activityAutomationOwner !== account || version !== activityAutomationVersion) return;
-    activityAutomationData = data;
-    activityAutomationStatus = '';
+    setConsoleValue('activities', 'activityAutomationData', data);
+    setConsoleValue('activities', 'activityAutomationStatus', '');
   } catch {
     if (account !== current || activityAutomationOwner !== account || version !== activityAutomationVersion) return;
-    activityAutomationStatus = '活动自动挂机配置读取失败，请重试。';
+    setConsoleValue('activities', 'activityAutomationStatus', '活动自动挂机配置读取失败，请重试。');
   }
 }
 
@@ -446,7 +468,7 @@ async function saveActivityAutomation(key, value) {
   if (!account || activityAutomationOwner !== account || !activityAutomationData || savingActivityAutomation.has(account)) return;
   const version = ++activityAutomationVersion;
   savingActivityAutomation.add(account);
-  activityAutomationStatus = '';
+  setConsoleValue('activities', 'activityAutomationStatus', '');
   renderActivityDetail();
   let failure = null;
   try {
@@ -458,7 +480,7 @@ async function saveActivityAutomation(key, value) {
       method: 'POST', body: JSON.stringify({ key, value, revision: latest.revision, baseRevision: latest.baseRevision, confirm: true }),
     });
     if (account === current && activityAutomationOwner === account && version === activityAutomationVersion) {
-      activityAutomationData = saved;
+      setConsoleValue('activities', 'activityAutomationData', saved);
       loopSettingsRevision = saved.revision;
     }
   } catch (error) {
@@ -469,7 +491,7 @@ async function saveActivityAutomation(key, value) {
     if (account === current && activityAutomationOwner === account) {
       await refreshActivityAutomation(account);
       if (account === current && activityAutomationOwner === account) {
-        if (failure) activityAutomationStatus = failure.message;
+        if (failure) setConsoleValue('activities', 'activityAutomationStatus', failure.message);
         renderActivityTabs();
       }
     }
@@ -515,11 +537,11 @@ async function refreshMerchantSettings(account) {
   try {
     const data = await call('/api/week-order/settings?account=' + encodeURIComponent(account));
     if (account !== current || merchantSettingsOwner !== account || version !== merchantSettingsVersion) return;
-    merchantSettingsData = data;
-    merchantSettingsStatus = '';
+    setConsoleValue('activities', 'merchantSettingsData', data);
+    setConsoleValue('activities', 'merchantSettingsStatus', '');
   } catch (error) {
     if (account !== current || merchantSettingsOwner !== account || version !== merchantSettingsVersion) return;
-    merchantSettingsStatus = '商人活动配置读取失败，请刷新重试。';
+    setConsoleValue('activities', 'merchantSettingsStatus', '商人活动配置读取失败，请刷新重试。');
   }
 }
 
@@ -528,7 +550,7 @@ async function saveMerchantSetting(key, enabled) {
   if (!account || merchantSettingsOwner !== account || !merchantSettingsData || savingMerchantSettings.has(account)) return;
   const version = ++merchantSettingsVersion;
   savingMerchantSettings.add(account);
-  merchantSettingsStatus = '';
+  setConsoleValue('activities', 'merchantSettingsStatus', '');
   renderActivityDetail();
   let failure = null;
   try {
@@ -540,7 +562,7 @@ async function saveMerchantSetting(key, enabled) {
       method: 'POST', body: JSON.stringify({ key, enabled, revision: latest.revision, baseRevision: latest.baseRevision, confirm: true }),
     });
     if (account === current && merchantSettingsOwner === account && version === merchantSettingsVersion) {
-      merchantSettingsData = saved;
+      setConsoleValue('activities', 'merchantSettingsData', saved);
       loopSettingsRevision = saved.revision;
     }
   } catch (error) {
@@ -551,7 +573,7 @@ async function saveMerchantSetting(key, enabled) {
     if (account === current && merchantSettingsOwner === account) {
       await refreshMerchantSettings(account);
       if (account === current && merchantSettingsOwner === account) {
-        if (failure) merchantSettingsStatus = failure.message;
+        if (failure) setConsoleValue('activities', 'merchantSettingsStatus', failure.message);
         renderActivityTabs();
       }
     }
@@ -624,11 +646,11 @@ async function refreshHeroRaidSettings(account) {
   try {
     const data = await call('/api/hero-raid/settings?account=' + encodeURIComponent(account));
     if (account !== current || heroRaidSettingsOwner !== account || version !== heroRaidSettingsVersion) return;
-    heroRaidSettingsData = data;
-    heroRaidSettingsStatus = '';
+    setConsoleValue('activities', 'heroRaidSettingsData', data);
+    setConsoleValue('activities', 'heroRaidSettingsStatus', '');
   } catch {
     if (account !== current || heroRaidSettingsOwner !== account || version !== heroRaidSettingsVersion) return;
-    heroRaidSettingsStatus = '超凡英雄活动配置读取失败，请刷新重试。';
+    setConsoleValue('activities', 'heroRaidSettingsStatus', '超凡英雄活动配置读取失败，请刷新重试。');
   }
 }
 
@@ -637,7 +659,7 @@ async function saveHeroRaidSetting(key, value) {
   if (!account || heroRaidSettingsOwner !== account || !heroRaidSettingsData || savingHeroRaidSettings.has(account)) return;
   const version = ++heroRaidSettingsVersion;
   savingHeroRaidSettings.add(account);
-  heroRaidSettingsStatus = '';
+  setConsoleValue('activities', 'heroRaidSettingsStatus', '');
   renderActivityDetail();
   let failure = null;
   try {
@@ -649,7 +671,7 @@ async function saveHeroRaidSetting(key, value) {
       method: 'POST', body: JSON.stringify({ key: 'heroRaid.' + key, value, revision: latest.revision, baseRevision: latest.baseRevision, confirm: true }),
     });
     if (account === current && heroRaidSettingsOwner === account && version === heroRaidSettingsVersion) {
-      heroRaidSettingsData = saved;
+      setConsoleValue('activities', 'heroRaidSettingsData', saved);
       loopSettingsRevision = saved.revision;
     }
   } catch (error) {
@@ -660,7 +682,7 @@ async function saveHeroRaidSetting(key, value) {
     if (account === current && heroRaidSettingsOwner === account) {
       await refreshHeroRaidSettings(account);
       if (account === current && heroRaidSettingsOwner === account) {
-        if (failure) heroRaidSettingsStatus = failure.message;
+        if (failure) setConsoleValue('activities', 'heroRaidSettingsStatus', failure.message);
         renderActivityTabs();
       }
     }
@@ -781,11 +803,11 @@ async function refreshSeaMerchantSettings(account) {
   try {
     const data = await call('/api/merchant/settings?account=' + encodeURIComponent(account));
     if (account !== current || seaMerchantSettingsOwner !== account || version !== seaMerchantSettingsVersion) return;
-    seaMerchantSettingsData = data;
-    seaMerchantSettingsStatus = '';
+    setConsoleValue('activities', 'seaMerchantSettingsData', data);
+    setConsoleValue('activities', 'seaMerchantSettingsStatus', '');
   } catch {
     if (account !== current || seaMerchantSettingsOwner !== account || version !== seaMerchantSettingsVersion) return;
-    seaMerchantSettingsStatus = '海商王配置读取失败，请刷新重试。';
+    setConsoleValue('activities', 'seaMerchantSettingsStatus', '海商王配置读取失败，请刷新重试。');
   }
 }
 
@@ -794,7 +816,7 @@ async function saveSeaMerchantSetting(key, value) {
   if (!account || seaMerchantSettingsOwner !== account || !seaMerchantSettingsData || savingSeaMerchantSettings.has(account)) return;
   const version = ++seaMerchantSettingsVersion;
   savingSeaMerchantSettings.add(account);
-  seaMerchantSettingsStatus = '';
+  setConsoleValue('activities', 'seaMerchantSettingsStatus', '');
   renderActivityDetail();
   let failure = null;
   try {
@@ -806,7 +828,7 @@ async function saveSeaMerchantSetting(key, value) {
       method: 'POST', body: JSON.stringify({ key, value, revision: latest.revision, baseRevision: latest.baseRevision, confirm: true }),
     });
     if (account === current && seaMerchantSettingsOwner === account && version === seaMerchantSettingsVersion) {
-      seaMerchantSettingsData = saved;
+      setConsoleValue('activities', 'seaMerchantSettingsData', saved);
       loopSettingsRevision = saved.revision;
     }
   } catch (error) {
@@ -817,7 +839,7 @@ async function saveSeaMerchantSetting(key, value) {
     if (account === current && seaMerchantSettingsOwner === account) {
       await refreshSeaMerchantSettings(account);
       if (account === current && seaMerchantSettingsOwner === account) {
-        if (failure) seaMerchantSettingsStatus = failure.message;
+        if (failure) setConsoleValue('activities', 'seaMerchantSettingsStatus', failure.message);
         renderActivityTabs();
       }
     }
@@ -830,11 +852,11 @@ async function refreshGuildShipSettings(account) {
   try {
     const data = await call('/api/guild-ship/settings?account=' + encodeURIComponent(account));
     if (account !== current || guildShipSettingsOwner !== account || version !== guildShipSettingsVersion) return;
-    guildShipSettingsData = data;
-    guildShipSettingsStatus = '';
+    setConsoleValue('activities', 'guildShipSettingsData', data);
+    setConsoleValue('activities', 'guildShipSettingsStatus', '');
   } catch {
     if (account !== current || guildShipSettingsOwner !== account || version !== guildShipSettingsVersion) return;
-    guildShipSettingsStatus = '联盟商船配置读取失败，请刷新重试。';
+    setConsoleValue('activities', 'guildShipSettingsStatus', '联盟商船配置读取失败，请刷新重试。');
   }
 }
 
@@ -843,7 +865,7 @@ async function saveGuildShipSetting(key, value) {
   if (!account || guildShipSettingsOwner !== account || !guildShipSettingsData || savingGuildShipSettings.has(account)) return;
   const version = ++guildShipSettingsVersion;
   savingGuildShipSettings.add(account);
-  guildShipSettingsStatus = '';
+  setConsoleValue('activities', 'guildShipSettingsStatus', '');
   renderActivityDetail();
   let failure = null;
   try {
@@ -855,7 +877,7 @@ async function saveGuildShipSetting(key, value) {
       method: 'POST', body: JSON.stringify({ key, value, revision: latest.revision, baseRevision: latest.baseRevision, confirm: true }),
     });
     if (account === current && guildShipSettingsOwner === account && version === guildShipSettingsVersion) {
-      guildShipSettingsData = saved;
+      setConsoleValue('activities', 'guildShipSettingsData', saved);
       loopSettingsRevision = saved.revision;
     }
   } catch (error) {
@@ -866,7 +888,7 @@ async function saveGuildShipSetting(key, value) {
     if (account === current && guildShipSettingsOwner === account) {
       await refreshGuildShipSettings(account);
       if (account === current && guildShipSettingsOwner === account) {
-        if (failure) guildShipSettingsStatus = failure.message;
+        if (failure) setConsoleValue('activities', 'guildShipSettingsStatus', failure.message);
         renderActivityTabs();
       }
     }
@@ -925,31 +947,31 @@ async function refreshActivities() {
   ++discoveryVersion;
   const changed = activitiesAccount !== account;
   if (changed) {
-    activitiesAccount = account;
-    activitiesData = null;
-    selectedActivity = activitySelections.get(account) || null;
+    setConsoleValue('activities', 'activitiesAccount', account);
+    setConsoleValue('activities', 'activitiesData', null);
+    setConsoleValue('activities', 'selectedActivity', activitySelections.get(account) || null);
     clear($('activity-tabs'));
     $('activity-panel').hidden = true;
     for (const id of ['activities-list', 'activities-order', 'pirate-board-view']) clear($(id));
-    merchantSettingsOwner = account;
-    merchantSettingsData = null;
-    merchantSettingsStatus = '';
+    setConsoleValue('activities', 'merchantSettingsOwner', account);
+    setConsoleValue('activities', 'merchantSettingsData', null);
+    setConsoleValue('activities', 'merchantSettingsStatus', '');
     ++merchantSettingsVersion;
-    heroRaidSettingsOwner = account;
-    heroRaidSettingsData = null;
-    heroRaidSettingsStatus = '';
+    setConsoleValue('activities', 'heroRaidSettingsOwner', account);
+    setConsoleValue('activities', 'heroRaidSettingsData', null);
+    setConsoleValue('activities', 'heroRaidSettingsStatus', '');
     ++heroRaidSettingsVersion;
-    seaMerchantSettingsOwner = account;
-    seaMerchantSettingsData = null;
-    seaMerchantSettingsStatus = '';
+    setConsoleValue('activities', 'seaMerchantSettingsOwner', account);
+    setConsoleValue('activities', 'seaMerchantSettingsData', null);
+    setConsoleValue('activities', 'seaMerchantSettingsStatus', '');
     ++seaMerchantSettingsVersion;
-    guildShipSettingsOwner = account;
-    guildShipSettingsData = null;
-    guildShipSettingsStatus = '';
+    setConsoleValue('activities', 'guildShipSettingsOwner', account);
+    setConsoleValue('activities', 'guildShipSettingsData', null);
+    setConsoleValue('activities', 'guildShipSettingsStatus', '');
     ++guildShipSettingsVersion;
-    activityAutomationOwner = account;
-    activityAutomationData = null;
-    activityAutomationStatus = '';
+    setConsoleValue('activities', 'activityAutomationOwner', account);
+    setConsoleValue('activities', 'activityAutomationData', null);
+    setConsoleValue('activities', 'activityAutomationStatus', '');
     ++activityAutomationVersion;
   }
   if ($('tab-activities').classList.contains('hidden')) return;
@@ -958,13 +980,13 @@ async function refreshActivities() {
   if (version !== activitiesVersion || account !== current) return;
   const unavailable = !account || snapshot.connected !== true || snapshot.paused || disconnected.has(account);
   if (unavailable) {
-    activitiesData = null;
+    setConsoleValue('activities', 'activitiesData', null);
     if (account) {
       try {
         const data = await call('/api/activities/catalog?account=' + encodeURIComponent(account));
         if (version !== activitiesVersion || account !== current) return;
-        activitiesData = data;
-        activitiesReceivedAt = Date.now();
+        setConsoleValue('activities', 'activitiesData', data);
+        setConsoleValue('activities', 'activitiesReceivedAt', Date.now());
       } catch {
         if (version !== activitiesVersion || account !== current) return;
       }
@@ -984,8 +1006,8 @@ async function refreshActivities() {
       const local = activityTaskEdits.get(account + ':' + task.key);
       if (local && (local.pending || local.version >= version)) task.enabled = local.enabled;
     }
-    activitiesData = data;
-    activitiesReceivedAt = Date.now();
+    setConsoleValue('activities', 'activitiesData', data);
+    setConsoleValue('activities', 'activitiesReceivedAt', Date.now());
     status.textContent = [data.catalogError, ...(data.notes || [])].filter(Boolean).join(' ')
       || (data.activities.length ? '' : '当前没有已下发的限时或周期活动');
     renderActivityTabs();
@@ -997,12 +1019,12 @@ async function refreshActivities() {
     }, Math.min(2147483647, Math.max(1, Math.ceil((Math.min(...boundaries) - activityNow()) * 1000))));
   } catch {
     if (version !== activitiesVersion || account !== current) return;
-    activitiesData = null;
+    setConsoleValue('activities', 'activitiesData', null);
     try {
       const data = await call('/api/activities/catalog?account=' + encodeURIComponent(account));
       if (version !== activitiesVersion || account !== current) return;
-      activitiesData = data;
-      activitiesReceivedAt = Date.now();
+      setConsoleValue('activities', 'activitiesData', data);
+      setConsoleValue('activities', 'activitiesReceivedAt', Date.now());
     } catch {
       if (version !== activitiesVersion || account !== current) return;
     }

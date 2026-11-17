@@ -1,15 +1,17 @@
+import { getConsoleStore } from "./lib/console-store";
 import type { LoginSettingsMount } from "./pages/login-settings";
 
 const host = document.getElementById("login-settings-root");
 const section = document.getElementById("tab-login-settings");
 
 if (host && section) {
+  const store = getConsoleStore();
   let mounted: LoginSettingsMount | undefined;
   let loading = false;
   let disposed = false;
   const active = () =>
-    !section.classList.contains("hidden") && !document.hidden;
-  const account = () => host.dataset.account || null;
+    store.getState().view.page === "login-settings" && !document.hidden;
+  const account = () => store.getState().currentAccountId;
 
   async function update() {
     if (disposed) return;
@@ -42,19 +44,18 @@ if (host && section) {
     }
   }
 
-  const observer = new MutationObserver(() => {
-    void update();
+  const unsubscribe = store.subscribe((state, previous) => {
+    if (
+      state.currentAccountId !== previous.currentAccountId ||
+      state.view.page !== previous.view.page
+    )
+      void update();
   });
-  observer.observe(host, {
-    attributes: true,
-    attributeFilter: ["data-account"],
-  });
-  observer.observe(section, { attributes: true, attributeFilter: ["class"] });
   document.addEventListener("visibilitychange", update);
   window.addEventListener("pagehide", (event) => {
     if (event.persisted) return;
     disposed = true;
-    observer.disconnect();
+    unsubscribe();
     document.removeEventListener("visibilitychange", update);
     mounted?.unmount();
   });

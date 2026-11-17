@@ -118,7 +118,7 @@ npm start
 
 ## 项目文档
 
-- React 19、Tailwind v4、CSS Modules、Biome 与 Day.js 的接入边界及后续迁移规则。[前端架构与迁移](docs/frontend-architecture.md)
+- React 19、Zustand 共享状态、Tailwind v4、CSS Modules、Biome 与 Day.js 的接入边界及后续迁移规则。[前端架构与迁移](docs/frontend-architecture.md)
 
 - 安装后的操作、玩法细则、预算、日志和排查说明。[控制台使用指南](docs/console-guide.md)
 - 按日期倒序记录功能和修复。[更新日志](CHANGELOG.md)

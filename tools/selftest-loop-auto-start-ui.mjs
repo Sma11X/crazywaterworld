@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import { PAGE } from '../src/page.mjs';
 
@@ -42,7 +43,7 @@ function fixture() {
     return nodes.get(id);
   };
   const view = seconds => ({ running: false, rounds: 0, everyMs: seconds * 1000, completed: 0, controls: [], settingsRevision: 1 });
-  const env = { node, calls: [], errors: [], states: { a: view(60), b: view(90) }, flushes: 0 };
+  const env = { node, calls: [], errors: [], states: { a: view(60), b: view(90) }, flushes: 0, statusRenders: [] };
   env.flush = async () => { env.flushes++; return env.onFlush ? env.onFlush() : true; };
   env.call = async (account, route, options) => {
     const payload = options?.body ? JSON.parse(options.body) : null;
@@ -58,9 +59,11 @@ function fixture() {
     env.states[account].settingsRevision++;
     return structuredClone(env.states[account]);
   };
-  const api = new Function('env', `
-    let current = 'a', loopAccount = null, loopVersion = 0, loopFieldDefaults = null, loopSettingsRevision = null;
+  const api = newStateFunction('env', `
+    let current = 'a', loopAccount = null, loopVersion = 0, loopFieldDefaults = null, loopSettingsRevision = null, accountStatusRevision = 0;
     let overviewLoopOwner = null, overviewLoopData = null, overviewRenderKey = '', snapshot = {};
+    stateActions.replaceAccounts([{ id: 'a', status: {} }, { id: 'b', status: {} }], 'a');
+    consoleStore.subscribe(state => { snapshot = CWConsoleState.selectCurrentStatus(state); });
     const savingTasks = new Set(), loopIntervalSaves = new Map(), taskInputs = [], pirateFailureOptions = new Map(), hostingActions = new Set(), connectingAccounts = new Set();
     const $ = env.node, document = { hidden: false }, configFlush = env.flush;
     const call = (route, options) => env.call(current, route, options);
@@ -68,11 +71,14 @@ function fixture() {
     const renderAutomationOverview = data => { overviewLoopOwner = current; overviewLoopData = data; };
     const renderPirateAdvance = () => {}, filterIdleControls = () => {}, clear = () => {};
     const configIntervalSaved = () => {};
+    const paintConnection = () => env.statusRenders.push(['picker', structuredClone(snapshot)]);
+    const renderAccounts = () => env.statusRenders.push(['cards', structuredClone(snapshot)]);
     ${source}
     return {
       load: refreshLoop, render: renderLoop, save: saveLoopInterval,
-      change(account) { current = account; snapshot = {}; return refreshLoop(); },
+      change(account) { current = account; stateActions.selectAccount(account); return refreshLoop(); },
       pending: () => loopIntervalSaves.size,
+      revision: () => accountStatusRevision,
     };
   `)(env);
   return { ...api, env, node, posts: () => env.calls.filter(row => row.payload) };
@@ -127,6 +133,27 @@ await test('任意页签读取当前账号间隔，运行中修改先保存草�
   assert.equal(f.node('loop-every').value, '90');
   await f.change('a');
   assert.equal(f.node('loop-every').value, '120');
+});
+
+await test('挂机轮询同步更新页头、账号卡片及状态版本，旧列表不能回滚启停', async () => {
+  const f = fixture();
+  f.node('tab-account').classList.contains = () => false;
+  for (const [running, stopping, button] of [
+    [true, false, '暂停挂机'], [true, true, '暂停中…'], [false, false, '开始挂机'],
+  ]) {
+    Object.assign(f.env.states.a, { running, stopping });
+    const revision = f.revision();
+    f.env.statusRenders.length = 0;
+    await f.load();
+    assert.equal(f.node('loop-toggle').textContent, button);
+    assert.deepEqual(f.env.statusRenders, [
+      ['picker', { looping: running, loopStopping: stopping }],
+      ['cards', { looping: running, loopStopping: stopping }],
+    ]);
+    assert.ok(f.revision() > revision, '状态变化使旧账号列表响应失效');
+    await f.load();
+    assert.equal(f.revision(), revision + 1, '同值轮询不使账号列表读取失效');
+  }
 });
 
 await test('轮询保留正在编辑的值，同步未编辑的服务端修改', async () => {

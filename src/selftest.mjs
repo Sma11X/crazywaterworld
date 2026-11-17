@@ -526,10 +526,12 @@ roundTrip(Buffer.from('RequestResponse'.repeat(200)), 'text');
 {
   const vm = await import('node:vm');
   const { PAGE } = await import('./page.mjs');
-  const start = PAGE.indexOf('<script>') + '<script>'.length;
-  const end = PAGE.lastIndexOf('</script>');
-  assert.ok(start > 0 && end > start, 'console page has an inline script');
-  new vm.Script(PAGE.slice(start, end), { filename: 'page-inline.js' });
+  const scripts = [...PAGE.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
+    .filter(([, attributes]) => !/\b(?:src|type)\s*=/.test(attributes));
+  assert.ok(scripts.length > 0, 'console page has an inline script');
+  for (const [index, [, , source]] of scripts.entries()) {
+    new vm.Script(source, { filename: `page-inline-${index}.js` });
+  }
   checked += 1;
 }
 

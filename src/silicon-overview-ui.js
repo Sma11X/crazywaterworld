@@ -5,6 +5,13 @@ const siliconNumber = value => Number.isSafeInteger(value) && value >= 0 ? fmt(v
 const siliconConnected = () => !!current && snapshot.connected && !snapshot.paused && !disconnected.has(current);
 const siliconVisible = () => !document.hidden && !$('tab-overview').classList.contains('hidden');
 const siliconStale = () => siliconReceivedAt && Date.now() - siliconReceivedAt > 90000;
+bindConsoleSlice('silicon', { siliconOwner, siliconData, siliconLoading, siliconReceivedAt, siliconLastAttempt }, state => {
+  siliconOwner = state.siliconOwner;
+  siliconData = state.siliconData;
+  siliconLoading = state.siliconLoading;
+  siliconReceivedAt = state.siliconReceivedAt;
+  siliconLastAttempt = state.siliconLastAttempt;
+});
 
 function siliconDuration(seconds) {
   const value = Math.max(0, Math.ceil(seconds)), days = Math.floor(value / 86400), hours = Math.floor(value % 86400 / 3600);
@@ -26,8 +33,8 @@ function siliconTimer(endAt, label, finished) {
 }
 function resetSiliconOverview() {
   siliconAction = null; $('silicon-action-dialog').close(); $('silicon-feedback').hidden = true;
-  siliconSerial++; siliconOwner = null; siliconData = null; siliconLoading = false;
-  siliconReceivedAt = 0; siliconLastAttempt = 0; siliconTimers = []; siliconSelections.clear();
+  siliconSerial++; setConsoleValue('silicon', 'siliconOwner', null); setConsoleValue('silicon', 'siliconData', null); setConsoleValue('silicon', 'siliconLoading', false);
+  setConsoleValue('silicon', 'siliconReceivedAt', 0); setConsoleValue('silicon', 'siliconLastAttempt', 0); siliconTimers = []; siliconSelections.clear();
   for (const id of ['silicon-summary', 'silicon-fleets', 'silicon-mines', 'silicon-notes']) clear($(id));
   $('silicon-overview').setAttribute('aria-busy', 'false');
 }
@@ -206,22 +213,22 @@ function paintSiliconOverview(data) {
 }
 async function refreshSiliconOverview() {
   if (!siliconConnected() || siliconLoading || siliconAction) return;
-  const account = current, serial = ++siliconSerial; siliconOwner = account; siliconLoading = true; siliconLastAttempt = Date.now();
+  const account = current, serial = ++siliconSerial; setConsoleValue('silicon', 'siliconOwner', account); setConsoleValue('silicon', 'siliconLoading', true); setConsoleValue('silicon', 'siliconLastAttempt', Date.now());
   $('silicon-refresh').disabled = true; $('silicon-status').textContent = '正在同步硅矿…'; $('silicon-overview').setAttribute('aria-busy', 'true');
   try {
     const data = await call('/api/silicon/overview');
     if (account !== current || serial !== siliconSerial || !siliconConnected()) return;
-    siliconData = data; siliconReceivedAt = Date.now(); paintSiliconOverview(data);
+    setConsoleValue('silicon', 'siliconData', data); setConsoleValue('silicon', 'siliconReceivedAt', Date.now()); paintSiliconOverview(data);
     if (typeof refreshSiliconSettings === 'function') void refreshSiliconSettings();
     $('silicon-status').textContent = (data.notes.length || data.mines.some(mine => mine.reason) ? '部分信息未同步 · ' : '更新 ') + new Date(data.checkedAt * 1000).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
     if (data.reason && !data.mines.length) $('silicon-status').textContent = data.reason;
   } catch (error) {
     if (account === current && serial === siliconSerial) {
       $('silicon-status').textContent = '同步失败：' + error.message + (siliconData ? '；下方为上次同步结果' : '');
-      if (siliconData) siliconReceivedAt = Date.now() - 90001;
+      if (siliconData) setConsoleValue('silicon', 'siliconReceivedAt', Date.now() - 90001);
     }
   } finally {
-    if (serial === siliconSerial) { siliconLoading = false; siliconLastAttempt = Date.now(); updateSiliconControls(); $('silicon-overview').setAttribute('aria-busy', 'false'); }
+    if (serial === siliconSerial) { setConsoleValue('silicon', 'siliconLoading', false); setConsoleValue('silicon', 'siliconLastAttempt', Date.now()); updateSiliconControls(); $('silicon-overview').setAttribute('aria-busy', 'false'); }
   }
 }
 function maybeRefreshSilicon() {

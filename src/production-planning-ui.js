@@ -2,10 +2,15 @@ let productionPlanOwner = null;
 let productionPlanVersion = 0;
 let productionPlanBusy = false;
 
+bindConsoleSlice('productionPlan', { productionPlanOwner, productionPlanBusy }, state => {
+  productionPlanOwner = state.productionPlanOwner;
+  productionPlanBusy = state.productionPlanBusy;
+});
+
 function resetProductionPlan() {
   productionPlanVersion++;
-  productionPlanOwner = null;
-  productionPlanBusy = false;
+  setConsoleValue('productionPlan', 'productionPlanOwner', null);
+  setConsoleValue('productionPlan', 'productionPlanBusy', false);
   clear($('production-plan-result'));
   $('production-plan-status').textContent = '连接后可计算';
 }
@@ -92,8 +97,8 @@ $('production-plan-refresh').onclick = async () => {
   const account = current;
   if (!account || !snapshot.connected || snapshot.paused || disconnected.has(account)) return;
   const version = ++productionPlanVersion;
-  productionPlanOwner = account;
-  productionPlanBusy = true;
+  setConsoleValue('productionPlan', 'productionPlanOwner', account);
+  setConsoleValue('productionPlan', 'productionPlanBusy', true);
   clear($('production-plan-result'));
   $('production-plan-refresh').disabled = true;
   $('production-plan-status').textContent = '读取需求与优先级并计算中…';
@@ -108,7 +113,7 @@ $('production-plan-refresh').onclick = async () => {
     reportError(error);
   } finally {
     if (version === productionPlanVersion) {
-      productionPlanBusy = false;
+      setConsoleValue('productionPlan', 'productionPlanBusy', false);
       $('production-plan-refresh').disabled = !snapshot.connected || snapshot.paused || disconnected.has(current);
     }
   }

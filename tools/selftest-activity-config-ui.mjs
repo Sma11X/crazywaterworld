@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { automationTasks } from '../src/automation.mjs';
@@ -9,7 +10,7 @@ const modelStart = script.indexOf('  const groups =', renderStart);
 const modelEnd = script.indexOf('  const movedFields =', modelStart);
 assert(modelStart > renderStart && modelEnd > modelStart);
 const model = script.slice(modelStart, modelEnd);
-const renderGroups = new Function('data', definitions + '\nconfigEditor.data=data;\n' + model + '\nreturn groups;');
+const renderGroups = newStateFunction('data', definitions + '\nconfigEditor.data=data;\n' + model + '\nreturn groups;');
 const retiredKeys = [
   'riverScore', 'riverPass', 'riverHelp', 'edictPass', 'compassDaily', 'compassAdGift', 'compassSpin',
   'festivalSign', 'festivalFreeGift', 'festivalActive', 'festivalGifts', 'snowballFree',
@@ -101,7 +102,7 @@ const page = fs.readFileSync(new URL('../src/page.mjs', import.meta.url), 'utf8'
 const toggleSource = page.slice(page.indexOf('async function toggleAutoTask('), page.indexOf('async function saveLoopInterval('));
 function loadFixture(initial = dataFor([])) {
   const state = { next: structuredClone(initial), renders: [], usageRenders: 0, messages: [], calls: [] };
-  const api = new Function('state', 'renderGroups', definitions + '\n' + clearErrorsSource + '\n' + dirtySource + '\n' + loadSource + '\n' + saveSource + '\n' + toggleSource + `
+  const api = newStateFunction('state', 'renderGroups', definitions + '\n' + clearErrorsSource + '\n' + dirtySource + '\n' + loadSource + '\n' + saveSource + '\n' + toggleSource + `
     const current = 'isolated-account', accounts = [];
     const savingTasks = new Set(), loopIntervalSaves = new Map();
     let loopVersion = 0, loopSettingsRevision = 7;
@@ -211,5 +212,5 @@ await test('保存回复带回新的下线规则时同步重绘，避免后续�
   assert(!f.dirty());
 });
 
-new Function(script);
+newStateFunction(script);
 console.log('活动配置界面专项 ' + tests + '/' + tests + ' 通过');

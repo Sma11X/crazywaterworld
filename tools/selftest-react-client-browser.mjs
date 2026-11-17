@@ -304,13 +304,21 @@ try {
       loadAutomationSettings("a").settings.login.intervalSeconds,
       777,
     );
+    await page.waitForFunction(() => {
+      const state = window.cwConsoleStore.getState();
+      return (
+        state.currentAccountId === "b" &&
+        !state.slices["loginSettings:a"]?.saving &&
+        state.slices["loginSettings:a"]?.data?.settings.baseDelaySeconds === 777
+      );
+    });
     assert.equal(
       loadAutomationSettings("b").settings.login.intervalSeconds,
       900,
     );
   });
 
-  await test("读取失败可手动重试，离开再返回页面保留未保存草稿", async () => {
+  await test("读取失败可手动重试，离页和切号均保留各账号的未保存草稿", async () => {
     await page.route(
       "**/api/login-settings?account=b",
       (route) =>
@@ -331,6 +339,23 @@ try {
       await page.locator("#login-reconnect-delay").inputValue(),
       "555",
     );
+    const count = posts();
+    await choose("a");
+    await saved();
+    assert.equal(
+      await page.locator("#login-reconnect-delay").inputValue(),
+      "777",
+    );
+    await choose("b");
+    await page
+      .locator("#login-settings-state")
+      .filter({ hasText: "有未保存修改" })
+      .waitFor();
+    assert.equal(
+      await page.locator("#login-reconnect-delay").inputValue(),
+      "555",
+    );
+    assert.equal(posts(), count, "切号恢复草稿不自动提交");
     assert.equal(
       requests.filter((row) => row.url.includes("/ui/chunks/")).length,
       1,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { newStateFunction } from './fixtures/console-state.mjs';
 import { defaultSettings, validateSettings, importAutomationSettings, exportAutomationSettings, saveAutomationSettings, loadAutomationSettings, createUsageLedger, nativeTaskValues, settingsCatalog } from '../src/automation-settings.mjs';
 import { automationWireId } from '../src/automation-policy.mjs';
 import { readTreasureLoot, planTreasureLoot, runTreasureLoot, serviceTreasureLoot } from '../src/treasure-loot.mjs';
@@ -87,7 +88,7 @@ try {
     assert.deepEqual(validateSettings(s, { catalog }).treasure.rewardItems, s.treasure.rewardItems);
     assert.deepEqual(importAutomationSettings(exportAutomationSettings(s), { catalog }).treasure.rewardItems, s.treasure.rewardItems, '既有展示ID保存与导入继续兼容');
     const source = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
-    const groups = new Function(source.slice(0, source.indexOf('function configGet(')) + '\nreturn [...configGroups, { fields: guildShipActivityFields }];')();
+    const groups = newStateFunction(source.slice(0, source.indexOf('function configGet(')) + '\nreturn [...configGroups, { fields: guildShipActivityFields }];')();
     const fields = groups.flatMap(group => group.fields), field = fields.find(row => row.key === 'treasure.rewardItems');
     assert.equal(field.catalog, 'treasureRewards'); assert.match(field.help, /任意品质/); assert.match(field.help, /搜索/);
     assert.equal(fields.find(row => row.key === 'guildShip.rewardItems').catalog, 'materials', '不改联盟商船材料选择');

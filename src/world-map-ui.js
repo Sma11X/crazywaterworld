@@ -8,11 +8,23 @@ const worldLayerNames={regions:'领地',cities:'城池',cityWar:'城战',fleets:
 const worldLayerColors={regions:'#69b3a5',cities:'#526f7a',cityWar:'#b5483e',fleets:'#2866cc',traffic:'#8653a0',fields:'#4b91b7',treasure:'#c18a12',pirates:'#bc4747',radar:'#b7672d',boss:'#8653a0'};
 const worldLayers=new Set(['regions','cities','cityWar','fleets','traffic','treasure','radar','boss']);
 const mapNode=(tag,attrs={})=>{const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs))node.setAttribute(k,String(v));return node;};
+bindConsoleSlice('worldMap', { worldMapOwner, worldMapData, worldMapLoading, worldMapSelected, worldMapView, worldMapAllNames, worldMapReceivedAt, worldMapAutoRefresh, worldMapRefreshEvery }, state => {
+  worldMapOwner = state.worldMapOwner;
+  worldMapData = state.worldMapData;
+  worldMapLoading = state.worldMapLoading;
+  worldMapSelected = state.worldMapSelected;
+  worldMapView = state.worldMapView;
+  worldMapAllNames = state.worldMapAllNames;
+  worldMapReceivedAt = state.worldMapReceivedAt;
+  worldMapAutoRefresh = state.worldMapAutoRefresh;
+  worldMapRefreshEvery = state.worldMapRefreshEvery;
+});
+
 function resetWorldMap(){
- worldMapOwner=null;worldMapData=null;worldMapPainted=null;worldMapSelected=null;worldMapSerial++;worldMapLoading=false;
- worldMapReceivedAt=0;worldMapLastAttempt=0;worldMapMovingNodes=[];worldMapJourneyNodes=[];worldMapDrawnPoints=[];
+ setConsoleValue('worldMap', 'worldMapOwner', null);setConsoleValue('worldMap', 'worldMapData', null);worldMapPainted=null;setConsoleValue('worldMap', 'worldMapSelected', null);worldMapSerial++;setConsoleValue('worldMap', 'worldMapLoading', false);
+ setConsoleValue('worldMap', 'worldMapReceivedAt', 0);worldMapLastAttempt=0;worldMapMovingNodes=[];worldMapJourneyNodes=[];worldMapDrawnPoints=[];
  $('world-map-refresh').disabled=false;for(const id of ['world-map','world-map-fleets','world-map-wars','world-map-treasures','world-map-resources','world-map-layers','world-map-legend','world-map-state-legend','world-map-notes'])clear($(id));
- $('world-map-time').textContent='尚未读取';$('world-map-detail').hidden=true;worldMapView={x:0,y:0,zoom:1};setMapZoomInput(1);
+ $('world-map-time').textContent='尚未读取';$('world-map-detail').hidden=true;setConsoleValue('worldMap', 'worldMapView', {x:0,y:0,zoom:1});setMapZoomInput(1);
 }
 const mapNumber=value=>Number.isSafeInteger(value)&&value>=0?fmt(value):'未同步';
 const mapElapsed=()=>worldMapReceivedAt?(Date.now()-worldMapReceivedAt)/1000:0;
@@ -21,7 +33,7 @@ const mapServerNow=()=>worldMapData?worldMapData.checkedAt+Math.min(mapElapsed()
 function mapDuration(seconds){if(!Number.isFinite(seconds))return '时间未同步';seconds=Math.max(0,Math.ceil(seconds));const minutes=Math.floor(seconds/60);return minutes?minutes+'分'+seconds%60+'秒':seconds+'秒';}
 function mapJourney(journey){if(!journey)return '—';const remaining=Math.max(0,Math.ceil(journey.endAt-mapServerNow()));return journey.from+' → '+journey.to+'（'+(mapStale()?'待同步':remaining?'剩余'+mapDuration(remaining):'到达待同步')+'）';}
 function journeyNode(journey){const node=el('span','world-journey',mapJourney(journey));if(journey){node.title='全程 '+mapDuration(journey.endAt-journey.startAt);worldMapJourneyNodes.push({node,journey});}return node;}
-function locateOwnFleet(fleet){const point=worldMapData?.points.find(p=>p.key==='fleet-'+fleet.id);if(!point)return;const position=mapMotionPosition(point,mapServerNow());worldMapView={x:position.x,y:position.y,zoom:4};setMapZoomInput(4);void showWorldMapTarget(point);}
+function locateOwnFleet(fleet){const point=worldMapData?.points.find(p=>p.key==='fleet-'+fleet.id);if(!point)return;const position=mapMotionPosition(point,mapServerNow());setConsoleValue('worldMap', 'worldMapView', {x:position.x,y:position.y,zoom:4});setMapZoomInput(4);void showWorldMapTarget(point);}
 function mapFacts(panel,entries){const list=el('dl','world-city-facts');for(const [label,value]of entries){list.append(el('dt','',label),el('dd','',value));}panel.append(list);}
 function paintWorldFuel(data){
  const box=clear($('world-map-resources')),usage=data.fuelUsage,stock=usage?.stock??data.resources?.find(r=>r.id==='汽油')?.value??null,summary=el('div','world-fuel-summary');
@@ -32,20 +44,20 @@ function paintWorldFuel(data){
 function mapViewBox(){
  const box=$('world-map-scroll'),data=worldMapData,ratio=Math.max(.1,box.clientWidth/Math.max(1,box.clientHeight));
  const width=Math.max(data.width,data.height*ratio)/worldMapView.zoom,height=width/ratio;
- worldMapView.x=width>=data.width?data.width/2:Math.max(width/2,Math.min(data.width-width/2,worldMapView.x));
- worldMapView.y=height>=data.height?data.height/2:Math.max(height/2,Math.min(data.height-height/2,worldMapView.y));
+ mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.x=width>=data.width?data.width/2:Math.max(width/2,Math.min(data.width-width/2,worldMapView.x))));
+ mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.y=height>=data.height?data.height/2:Math.max(height/2,Math.min(data.height-height/2,worldMapView.y))));
  return {x:worldMapView.x-width/2,y:worldMapView.y-height/2,width,height};
 }
 function applyMapView(){if(!worldMapData)return;const v=mapViewBox();$('world-map').setAttribute('viewBox',[v.x,v.y,v.width,v.height].join(' '));}
 function mapZoom(value,anchor){
- if(!worldMapData)return;const before=mapViewBox();worldMapView.zoom=Math.max(1,Math.min(8,value));setMapZoomInput(worldMapView.zoom);
- if(anchor){const after=mapViewBox();worldMapView.x=before.x+before.width*anchor.x+(0.5-anchor.x)*after.width;worldMapView.y=before.y+before.height*anchor.y+(0.5-anchor.y)*after.height;}
+ if(!worldMapData)return;const before=mapViewBox();mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.zoom=Math.max(1,Math.min(8,value))));setMapZoomInput(worldMapView.zoom);
+ if(anchor){const after=mapViewBox();mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.x=before.x+before.width*anchor.x+(0.5-anchor.x)*after.width));mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.y=before.y+before.height*anchor.y+(0.5-anchor.y)*after.height));}
  drawWorldMap();
 }
-function mapFullView(){if(!worldMapData)return;worldMapSelected=null;$('world-map-detail').hidden=true;worldMapView={x:worldMapData.width/2,y:worldMapData.height/2,zoom:1};setMapZoomInput(1);drawWorldMap();}
+function mapFullView(){if(!worldMapData)return;setConsoleValue('worldMap', 'worldMapSelected', null);$('world-map-detail').hidden=true;setConsoleValue('worldMap', 'worldMapView', {x:worldMapData.width/2,y:worldMapData.height/2,zoom:1});setMapZoomInput(1);drawWorldMap();}
 async function showWorldMapTarget(point,refresh=false){
  if(!refresh&&Date.now()-worldMapDraggedAt<180)return;
- worldMapSelected=point.key;if(!refresh)drawWorldMap();
+ setConsoleValue('worldMap', 'worldMapSelected', point.key);if(!refresh)drawWorldMap();
  const panel=$('world-map-detail'),nearbyWasOpen=refresh&&panel.querySelector('[data-nearby]')?.open;clear(panel);panel.hidden=false;
  panel.append(el('strong','',point.name));
  if(point.cityInfo){const c=point.cityInfo,entries=[['所属',c.owner],['城战',c.status]];
@@ -144,11 +156,11 @@ function drawWorldMap(){
  }
 }
 async function refreshWorldMap(){
- if(!current||snapshot.paused||disconnected.has(current)||worldMapLoading)return;const account=current,serial=++worldMapSerial;worldMapLoading=true;worldMapLastAttempt=Date.now();$('world-map-refresh').disabled=true;$('world-map-time').textContent='正在同步…';
+ if(!current||snapshot.paused||disconnected.has(current)||worldMapLoading)return;const account=current,serial=++worldMapSerial;setConsoleValue('worldMap', 'worldMapLoading', true);worldMapLastAttempt=Date.now();$('world-map-refresh').disabled=true;$('world-map-time').textContent='正在同步…';
  try{
   const data=await call('/api/world/overview');if(current!==account||serial!==worldMapSerial)return;
-  const fresh=worldMapOwner!==account||worldMapData?.scenario!==data.scenario;worldMapOwner=account;worldMapData=data;worldMapReceivedAt=Date.now();worldMapJourneyNodes=[];
-  if(fresh){worldMapView={x:data.width/2,y:data.height/2,zoom:1};setMapZoomInput(1);worldMapSelected=null;$('world-map-detail').hidden=true;}
+  const fresh=worldMapOwner!==account||worldMapData?.scenario!==data.scenario;setConsoleValue('worldMap', 'worldMapOwner', account);setConsoleValue('worldMap', 'worldMapData', data);setConsoleValue('worldMap', 'worldMapReceivedAt', Date.now());worldMapJourneyNodes=[];
+  if(fresh){setConsoleValue('worldMap', 'worldMapView', {x:data.width/2,y:data.height/2,zoom:1});setMapZoomInput(1);setConsoleValue('worldMap', 'worldMapSelected', null);$('world-map-detail').hidden=true;}
   $('world-map-time').textContent='更新 '+new Date(data.checkedAt*1000).toLocaleTimeString('zh-CN');
   paintWorldFuel(data);
   const number=value=>Number.isSafeInteger(value)?String(value):'未同步';
@@ -166,13 +178,13 @@ async function refreshWorldMap(){
   for(const [key,name]of Object.entries(worldLayerNames)){
    const label=el('label'),check=el('input'),swatch=el('i','map-swatch');swatch.style.background=worldLayerColors[key];check.type='checkbox';check.checked=worldLayers.has(key);check.setAttribute('aria-label',name+'图层');label.title=key==='regions'?'真实城池区域与已同步归属':data.layers[key]||'未同步';check.onchange=()=>{if(check.checked)worldLayers.add(key);else worldLayers.delete(key);drawWorldMap();};label.append(check,swatch,el('span','',name+(data.layers[key]==='未同步'?'（未同步）':'')));layers.append(label);
   }
-  const label=el('label'),names=el('input');names.type='checkbox';names.checked=worldMapAllNames;names.setAttribute('aria-label','全部城名');names.onchange=()=>{worldMapAllNames=names.checked;drawWorldMap();};label.append(names,el('span','','全部城名'));layers.append(label);
+  const label=el('label'),names=el('input');names.type='checkbox';names.checked=worldMapAllNames;names.setAttribute('aria-label','全部城名');names.onchange=()=>{setConsoleValue('worldMap', 'worldMapAllNames', names.checked);drawWorldMap();};label.append(names,el('span','','全部城名'));layers.append(label);
   }
   const legend=clear($('world-map-legend'));for(const owner of [{name:'未占领',color:'#c4d7df'},...((data.regions??[]).some(r=>r.owner===null)?[{name:'归属未同步',color:'#e1e7e8'}]:[]),...(data.owners??[])]){const item=el('span'),color=el('i','map-swatch');color.style.background=owner.color;if(owner.defaultName)item.title='当前按游戏主城默认名显示';item.append(color,el('span','',owner.name));legend.append(item);}
   paintMapStateLegend();$('world-map-notes').textContent=data.notes.join(' ');drawWorldMap();
-  if(worldMapSelected){const selected=worldMapDrawnPoints.find(p=>p.key===worldMapSelected)||data.points.find(p=>p.key===worldMapSelected);if(selected)void showWorldMapTarget(selected,true);else{$('world-map-detail').hidden=true;worldMapSelected=null;}}
+  if(worldMapSelected){const selected=worldMapDrawnPoints.find(p=>p.key===worldMapSelected)||data.points.find(p=>p.key===worldMapSelected);if(selected)void showWorldMapTarget(selected,true);else{$('world-map-detail').hidden=true;setConsoleValue('worldMap', 'worldMapSelected', null);}}
  }catch(error){if(current===account&&serial===worldMapSerial)$('world-map-time').textContent='未同步：'+error.message;}
- finally{if(serial===worldMapSerial){worldMapLoading=false;worldMapLastAttempt=Date.now();$('world-map-refresh').disabled=false;}}
+ finally{if(serial===worldMapSerial){setConsoleValue('worldMap', 'worldMapLoading', false);worldMapLastAttempt=Date.now();$('world-map-refresh').disabled=false;}}
 }
 function maybeRefreshWorldMap(){
  if(!worldMapAutoRefresh||document.hidden||$('tab-overview').classList.contains('hidden'))return;
@@ -188,16 +200,17 @@ function updateWorldMapMotion(){
  worldMapJourneyNodes=worldMapJourneyNodes.filter(r=>r.node.isConnected);for(const r of worldMapJourneyNodes){const text=mapJourney(r.journey);if(r.node.textContent!==text)r.node.textContent=text;}
 }
 setInterval(maybeRefreshWorldMap,1000);setInterval(updateWorldMapMotion,250);
-$('world-map-refresh-seconds').onchange=()=>{const input=$('world-map-refresh-seconds'),value=Number(input.value);if(!Number.isInteger(value)||value<5||value>300){input.setCustomValidity('请填写5到300之间的整数');input.reportValidity();return;}input.setCustomValidity('');worldMapRefreshEvery=value;worldMapLastAttempt=0;maybeRefreshWorldMap();};
-$('world-map-auto-refresh').onclick=()=>{worldMapAutoRefresh=!worldMapAutoRefresh;const button=$('world-map-auto-refresh');button.setAttribute('aria-pressed',String(worldMapAutoRefresh));button.textContent='自动刷新：'+(worldMapAutoRefresh?'开':'关');if(worldMapAutoRefresh){worldMapLastAttempt=0;maybeRefreshWorldMap();}};
+$('world-map-refresh-seconds').onchange=()=>{const input=$('world-map-refresh-seconds'),value=Number(input.value);if(!Number.isInteger(value)||value<5||value>300){input.setCustomValidity('请填写5到300之间的整数');input.reportValidity();return;}input.setCustomValidity('');setConsoleValue('worldMap', 'worldMapRefreshEvery', value);worldMapLastAttempt=0;maybeRefreshWorldMap();};
+$('world-map-auto-refresh').onclick=()=>{setConsoleValue('worldMap', 'worldMapAutoRefresh', !worldMapAutoRefresh);const button=$('world-map-auto-refresh');button.setAttribute('aria-pressed',String(worldMapAutoRefresh));button.textContent='自动刷新：'+(worldMapAutoRefresh?'开':'关');if(worldMapAutoRefresh){worldMapLastAttempt=0;maybeRefreshWorldMap();}};
 $('world-map-refresh').onclick=refreshWorldMap;$('world-map-reset').onclick=mapFullView;
 $('world-map-zoom').oninput=()=>mapZoom(Number($('world-map-zoom').value));
 setMapZoomInput(1);
-$('world-map-home').onclick=()=>{const p=worldMapData?.points.find(p=>p.layer==='fleets')||worldMapData?.home;if(!p)return;const position=mapMotionPosition(p,mapServerNow());worldMapSelected=p.key;$('world-map-detail').hidden=true;worldMapView={x:position.x,y:position.y,zoom:4};setMapZoomInput(4);drawWorldMap();};
+$('world-map-home').onclick=()=>{const p=worldMapData?.points.find(p=>p.layer==='fleets')||worldMapData?.home;if(!p)return;const position=mapMotionPosition(p,mapServerNow());setConsoleValue('worldMap', 'worldMapSelected', p.key);$('world-map-detail').hidden=true;setConsoleValue('worldMap', 'worldMapView', {x:position.x,y:position.y,zoom:4});setMapZoomInput(4);drawWorldMap();};
 let worldMapTouchPan=false;
-$('world-map-pan').onclick=()=>{worldMapTouchPan=!worldMapTouchPan;const button=$('world-map-pan');button.setAttribute('aria-pressed',String(worldMapTouchPan));button.textContent=worldMapTouchPan?'完成移动':'移动地图';$('world-map').classList.toggle('touch-pan',worldMapTouchPan);};
+bindConsoleSlice('worldMapTouch', { worldMapTouchPan }, state => { worldMapTouchPan=state.worldMapTouchPan; });
+$('world-map-pan').onclick=()=>{setConsoleValue('worldMapTouch', 'worldMapTouchPan', !worldMapTouchPan);const button=$('world-map-pan');button.setAttribute('aria-pressed',String(worldMapTouchPan));button.textContent=worldMapTouchPan?'完成移动':'移动地图';$('world-map').classList.toggle('touch-pan',worldMapTouchPan);};
 $('world-map').addEventListener('pointerdown',e=>{if(e.button!==0||!worldMapData)return;if(e.pointerType==='touch'&&!worldMapTouchPan)return;worldMapDrag={id:e.pointerId,x:e.clientX,y:e.clientY,cx:worldMapView.x,cy:worldMapView.y,view:mapViewBox(),moved:false};});
-$('world-map').addEventListener('pointermove',e=>{const d=worldMapDrag;if(!d||d.id!==e.pointerId)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;if(!d.moved&&Math.hypot(dx,dy)<4)return;d.moved=true;$('world-map').setPointerCapture(e.pointerId);$('world-map').classList.add('is-dragging');worldMapView.x=d.cx-dx*d.view.width/$('world-map-scroll').clientWidth;worldMapView.y=d.cy-dy*d.view.height/$('world-map-scroll').clientHeight;applyMapView();});
+$('world-map').addEventListener('pointermove',e=>{const d=worldMapDrag;if(!d||d.id!==e.pointerId)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;if(!d.moved&&Math.hypot(dx,dy)<4)return;d.moved=true;$('world-map').setPointerCapture(e.pointerId);$('world-map').classList.add('is-dragging');mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.x=d.cx-dx*d.view.width/$('world-map-scroll').clientWidth));mutateConsoleValue('worldMap', 'worldMapView', nextStateValue => (nextStateValue.y=d.cy-dy*d.view.height/$('world-map-scroll').clientHeight));applyMapView();});
 const endMapDrag=e=>{if(!worldMapDrag||worldMapDrag.id!==e.pointerId)return;const moved=worldMapDrag.moved;if(moved)worldMapDraggedAt=Date.now();worldMapDrag=null;$('world-map').classList.remove('is-dragging');if($('world-map').hasPointerCapture(e.pointerId))$('world-map').releasePointerCapture(e.pointerId);if(moved)drawWorldMap();};
 $('world-map').addEventListener('pointerup',endMapDrag);$('world-map').addEventListener('pointercancel',endMapDrag);
 $('world-map').addEventListener('wheel',e=>{if(!e.ctrlKey||!worldMapData)return;e.preventDefault();const rect=$('world-map').getBoundingClientRect();mapZoom(worldMapView.zoom*(e.deltaY<0?1.15:1/1.15),{x:(e.clientX-rect.left)/rect.width,y:(e.clientY-rect.top)/rect.height});},{passive:false});

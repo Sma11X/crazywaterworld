@@ -1,13 +1,19 @@
 let inventoryData=[],inventoryOwner=null,inventoryQuery=null;
-function resetInventory(){inventoryQuery=null;inventoryData=[];inventoryOwner=current;$('inventory-query').value='';$('world-stock-panel').open=false;clear($('world-stock'));$('inventory-match-count').textContent='';}
+bindConsoleSlice('inventory', { inventoryData, inventoryOwner, inventoryQuery }, state => {
+  inventoryData = state.inventoryData;
+  inventoryOwner = state.inventoryOwner;
+  inventoryQuery = state.inventoryQuery;
+});
+
+function resetInventory(){setConsoleValue('inventory', 'inventoryQuery', null);setConsoleValue('inventory', 'inventoryData', []);setConsoleValue('inventory', 'inventoryOwner', current);$('inventory-query').value='';$('world-stock-panel').open=false;clear($('world-stock'));$('inventory-match-count').textContent='';}
 function renderInventory(stock){
  if(inventoryOwner!==current)resetInventory();
- if(JSON.stringify(inventoryData)!==JSON.stringify(stock)||inventoryQuery===null){inventoryData=stock;paintInventory();}
+ if(JSON.stringify(inventoryData)!==JSON.stringify(stock)||inventoryQuery===null){setConsoleValue('inventory', 'inventoryData', stock);paintInventory();}
  $('inventory-status').textContent='共 '+stock.length+' 种 · 更新于 '+new Date().toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai'});
 }
 function paintInventory(){
  const root=$('world-stock'),query=$('inventory-query').value.trim().toLocaleLowerCase(),opened=new Set([...root.querySelectorAll('details[open]')].map(d=>d.dataset.category));
- const sameQuery=query===inventoryQuery,previous=new Set([...root.querySelectorAll('details')].map(e=>e.dataset.category));inventoryQuery=query;
+ const sameQuery=query===inventoryQuery,previous=new Set([...root.querySelectorAll('details')].map(e=>e.dataset.category));setConsoleValue('inventory', 'inventoryQuery', query);
  const filtered=inventoryData.filter(e=>!query||e.name.toLocaleLowerCase().includes(query));clear(root);
  const categories=[...new Set(filtered.map(e=>e.category||'其他'))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
  for(const name of categories){

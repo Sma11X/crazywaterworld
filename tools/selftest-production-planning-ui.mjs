@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -39,7 +40,7 @@ function fixture() {
     notes: ['共同材料只分配一次'], missingReads: [], assumptions: ['共同材料只分配一次'],
   });
   env.call = async route => { env.calls.push(route); return env.respond(route); };
-  new Function('env', `
+  newStateFunction('env', `
     'use strict';
     const $ = env.node, el = env.element, clear = env.clear, table = env.table;
     const call = env.call, reportError = error => env.errors.push(error), disconnected = env.disconnected;

@@ -1,12 +1,14 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { createConsoleRuntime } from '../src/ui/console-store.mjs';
 import { defaultSettings, settingsUiRules } from '../src/automation-settings.mjs';
 import { activityAutomationFields } from '../src/activity-automation.mjs';
 
 const script = fs.readFileSync(new URL('../src/ui/activities.js', import.meta.url), 'utf8');
 const configScript = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
-const { merchantActivityFields, guildShipActivityFields } = new Function(configScript.slice(0, configScript.indexOf('function configGet(')) + '\nreturn { merchantActivityFields, guildShipActivityFields };')();
+const { merchantActivityFields, guildShipActivityFields } = newStateFunction(configScript.slice(0, configScript.indexOf('function configGet(')) + '\nreturn { merchantActivityFields, guildShipActivityFields };')();
 const clone = value => JSON.parse(JSON.stringify(value));
 const deferred = () => {
   let resolve, reject;
@@ -127,6 +129,7 @@ function fixture() {
     ] },
   };
   const context = {
+    ...createConsoleRuntime(),
     current: 'merchant-a', snapshot: { paused: false, connected: true }, disconnected: new Set(), savingTasks: new Set(),
     loopSettingsRevision: 1,
     merchantActivityFields, guildShipActivityFields,

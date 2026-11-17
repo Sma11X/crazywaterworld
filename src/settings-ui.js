@@ -1,5 +1,6 @@
 // 游戏配置编辑器：按账号合并连续输入，校验后自动保存，预览仍使用独立只读接口。
 const configEditor = { owner: null, data: null, draft: null, baseline: null, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
+bindConsoleObject('configuration', configEditor, ['owner', 'data', 'draft', 'baseline', 'category', 'busy', 'loading', 'saving', 'saveError', 'saveRetries', 'selectedGroups', 'errors', 'playerData', 'playerError', 'previewSummary']);
 const configCategories = { base: '基地', world: '世界', heroes: '英雄', daily: '日常与活动' };
 const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
@@ -467,18 +468,20 @@ function configClearErrors() {
   for (const widget of configEditor.widgets.values()) widget.clearError?.();
 }
 function configSet(key, value) {
+  const draft = structuredClone(configEditor.draft);
   // 组合主控一次保存所有关联字段，关闭模块不更改细项和参数。
   for (const path of configEditor.fields.get(key)?.controlFields ?? [key]) {
     const parts = path.split('.'), field = parts.pop();
-    const target = parts.reduce((object, part) => object[part], configEditor.draft);
+    const target = parts.reduce((object, part) => object[part], draft);
     target[field] = value;
   }
   configEditor.previewSummary=null;
   if (key === 'cityWar.fleetIds') {
-    configEditor.draft.cityWar.defenceFleetIds = (configEditor.draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
+    draft.cityWar.defenceFleetIds = (draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
   }
-  if (key === 'farm.autoPlant' && value) configEditor.draft.farm.customPlant = false;
-  if (key === 'farm.customPlant' && value) configEditor.draft.farm.autoPlant = false;
+  if (key === 'farm.autoPlant' && value) draft.farm.customPlant = false;
+  if (key === 'farm.customPlant' && value) draft.farm.autoPlant = false;
+  configEditor.draft = draft;
   // 校验结果属于提交时的整份草稿；修改任意依赖后不能继续展示旧结果。
   // 改回已保存值不会再次提交，也必须立即清理字段与提示条；版本冲突仍保留。
   if (!configEditor.saveError?.fields?.revision) {
@@ -525,10 +528,9 @@ async function configFlush() {
 }
 function configIntervalSaved(account, everySeconds, revision, nextRevision) {
   if (configEditor.owner !== account || configEditor.data?.revision !== revision) return;
-  configEditor.data.settings.loop.everySeconds = everySeconds;
-  configEditor.baseline.loop.everySeconds = everySeconds;
-  configEditor.draft.loop.everySeconds = everySeconds;
-  configEditor.data.revision = nextRevision;
+  mutateConsoleValue('configuration', 'data', value => { value.settings.loop.everySeconds = everySeconds; value.revision = nextRevision; });
+  mutateConsoleValue('configuration', 'baseline', value => { value.loop.everySeconds = everySeconds; });
+  mutateConsoleValue('configuration', 'draft', value => { value.loop.everySeconds = everySeconds; });
 }
 function configVisible() { return !$('tab-settings').classList.contains('hidden'); }
 function configMessage(text, kind = 'info') {
@@ -576,7 +578,7 @@ function configActivateGroup(id, focus = false, writeHash = true, forcePreview =
   if (!group || group.category !== configEditor.category) return;
   closeHelpTip(false);
   const changed = configEditor.selectedGroups[group.category] !== id;
-  configEditor.selectedGroups[group.category] = id;
+  configEditor.selectedGroups = { ...configEditor.selectedGroups, [group.category]: id };
   const panel = $('config-panel-' + group.category);
   const family = baseFamilies.find(item => item.groups.includes(id));
   if (family) {
@@ -1001,9 +1003,9 @@ async function configLoad(force = false) {
     if (account !== current || version !== configEditor.serial) return;
     if((!force || JSON.stringify(configEditor.draft)!==original)&&configEditor.owner===account&&configEditor.draft&&
       (configIsDirty() || (data.revision===configEditor.data?.revision && data.baseRevision===configEditor.data?.baseRevision && JSON.stringify(data.settings)===JSON.stringify(configEditor.baseline) && JSON.stringify(data.catalog)===JSON.stringify(configEditor.data.catalog)))){
-      configEditor.runtime=runtime;configEditor.data.usage=data.usage;configEditor.data.pendingUsage=data.pendingUsage;
+      configEditor.runtime=runtime;configEditor.data={...configEditor.data,usage:data.usage,pendingUsage:data.pendingUsage};
       const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
-      configEditor.data.rules=data.rules;configEditor.data.tasks=data.tasks;
+      configEditor.data={...configEditor.data,rules:data.rules,tasks:data.tasks};
       // 活动开放状态独立于保存版本；更新入口时保留草稿和原基线，避免覆盖编辑或绕过版本冲突。
       if(displayChanged){configEditor.previewSummary=null;configRender();}else configRenderUsage();
       return;
@@ -1455,7 +1457,7 @@ async function configPreview() {
     }
     if (account !== current) return;
     if (contextChanged()) { clear($('config-preview-result')); configMessage('草稿、分组或预览范围已变化，请重新预览。'); return; }
-    configEditor.runtime=runtime;configEditor.data.usage=data.usage;if(data.pendingUsage)configEditor.data.pendingUsage=data.pendingUsage;configEditor.previewSummary={...data,group,scope};configRenderUsage();
+    configEditor.runtime=runtime;configEditor.data={...configEditor.data,usage:data.usage,...(data.pendingUsage?{pendingUsage:data.pendingUsage}:{})};configEditor.previewSummary={...data,group,scope};configRenderUsage();
     const root = clear($('config-preview-result'));
     if(data.groupRows){
       root.append(el('h4','',data.scopeLabel+' · 草稿与运行状态'));

@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import os from 'node:os';
 // 参数功能专项验证。仅使用受控数据与本机虚构账号，不连接游戏、不读取真实凭据。
 import assert from 'node:assert/strict';
@@ -210,7 +211,7 @@ try {
 
   await check('工厂界面提供受限的兜底秒数及调度说明', () => {
     const source = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
-    const groups = new Function(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
+    const groups = newStateFunction(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
     const fields = groups.find(group => group.id === 'factory').fields.filter(field => field.key === 'factory.checkEverySeconds');
     assert.equal(fields.length, 1);
     assert.equal(fields[0].label, '兜底检查间隔'); assert.equal(fields[0].kind, 'number'); assert.equal(fields[0].unit, '秒');
@@ -313,7 +314,7 @@ try {
 
   await check('中小货轮优先级控件可调整、移除与添加，保留工厂设置', () => {
     const source = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
-    const groups = new Function(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
+    const groups = newStateFunction(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
     const fields = groups.find(group => group.id === 'treasure').fields;
     const draft = defaultSettings();
     for (const key of ['rewardItems', 'fallbackMediumRewardPriority', 'fallbackSmallRewardPriority']) {
@@ -330,7 +331,7 @@ try {
     const clear = node => { node.children = []; return node; };
     const button = (text, onclick) => Object.assign(el('button', '', text), { onclick });
     const editor = source.slice(source.indexOf('function configPriorityEditor('), source.indexOf('function configCropEditor('));
-    const render = new Function('spec', 'draft', 'catalog', 'el', 'clear', 'configButton', `
+    const render = newStateFunction('spec', 'draft', 'catalog', 'el', 'clear', 'configButton', `
       const configEditor = { data: { catalog } };
       const configGet = key => key.split('.').reduce((value, part) => value[part], draft);
       const configSet = (key, value) => { const [group, field] = key.split('.'); draft[group][field] = value; };

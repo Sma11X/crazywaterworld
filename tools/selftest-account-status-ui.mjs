@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import { PAGE } from '../src/page.mjs';
 
@@ -85,7 +86,7 @@ function fixture(rows = [
     this.text = text;
     this.value = value;
   };
-  new Function('env', `
+  newStateFunction('env', `
     'use strict';
     const $ = env.node, document = env.document, call = env.call, Option = env.Option;
     const Date = { now: () => env.now };
@@ -109,6 +110,7 @@ function fixture(rows = [
     const giftAccountChanged = () => env.effects.push('gift');
     const loginSettingsAccountChanged = () => env.effects.push('login-settings');
     const appointmentsAccountChanged = () => {};
+    const siliconAccountChanged = () => {}, maybeRefreshSilicon = () => {};
     const renderAccounts = () => env.effects.push('account-cards');
     const resetWorldMap = () => env.effects.push('clear-map');
     const resetProductionPlan = () => env.effects.push('clear-production');
@@ -121,13 +123,12 @@ function fixture(rows = [
       connectionStatus, renderAccountOptions, paintConnection, setBusy,
       setAccountStatus, refreshAccountStatuses, loadAccounts, selectLoadedAccount, refreshOverview, renderHostingControl,
       current: () => current, rows: () => accounts, snapshot: () => snapshot,
-      disconnected, connectingAccounts,
+      disconnected: { has: id => disconnected.has(id), add: id => stateActions.setFlag('disconnected', id, true), delete: id => stateActions.setFlag('disconnected', id, false) },
+      connectingAccounts: { get size() { return connectingAccounts.size; }, has: id => connectingAccounts.has(id), add: id => stateActions.setFlag('connecting', id, true), delete: id => stateActions.setFlag('connecting', id, false) },
       loopReady(ready) { loopAccount = ready ? current : null; renderHostingControl(); },
       initialize(rows, selected) {
-        accounts = structuredClone(rows);
-        current = selected;
+        stateActions.replaceAccounts(structuredClone(rows), selected, { select: true });
         loopAccount = selected;
-        snapshot = accounts.find(account => account.id === current)?.status ?? {};
         accountDetailsOwner = current;
         dailyAccount = current;
         renderAccountSelect();
@@ -156,7 +157,12 @@ await test('连接状态优先级、重连倒计时及旧数据缺省值', async
   assert.equal(status({ reconnecting: true }), '异地登录 · 等待重连');
   assert.equal(status({ reconnecting: true, loginRecovery: { nextAttemptAt: NaN } }), '异地登录 · 等待重连');
   assert.equal(status({ loginBlocked: true, connected: true }), '异地登录 · 等待恢复托管');
-  assert.equal(status({ connected: true, state: 'CONNECTING' }), '已连接');
+  assert.equal(status({ connected: true, state: 'CONNECTING' }), '已连接 · 未挂机');
+  assert.equal(status({ connected: true, looping: false }), '已连接 · 未挂机');
+  assert.equal(status({ connected: true, looping: true }), '挂机中');
+  assert.equal(status({ connected: true, looping: true, loopStopping: true }), '暂停中…');
+  assert.equal(status({ looping: true, state: 'CONNECTING' }), '连接中…');
+  assert.equal(status({ looping: true, connected: false }), '挂机中 · 等待连接');
   assert.equal(status({ state: 'CONNECTING' }), '连接中…');
   for (const missing of [undefined, null, {}]) assert.equal(status(missing), '未连接');
 });
@@ -168,11 +174,11 @@ await test('每项显示自己的状态，空列表和旧账号都可渲染', as
     { id: 'legacy', title: '旧账号' },
     { id: 'null-status', title: '<角色名称>', status: null },
   ]);
-  assert.equal(env.option('account-a').text, '[已连接] 甲角色 · 海港1服');
+  assert.equal(env.option('account-a').text, '[已连接 · 未挂机] 甲角色 · 海港1服');
   assert.equal(env.option('account-b').text, '[已暂停 · 可自行上号] 乙角色 · 海港2服');
   assert.equal(env.option('legacy').text, '[未连接] 旧账号');
   assert.equal(env.option('null-status').text, '[未连接] <角色名称>');
-  assert.equal(env.node('busy').textContent, '已连接');
+  assert.equal(env.node('busy').textContent, '已连接 · 未挂机');
   assert.equal(env.node('account').title, env.option('account-a').text);
   const empty = fixture([]);
   assert.equal(empty.node('account').options.length, 1);
@@ -267,7 +273,7 @@ await test('后台账号重连倒计时逐秒刷新，当前账号状态保持',
   env.now += 1000;
   timer.callback();
   assert.match(env.option('account-b').text, /4 秒后重试/);
-  assert.equal(env.node('busy').textContent, '已连接');
+  assert.equal(env.node('busy').textContent, '已连接 · 未挂机');
   assert.equal(env.calls.length, 0);
   env.document.hidden = true;
   env.now += 1000;

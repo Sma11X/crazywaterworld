@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -89,12 +90,17 @@ function fixture({ wizard = false } = {}) {
     return env.onMayChange ? env.onMayChange() : env.allowed;
   };
   env.load = async reload => { env.loadCalls.push(reload); await env.onLoad?.(); };
-  new Function('env', `
+  newStateFunction('env', `
     'use strict';
     const $ = env.node, call = env.call, el = env.element, clear = env.clear;
     const Date = { now: env.now };
     const setTimeout = env.setTimer, clearTimeout = env.clearTimer;
-    const accounts = env.accounts, disconnected = env.disconnected;
+    let accounts = env.accounts;
+    stateActions.replaceAccounts(accounts, accounts[0]?.id);
+    consoleStore.subscribe(state => {
+      accounts = env.accounts = CWConsoleState.selectAccounts(state);
+      env.disconnected = state.disconnected;
+    });
     const configMayChangeAccount = env.mayChange, loadAccounts = env.load;
     const renderAccounts = () => {};
     const accountAddChanged = env.wizard ? (...args) => env.wizardEvents.push(args) : undefined;

@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 // 执行真实前端函数，以可控时钟、隔离账号文件验证自动保存及请求竞争。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -59,7 +60,7 @@ function fixture({ catalog = {} } = {}) {
       } finally { env.inFlight--; }
     },
   };
-  const api = new Function('env', sources + `
+  const api = newStateFunction('env', sources + `
     let current = 'a', loopSettingsRevision = 1, loopFieldDefaults = null;
     const accounts = [], $ = env.node, window = { confirm: env.confirm }, loopIntervalSaves = new Map();
     const setTimeout = env.setTimeout, clearTimeout = env.clearTimeout;
@@ -480,7 +481,7 @@ await test('城战职责控件逐队切换，参与名单变化即刷新且不�
   const read = key => key.split('.').reduce((value, part) => value[part], draft);
   const writes = [];
   const write = (key, value) => { writes.push(key); draft.cityWar.defenceFleetIds = value; root.refresh(); };
-  const render = new Function('el', 'clear', 'configGet', 'configSet', 'configEditor',
+  const render = newStateFunction('el', 'clear', 'configGet', 'configSet', 'configEditor',
     section('function configCityWarRoles(', 'function configMultiselect(') + '\nreturn configCityWarRoles;')(node, clear, read, write, { data: { catalog } });
   const root = render({ key: 'cityWar.defenceFleetIds', label: '各舰队城战职责' }, 'roles');
   const selects = () => root.children.flatMap(row => row.children).filter(child => child.tag === 'select');
@@ -515,7 +516,7 @@ await test('攻守目标控件独立显示、校验和自动保存，刷新及�
     querySelectorAll() { return []; }, focus() {}, scrollIntoView() {},
   });
   const clear = element => { element.childNodes = []; return element; };
-  const renderer = new Function('configEditor', 'configSet', 'el', 'clear', 'makeHelpTip', 'configPlacePanel', `
+  const renderer = newStateFunction('configEditor', 'configSet', 'el', 'clear', 'makeHelpTip', 'configPlacePanel', `
     const configGet = key => key.split('.').reduce((value, part) => value[part], configEditor.draft);
     ${section('function configUpdateVisibility(', 'function configRender(')}
     ${section('function configRenderField(', 'function configRenderUsage(')}
@@ -587,7 +588,7 @@ function lineupPickerFixture(f) {
     setAttribute(key, value) { this.attributes[key] = value; },
   });
   const viewed = [];
-  const render = new Function('configEditor', 'configGet', 'configSet', 'el', 'configButton', 'openSavedLineupViewer', `
+  const render = newStateFunction('configEditor', 'configGet', 'configSet', 'el', 'configButton', 'openSavedLineupViewer', `
     const current = configEditor.owner;
     ${section('function configLineupPicker(', 'function configRenderUsage(')}
     return configLineupPicker;
@@ -701,7 +702,7 @@ await test('配置曾打开后经真实管理保存流程新增、改名和删�
   const managerView = () => { const view = f.view('a'); return { ...view.settings.lineups, revision: view.revision }; };
   const state = { saved: managerView(), readSerial: 0, saving: false };
   let nextId = 0;
-  const mutate = new Function('env', `
+  const mutate = newStateFunction('env', `
     const current = 'a';
     const savedLineupState = () => env.state;
     const renderSavedLineups = () => {}, redrawLineupEditor = () => {}, updateManualLineupSelects = () => {};
@@ -764,7 +765,7 @@ await test('配置曾打开后经真实管理保存流程新增、改名和删�
 await test('管理自定义阵容入口等候全部在途草稿保存后再导航并刷新管理数据', async () => {
   const f = fixture(); await f.load();
   const gate = deferred(), actions = [], host = { append(button) { this.button = button; } };
-  const createLink = new Function('env', `
+  const createLink = newStateFunction('env', `
     const current = 'a', group = { id: 'progression' }, section = env.host;
     const el = () => ({}), configFlush = env.flush;
     const document = { querySelector: () => ({}) };

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { formatConsoleLog } from '../src/console-log.mjs';
 import { createLogAccountLabels } from '../src/log-accounts.mjs';
 import { LOG_CATEGORIES } from '../src/log-categories.mjs';
+import { formatLoopStep } from '../src/loop.mjs';
 
 const time = new Date(2026, 10, 12, 13, 14, 15).getTime();
 const clock = new Intl.DateTimeFormat('zh-CN', {
@@ -18,6 +19,29 @@ let passed = 0;
 function test(name, fn) {
   fn(); passed++; console.log('通过：' + name);
 }
+
+test('扩展挂机日志显示功能名称，配置键只保留为内部任务标识', () => {
+  for (const [key, label, category] of [
+    ['alliance.enabled', '联盟自动化', '联盟/城战'],
+    ['guildShip.enabled', '联盟商船', '联盟/城战'],
+    ['guildFort.enabled', '联盟工事捐赠', '联盟/城战'],
+    ['heroRaid.enabled', '超凡英雄活动', '活动'],
+  ]) {
+    for (const [result, expected] of [
+      [{ ok: true }, '检查任务'],
+      [{ skipped: true, reason: '尚未开放' }, '检查任务已跳过：尚未开放'],
+      [{ ok: false, error: '读取超时' }, '检查任务失败：读取超时'],
+      [{ status: 'pending', reason: '等待回包' }, '检查任务等待确认：等待回包'],
+    ]) {
+      const step = Object.freeze({ phase: 'world', category: key, taskKey: key, ...result });
+      const message = formatLoopStep(step);
+      assert.equal(message, label + ' · ' + expected, '网页正文显示中文功能名');
+      assert.equal(formatConsoleLog({ ...entry, category: undefined, message }), prefix('account-', '信息', category) + message);
+      assert.equal(step.taskKey, key, '运行状态和去重继续使用内部任务键');
+    }
+  }
+  assert.equal(formatLoopStep({ category: '硅矿', title: '检查矿位', ok: true }), '硅矿 · 检查矿位');
+});
 
 test('时间按本地时区显示，旧日志缺名称时回退到账号短标识', () => {
   assert.equal(formatConsoleLog(entry), prefix() + '自动挂机开始');

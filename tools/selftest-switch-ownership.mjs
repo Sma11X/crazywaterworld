@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { newStateFunction } from './fixtures/console-state.mjs';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-switch-ownership-'));
 process.env.CW_DATA_DIR = directory;
@@ -16,14 +17,14 @@ const { automationTasks } = await import('../src/automation.mjs');
 const { activityAutomationFields } = await import('../src/activity-automation.mjs');
 const script = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
 const definitions = script.slice(0, script.indexOf('function configGet('));
-const { staticGroups, merchantFields, guildShipFields } = new Function(definitions + '\nreturn { staticGroups: configGroups, merchantFields: merchantActivityFields, guildShipFields: guildShipActivityFields };')();
+const { staticGroups, merchantFields, guildShipFields } = newStateFunction(definitions + '\nreturn { staticGroups: configGroups, merchantFields: merchantActivityFields, guildShipFields: guildShipActivityFields };')();
 const activityKeys = new Set([...merchantFields.map(field => field.key), ...guildShipFields.map(field => field.key), ...activityAutomationFields.map(field => field.key),
   'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const renderStart = script.indexOf('function configRender()');
 const modelStart = script.indexOf('  const groups =', renderStart), modelEnd = script.indexOf('  const scopeSelect=', modelStart);
 assert(modelStart > renderStart && modelEnd > modelStart);
-const configGroups = new Function('data', definitions + '\nconfigEditor.data=data;\n' + script.slice(modelStart, modelEnd) + '\nreturn groups;')({ tasks: automationTasks, rules: settingsUiRules() });
+const configGroups = newStateFunction('data', definitions + '\nconfigEditor.data=data;\n' + script.slice(modelStart, modelEnd) + '\nreturn groups;')({ tasks: automationTasks, rules: settingsUiRules() });
 const configFields = configGroups.flatMap(group => group.fields), configKeys = new Set(configFields.map(field => field.key));
 const read = (value, key) => key.split('.').reduce((object, part) => object?.[part], value);
 const write = (value, key, enabled) => {

@@ -6,13 +6,13 @@ function accountPickerPresentation(account, activeStatus) {
   const connecting = connectingAccounts.has(account.id);
   const detail = account.id === current && activeStatus ? activeStatus
     : connecting ? '连接中…' : connectionStatus(status);
-  let label = detail.split(' · ')[0];
+  let label = detail;
   if (status.syncingProduction) label = '同步中';
+  else if (status.paused) label = '已暂停';
   else if (detail === '连接中…') label = '连接中';
   else if (status.reconnecting) label = '重连中';
   else if (status.loginBlocked && !status.paused) label = '待恢复';
-  const kind = status.paused || status.loginBlocked || status.reconnecting || status.syncingProduction || connecting || detail === '连接中…'
-    ? 'waiting' : status.connected ? 'done' : 'blocked';
+  const kind = connectionStatusKind(status, connecting || detail === '连接中…');
   return { label, detail, kind };
 }
 

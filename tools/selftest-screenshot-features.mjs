@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -77,7 +78,7 @@ try {
   });
   await test('全部新增参数具有界面入口，超凡英雄与联盟商船归属活动页并保留子项',()=>{
     const src=fs.readFileSync(new URL('../src/settings-ui.js',import.meta.url),'utf8');
-    const { groups, activityFields }=new Function(src.slice(0,src.indexOf('function configGet('))+'\nreturn {groups:configGroups,activityFields:activityOwnedSettings};')();
+    const { groups, activityFields }=newStateFunction(src.slice(0,src.indexOf('function configGet('))+'\nreturn {groups:configGroups,activityFields:activityOwnedSettings};')();
     const fields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
     const s=defaultSettings();for(const group of ['alliance','guildFort','silicon'])for(const key of Object.keys(s[group])){
       if(key==='fleets')for(let i=0;i<3;i++)for(const name of Object.keys(s.silicon.fleets[i])){

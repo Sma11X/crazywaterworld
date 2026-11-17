@@ -95,7 +95,7 @@ try {
       await page.route('**/api/silicon/settings?*', delay);
       const otherBefore = loadAutomationSettings('two');
       await page.locator('#silicon-auto-enabled').click(); await started;
-      await page.evaluate(async () => { current = 'two'; siliconAccountChanged(); await refreshSiliconSettings(); });
+      await page.evaluate(async () => { stateActions.selectAccount('two'); siliconAccountChanged(); await refreshSiliconSettings(); });
       assert.equal(await page.locator('.silicon-settings-fleet').count(), 0); release();
       await page.waitForResponse(response => response.url().includes('/api/silicon/settings') && response.request().method() === 'POST');
       assert.equal(await page.evaluate(() => siliconSettingsEditor.owner), 'two');

@@ -14,7 +14,7 @@ const results = [];
 
 try {
   // accounts.mjs 的数据路径在加载时确定，因此必须先隔离再导入。
-  const { runLoop } = await import('../src/loop.mjs');
+  const { runLoop, formatLoopStep } = await import('../src/loop.mjs');
   const { createUsageLedger } = await import('../src/automation-settings.mjs');
   const { watchFleetMaintenance } = await import('../src/fleet-maintenance.mjs');
   const { dispatchReservationReason } = await import('../src/fleet-availability.mjs');
@@ -138,6 +138,9 @@ try {
     assert.deepEqual(f.client.writes.map(row => row.name), ['HeroRaidChallengeRequest', 'HeroRaidPrizeRequest'], JSON.stringify(f.reports));
     assert.equal(f.client.writes[1].body.times, 10);
     assert.equal(f.scheduled(), 1);
+    const raidLogs = f.reports.filter(row => row.category === 'heroRaid.enabled').map(formatLoopStep);
+    assert(raidLogs.length > 0, '完整循环输出活动日志');
+    assert(raidLogs.every(message => message.startsWith('超凡英雄活动 · ') && !message.includes('heroRaid.enabled')));
     const records = Object.values(f.ledger.keyRecords());
     assert.deepEqual(records.map(row => row.details.kind).sort(), ['heroRaidChallenge', 'heroRaidLottery']);
     assert(records.every(row => row.confirmed));

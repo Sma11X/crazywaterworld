@@ -24,7 +24,10 @@ for (const [index, rewards] of [
 const fixtureView = await readSiliconOverview(f.client, f.protocol, f.config, f.player);
 const css = PAGE.match(/<style>([\s\S]*?)<\/style>/)[1];
 const script = fs.readFileSync('src/silicon-overview-ui.js', 'utf8');
+const storeScript = fs.readFileSync('src/ui/dist/console-store.js', 'utf8');
 const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body><main class="deck" style="padding-block:24px"><section id="tab-overview">${overviewPage()}</section></main>${templates()}<script>
+${storeScript}
+const {bindConsoleSlice,setConsoleValue}=CWConsoleState.createConsoleRuntime();
 const $=id=>document.getElementById(id),fmt=value=>Number(value).toLocaleString('zh-CN');
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n;}
 function clear(node){node.textContent='';return node;}

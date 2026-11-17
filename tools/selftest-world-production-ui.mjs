@@ -1,3 +1,4 @@
+import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import { PAGE } from '../src/page.mjs';
 
@@ -93,7 +94,7 @@ function fixture() {
     },
     querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; },
   };
-  new Function('env', `
+  newStateFunction('env', `
     const $ = env.node, el = env.element, clear = env.clear, table = env.table;
     const document = env.document, Date = { now: () => env.now };
     const chip = (state, label) => el('span', state, label);

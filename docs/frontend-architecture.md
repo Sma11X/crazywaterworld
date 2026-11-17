@@ -12,24 +12,60 @@
 | `src/ui/client/pages/` | React 页面与局部 CSS Modules |
 | `src/ui/client/contracts/` | 接口类型、响应校验与表单校验 |
 | `src/ui/client/lib/api.ts` | 显式绑定账号的 HTTP 请求；不自动重试写入 |
+| `src/ui/console-store.mjs` | Zustand vanilla store、账号状态动作、选择器与原生页面过渡适配器 |
+| `src/ui/client/lib/console-store.ts` | 同一浏览器 store 的 TypeScript 访问入口 |
+| `src/ui/client/lib/use-console-slice.ts` | React 通过 Zustand 订阅页面状态切片 |
 | `src/ui/client/lib/time.ts` | Day.js 北京时间展示；不替换后端计时与换日规则 |
 | `src/ui/theme.css` | Tailwind v4、主题变量与通用控件样式 |
 | `src/ui-assets.mjs` | 提供生成的客户端资源、gzip、ETag 与缓存头 |
 | `src/ui/dist/client/` | Vite 生产产物，应随源代码一起提交 |
 
-原页面在 `login-settings-root` 的 `data-account` 上发布当前账号；客户端入口通过 MutationObserver 读取。入口同时观察导航的可见状态，不另建账号轮询、SSE 或路由系统。React 挂载后独占根节点内部，原脚本不再直接读写表单。
+原页面启动时创建唯一的 Zustand vanilla store，挂在 `window.cwConsoleStore`。原生 DOM 脚本与 React 客户端订阅同一实例；客户端入口直接订阅当前账号和页签，不再通过 MutationObserver 从 DOM 反向读取状态，也不另建账号轮询、SSE 或路由系统。`data-account` 仅保留作诊断标记。React 挂载后独占根节点内部，原脚本不再直接读写表单。
+
+## Zustand 状态边界
+
+状态由 `createConsoleStore()` 初始化，每个浏览器页签和测试夹具独立持有一份。未启用 `persist`：连接、挂机和请求状态在刷新后由服务端重新确认，账号凭据和资源账本不进入前端 store。
+
+| 状态 | 内容与归属 |
+| --- | --- |
+| `currentAccountId`、`accountIds`、`accountsById` | 当前账号、列表顺序和账号资料；当前运行快照由账号表派生，不再单独维护 |
+| `connecting`、`hosting`、`disconnected` | 按账号隔离的连接标记、启停操作锁与连接失效标记 |
+| `gameByAccount` | 按账号保存最近确认的总览、挑战、挂机和海面响应；只作前端快照，不据此执行游戏任务 |
+| `view` | 当前页签、资源子页及独立的日志账号、分类、问题筛选 |
+| `slices.inventory`、`slices.activities` | 仓库数据与搜索状态；活动列表、选中活动和各活动配置的已读数据、归属及提示 |
+| `slices.worldMap`、`slices.worldMapTouch` | 地图数据、归属、读取状态、视角、缩放、选中目标及刷新/触屏移动选择 |
+| `slices.silicon`、`slices.productionPlan` | 硅矿数据、归属、读取时间和载入状态；排产归属及计算状态 |
+| `slices.configuration` | 挂机配置已读数据、草稿、基线、分组、校验、自动保存与预览状态 |
+| `slices["loginSettings:<账号 ID>"]` | React 登录设置已读数据、草稿、提示、校验、载入及保存状态；切号和离开页面保留草稿 |
+
+账号卡片、页头与账号选择器共用 `accountsById` 中的运行状态及统一状态文案。账号状态订阅在微任务中合并刷新，因此通过 action 更新状态后，各处显示自动同步。日志筛选独立于操作账号，切号不清空日志或改变筛选。
+
+原生页面保留现有绘制函数，`bindConsoleSlice` 将旧变量名作为只读投影，写入使用 `setConsoleValue` / `patchConsoleSlice`；`bindConsoleObject` 将配置编辑器中选定的字段直接代理至 store。这些适配器用于渐进迁移，不能再对投影对象或 Set 原地修改。嵌套草稿先复制再替换，可使用 `mutateConsoleValue`；账号操作集合统一调用 `actions.setFlag`。新增 React 页面通过 `useStore` 或 `useConsoleSlice` 读取共享实例，不能另建一份账号 store。
+
+```js
+const store = window.cwConsoleStore;
+store.getState().actions.patchStatus(accountId, { looping: false });
+store.getState().actions.setFlag('hosting', accountId, true);
+store.getState().actions.setView({ logAccount: 'all', onlyIssues: true });
+```
+
+DOM 节点、控件实例、弹窗焦点、渲染缓存、计时器、AbortController、Promise、请求序号及未拆分的局部交互编辑器继续留在所属模块。服务端仍负责真实连接、挂机队列、配置持久化、消费预算和账本。Zustand 统一状态归属，不替代接口契约、保存版本或请求乱序保护。
+
+删号时清理对应运行快照、操作标记和登录设置切片；迟到的状态、快照或登录设置回复不能重新创建已移除账号。原生页面保留现有 owner/version 校验；React 保存捕获提交账号，切号后只更新原账号切片并解除其保存状态。
 
 ## 构建与检查
 
 Node.js 要求为 **20.19+（20.x）或 22.12+**；建议使用满足要求的 LTS 版本。
 
-- `npm run build:ui`：esbuild 构建现有服务端标记，Tailwind 编译共享样式，Vite 构建客户端分块。
+- `npm run build:ui`：esbuild 构建共享 store 与现有服务端标记，Tailwind 编译共享样式，Vite 构建客户端分块。
 - `npm run build:client`：只构建客户端。
 - `npm run typecheck`：账本 JSDoc 检查及全部 UI TS/TSX 的严格类型检查。
 - `npm run check:ui`：检查已迁移代码、客户端资源服务和新增测试的 Biome 规范。
 - `npm run format:ui`：对上述明确范围执行格式化、导入整理和安全修复。
-- `npm run test:client`：接口契约、账号隔离、冲突、未知保存结果、日期显示及静态资源测试。
+- `npm run test:state`：共享状态、不可变更新、账号隔离、删除清理、日志筛选及原生适配器测试。
+- `npm run test:client`：先运行状态测试，再运行接口契约、账号隔离、冲突、未知保存结果、日期显示及静态资源测试。
 - `npm run test:client:browser`：构建并使用隔离账号运行浏览器验收，截图保存在 `output/react-client/`。
+- `npm run test:account-controls:browser`：验证账号启停、直接更新 store 后各处状态同步及 1280/360/320 像素布局，截图保存在 `output/account-controls/`。
 - `npm run test:offline`：构建、类型检查及全部核心离线回归，包含新客户端测试。
 
 Biome 的 `files.includes` 是迁移范围清单。不要为快速通过检查而全局关闭推荐规则，也不要一次格式化未迁移的大文件。共享 UI TSX 已纳入 TypeScript 检查，存量 JS 通过导入推断类型；后端严格检查仍由独立账本配置承担。

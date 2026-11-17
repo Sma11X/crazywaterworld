@@ -28,6 +28,7 @@ const helpTipsScript = readFileSync(new URL('./help-tips.js', import.meta.url), 
 const appointmentsScript = readFileSync(new URL('./appointments-ui.js', import.meta.url), 'utf8');
 const appointmentsCss = readFileSync(new URL('./appointments.css', import.meta.url), 'utf8');
 const themeScript = readFileSync(new URL('./theme-ui.js', import.meta.url), 'utf8');
+const consoleStoreScript = readFileSync(new URL('./ui/dist/console-store.js', import.meta.url), 'utf8');
 
 export const PAGE = `<!doctype html>
 <html lang="zh-CN">
@@ -92,6 +93,9 @@ ${dialogs()}
 ${templates()}
 
 <script>
+${consoleStoreScript}
+const { consoleStore, stateActions, bindConsoleSlice, patchConsoleSlice, setConsoleValue, mutateConsoleValue, bindConsoleObject } = CWConsoleState.createConsoleRuntime();
+window.cwConsoleStore = consoleStore;
 const $ = (id) => document.getElementById(id);
 const logEl = $('log');
 const operationNames = ${JSON.stringify(operationLabels)};
@@ -290,6 +294,12 @@ const createLogAccountLabels = ${createLogAccountLabels.toString()};
 let logAccount = 'all';
 let logGroup = 'all';
 let onlyIssues = false;
+consoleStore.subscribe((state, previous) => {
+  if (state.view === previous.view) return;
+  logAccount = state.view.logAccount;
+  logGroup = state.view.logGroup;
+  onlyIssues = state.view.onlyIssues;
+});
 let logReturnFocus;
 function openJournal() {
   if ($('journal-dialog').open) return;
@@ -311,12 +321,12 @@ function revealLogFilter(button) {
   else if (right > container.scrollLeft + container.clientWidth) container.scrollLeft = right - container.clientWidth;
 }
 function selectLogGroup(tab) {
-  logGroup = tab.dataset.logGroup;
+  stateActions.setView({ logGroup: tab.dataset.logGroup });
   updateLogSummary();
   revealLogFilter(tab);
 }
 function selectLogAccount(id) {
-  logAccount = id;
+  stateActions.setView({ logAccount: id });
   updateLogSummary();
   revealLogFilter($('log-account-tabs').querySelector('[aria-pressed=true]'));
 }
@@ -544,7 +554,7 @@ function reportError(error, context, account = current) {
 window.addEventListener('unhandledrejection', (event) => { reportError(event.reason); event.preventDefault(); });
 for (const [id, filtered] of [['log-all', false], ['log-issues', true]]) {
   $(id).onclick = () => {
-    onlyIssues = filtered;
+    stateActions.setView({ onlyIssues: filtered });
     $('journal').classList.toggle('issues', filtered);
     $('log-all').setAttribute('aria-pressed', String(!filtered));
     $('log-issues').setAttribute('aria-pressed', String(filtered));
@@ -577,13 +587,29 @@ function subscribe() {
 
 // ---- 账号 ------------------------------------------------------------------
 let snapshot = { connected: false, state: 'IDLE', busy: null, looping: false };
-const disconnected = new Set();
-const connectingAccounts = new Set();
+let disconnected = new Set();
+let connectingAccounts = new Set();
+let hostingActions = new Set();
 let accountStatusRevision = 0;
 let accountStatusPending = null;
 let accountsLoading = 0;
 let accountLoadVersion = 0;
 let accountSelectionVersion = 0;
+
+function syncAccountState(state) {
+  current = state.currentAccountId;
+  accounts = CWConsoleState.selectAccounts(state);
+  snapshot = CWConsoleState.selectCurrentStatus(state);
+  disconnected = state.disconnected;
+  connectingAccounts = state.connecting;
+  hostingActions = state.hosting;
+}
+consoleStore.subscribe((state, previous) => {
+  if (state.accountsById !== previous.accountsById || state.accountIds !== previous.accountIds
+      || state.currentAccountId !== previous.currentAccountId || state.disconnected !== previous.disconnected
+      || state.connecting !== previous.connecting || state.hosting !== previous.hosting) syncAccountState(state);
+});
+syncAccountState(consoleStore.getState());
 
 function connectionStatus(status = {}) {
   status = status ?? {};
@@ -597,8 +623,17 @@ function connectionStatus(status = {}) {
     return '异地登录 · ' + seconds + ' 秒后重试';
   }
   if (status.loginBlocked) return '异地登录 · 等待恢复托管';
-  if (status.connected) return '已连接';
-  return status.state === 'CONNECTING' ? '连接中…' : '未连接';
+  if (status.loopStopping) return '暂停中…';
+  if (status.connected) return status.looping ? '挂机中' : '已连接 · 未挂机';
+  if (status.state === 'CONNECTING') return '连接中…';
+  return status.looping ? '挂机中 · 等待连接' : '未连接';
+}
+
+function connectionStatusKind(status = {}, connecting = false) {
+  status = status ?? {};
+  return status.paused || status.loginBlocked || status.reconnecting || status.syncingProduction
+    || status.loopStopping || connecting || status.state === 'CONNECTING' || (status.looping && !status.connected)
+    ? 'waiting' : status.connected ? 'done' : 'blocked';
 }
 
 function renderAccountOptions() {
@@ -633,17 +668,13 @@ function setBusy(text) {
 }
 
 function paintConnection() {
-  const account = accounts.find(row => row.id === current);
-  if (account) account.status = snapshot;
   renderAccountOptions();
   setBusy(connectingAccounts.has(current) ? '连接中…' : connectionStatus(snapshot));
 }
 
 function setAccountStatus(account, status) {
   accountStatusRevision++;
-  const row = accounts.find(item => item.id === account);
-  if (row) row.status = status;
-  if (account === current) snapshot = status;
+  stateActions.setStatus(account, status);
   paintConnection();
 }
 
@@ -655,15 +686,7 @@ function refreshAccountStatuses() {
       const data = await call('/api/accounts');
       if (revision !== accountStatusRevision) return;
       accountStatusRevision++;
-      for (const row of accounts) {
-        const updated = data.accounts.find(account => account.id === row.id);
-        if (updated) {
-          row.status = updated.status ?? {};
-          if (Object.hasOwn(updated, 'lastSeen')) row.lastSeen = updated.lastSeen;
-          if (Object.hasOwn(updated, 'label')) row.label = updated.label;
-        }
-      }
-      snapshot = accounts.find(account => account.id === current)?.status ?? {};
+      stateActions.mergeStatuses(data.accounts);
       renderAccountSelect();
     } catch {
       /* call 已记录错误，下次刷新继续读取。 */
@@ -675,7 +698,6 @@ function refreshAccountStatuses() {
 }
 
 let accountDetailsOwner=null;
-const hostingActions = new Set();
 function renderHostingControl() {
   const resume = snapshot.paused || (snapshot.loginBlocked && !snapshot.reconnecting);
   const running = snapshot.looping || snapshot.reconnecting;
@@ -721,18 +743,10 @@ async function loadAccounts(reload) {
     accountsLoading--;
   }
   if (version !== accountLoadVersion) return;
-  if (revision !== accountStatusRevision) {
-    for (const row of data.accounts) {
-      const existing = accounts.find(account => account.id === row.id);
-      if (existing) row.status = existing.status;
-    }
-  }
+  const preserveStatus = revision !== accountStatusRevision;
   accountStatusRevision++;
   const previous = current;
-  accounts = data.accounts;
-  if (!current && data.activeId) current = data.activeId;
-  if (current && !accounts.some((a) => a.id === current)) current = data.activeId;
-  snapshot = accounts.find(a => a.id === current)?.status ?? {};
+  stateActions.replaceAccounts(data.accounts, data.activeId, { preserveStatus });
   renderAccountSelect();
   if (previous !== current || reload) refreshProgression();
   if (previous !== current || reload) void refreshSavedLineups();
@@ -746,11 +760,10 @@ async function loadAccounts(reload) {
 
 function selectLoadedAccount(next) {
   accountSelectionVersion++;
-  current = next;
+  if (!stateActions.selectAccount(next)) return;
   giftAccountChanged();
   configAccountChanged();
   loginSettingsAccountChanged();
-  snapshot = accounts.find(a => a.id === current)?.status ?? {};
   renderAccountSelect();
   refreshProgression();
   void refreshSavedLineups();
@@ -776,7 +789,7 @@ $('account-pause').onclick = async () => {
   if (!account || $('account-pause').disabled) return;
   const paused = !snapshot.paused && !(snapshot.loginBlocked && !snapshot.reconnecting)
     && !!(snapshot.looping || snapshot.reconnecting || snapshot.connected || snapshot.state === 'CONNECTING' || connectingAccounts.has(account));
-  hostingActions.add(account);
+  stateActions.setFlag('hosting', account, true);
   accountStatusRevision++;
   loopVersion++;
   renderHostingControl();
@@ -789,7 +802,7 @@ $('account-pause').onclick = async () => {
     const status = await call('/api/accounts/pause', { method: 'POST', body: JSON.stringify(paused ? { paused: true } : { paused: false, start: true, confirm: true }) });
     if (current === account) loopVersion++;
     setAccountStatus(account, status);
-    if (!status.paused) disconnected.delete(account);
+    if (!status.paused) stateActions.setFlag('disconnected', account, false);
     if (current !== account) return;
     renderAccountSelect();
     refreshProgression();
@@ -800,7 +813,7 @@ $('account-pause').onclick = async () => {
   } catch (error) {
     if (current === account) reportError(error);
   } finally {
-    hostingActions.delete(account);
+    stateActions.setFlag('hosting', account, false);
     if (current === account) {
       renderAccountSelect();
       refreshAccountStatuses();
@@ -813,7 +826,7 @@ $('loop-toggle').onclick = async () => {
   const account = current;
   if (!account || $('loop-toggle').disabled) return;
   const stop = !!(snapshot.looping || snapshot.reconnecting);
-  hostingActions.add(account);
+  stateActions.setFlag('hosting', account, true);
   accountStatusRevision++;
   loopVersion++;
   renderHostingControl();
@@ -828,7 +841,7 @@ $('loop-toggle').onclick = async () => {
     });
     if (current === account) loopVersion++;
     setAccountStatus(account, data.status);
-    if (!stop) disconnected.delete(account);
+    if (!stop) stateActions.setFlag('disconnected', account, false);
     if (current !== account) return;
     renderAccountSelect();
     refreshStages();
@@ -836,7 +849,7 @@ $('loop-toggle').onclick = async () => {
   } catch (error) {
     if (current === account) reportError(error);
   } finally {
-    hostingActions.delete(account);
+    stateActions.setFlag('hosting', account, false);
     if (current === account) {
       renderAccountSelect();
       refreshAccountStatuses();
@@ -849,11 +862,11 @@ $('connect').onclick = async () => {
   const account = current;
   if (!account || connectingAccounts.has(account)) return;
   accountStatusRevision++;
-  connectingAccounts.add(account);
+  stateActions.setFlag('connecting', account, true);
   renderAccountSelect();
   try {
     await call('/api/connect', { method: 'POST' });
-    disconnected.delete(account);
+    stateActions.setFlag('disconnected', account, false);
     const status = accounts.find(row => row.id === account)?.status ?? {};
     setAccountStatus(account, { ...status, connected: true, state: 'READY', loginBlocked: false, reconnecting: false });
     if (account !== current) return;
@@ -864,7 +877,7 @@ $('connect').onclick = async () => {
     reportError(error);
   } finally {
     accountStatusRevision++;
-    connectingAccounts.delete(account);
+    stateActions.setFlag('connecting', account, false);
     renderAccountSelect();
     void refreshAccountStatuses();
   }
@@ -900,6 +913,7 @@ function renderWho(view) {
 }
 
 function renderOverview(data) {
+  stateActions.setGameData(current, 'overview', data);
   renderWho(data);
 
   const res = clear($('res'));
@@ -942,6 +956,7 @@ function stagePreferences() {
   return { maxFailures: Number($('stage-failures').value), lineupId: selectedLineupId('mainline') };
 }
 function renderStages(data) {
+  stateActions.setGameData(current, 'stages', data);
   $('stage-start').disabled = data.running || !current;
   $('stage-stop').disabled = !data.running || data.stopping;
   $('stage-failures').disabled = data.running;
@@ -1089,14 +1104,17 @@ function renderLoop(data) {
   renderAutomationOverview(data);
   renderPirateAdvance(data.pirateAdvance);
   loopSettingsRevision = data.settingsRevision;
-  snapshot.looping = data.running;
-  snapshot.loopStopping = data.stopping;
+  if (snapshot.looping !== data.running || snapshot.loopStopping !== data.stopping) accountStatusRevision++;
+  stateActions.patchStatus(current, { looping: data.running, loopStopping: data.stopping });
+  stateActions.setGameData(current, 'loop', data);
   if (loopAccount !== current || !loopIntervalSaves.has(current) && $('loop-every').value === String(loopFieldDefaults?.seconds)) {
     $('loop-every').value = data.everyMs / 1000;
   }
   loopFieldDefaults={seconds:data.everyMs/1000};
   loopAccount = current;
   renderHostingControl();
+  paintConnection();
+  if (!$('tab-account').classList.contains('hidden')) renderAccounts();
   $('loop-every').disabled = !current || loopIntervalSaves.has(current);
   $('loop-hint').textContent = (data.recovery ? '网络恢复中（第 ' + data.recovery.attempt + ' 次），已完成 ' : data.running ? '后台挂机中，已完成 ' : '未在挂机，累计 ') + data.completed + ' 轮' + (data.error ? '，已中止' : '');
   if (data.stopping) $('loop-hint').textContent = '正在暂停，等待在途请求结束';
@@ -1406,6 +1424,7 @@ function factoryCurrentProduction(factory) {
 }
 
 function renderWorld(data) {
+  stateActions.setGameData(current, 'world', data);
   orderClockOffset=Number.isFinite(data.serverNow)?data.serverNow*1000-Date.now():0;
   $('world-view').textContent = '';
   const fbox = clear($('world-factories'));
@@ -1669,7 +1688,7 @@ async function toggleAccountCardLoop(id) {
   const status = id === current ? snapshot : account.status ?? {};
   const stop = !!(status.looping || status.reconnecting);
   if (status.loopStopping || (!stop && id === current && loopAccount !== id)) return;
-  hostingActions.add(id);
+  stateActions.setFlag('hosting', id, true);
   accountStatusRevision++;
   if (id === current) loopVersion++;
   renderAccountSelect();
@@ -1684,7 +1703,7 @@ async function toggleAccountCardLoop(id) {
     });
     if (id === current) loopVersion++;
     setAccountStatus(id, stop ? data.status : data);
-    if (!stop) disconnected.delete(id);
+    if (!stop) stateActions.setFlag('disconnected', id, false);
     if (id === current) {
       refreshStages();
       refreshProgression();
@@ -1692,7 +1711,7 @@ async function toggleAccountCardLoop(id) {
   } catch (error) {
     reportError(error);
   } finally {
-    hostingActions.delete(id);
+    stateActions.setFlag('hosting', id, false);
     renderAccountSelect();
     refreshAccountStatuses();
     if (id === current) refreshLoop();
@@ -1781,8 +1800,7 @@ function renderAccounts() {
     card.querySelector('[data-account-field="current"]').hidden = account.id !== current;
     const badge = card.querySelector('[data-account-field="status"]');
     badge.classList.remove('done', 'waiting', 'blocked');
-    badge.classList.add(status.paused || status.loginBlocked || status.syncingProduction || connectingAccounts.has(account.id)
-      ? 'waiting' : status.connected ? 'done' : 'blocked');
+    badge.classList.add(connectionStatusKind(status, connectingAccounts.has(account.id)));
     const select = card.querySelector('[data-account-action="select"]');
     select.disabled = account.id === current;
     select.textContent = account.id === current ? '当前账号' : '切换账号';
@@ -2104,16 +2122,19 @@ ${settingsScript}
 ${siliconSettingsScript}
 ${appointmentsScript}
 // ---- 登录设置 --------------------------------------------------------------
-// Only publish the account identity; React owns the contents of this root.
+// Kept for DOM diagnostics; React subscribes directly to the shared store.
 function loginSettingsAccountChanged() {
   $('login-settings-root').dataset.account = current || '';
 }
 ${giftCodeScript}
 let selectedResource = 'guild';
+consoleStore.subscribe((state, previous) => {
+  if (state.view.resource !== previous.view.resource) selectedResource = state.view.resource;
+});
 function activateConsolePage(button, resource = selectedResource) {
     const isResource = button.dataset.tab === 'resources';
     const target = isResource ? resource : button.dataset.tab;
-    if (isResource) selectedResource = resource;
+    stateActions.setView({ page: target, ...(isResource ? { resource } : {}) });
     $('resource-tabs').hidden = !isResource;
     for (const tab of document.querySelectorAll('[data-resource-tab]')) {
       const selected = tab.dataset.resourceTab === target;
@@ -2165,6 +2186,27 @@ async function boot() {
   if (location.hash === '#pirate-first-kill') activateConsolePage(document.querySelector('#tabs [data-tab="stages"]'));
   pollCapture();
 }
+// Coalesce related mutations before painting every account surface. The store
+// subscription also covers writes made by React or another subscribed view.
+let accountPaintPending = false;
+consoleStore.subscribe((state, previous) => {
+  if (state.accountsById !== previous.accountsById || state.currentAccountId !== previous.currentAccountId
+      || state.connecting !== previous.connecting || state.disconnected !== previous.disconnected || state.hosting !== previous.hosting) {
+    if (!accountPaintPending) {
+      accountPaintPending = true;
+      queueMicrotask(() => { accountPaintPending = false; renderAccountSelect(); });
+    }
+  }
+  if (state.view !== previous.view) {
+    if (state.view.logAccount !== previous.view.logAccount || state.view.logGroup !== previous.view.logGroup
+        || state.view.onlyIssues !== previous.view.onlyIssues) {
+      $('journal').classList.toggle('issues', state.view.onlyIssues);
+      $('log-all').setAttribute('aria-pressed', String(!state.view.onlyIssues));
+      $('log-issues').setAttribute('aria-pressed', String(state.view.onlyIssues));
+      updateLogSummary();
+    }
+  }
+});
 boot();
 setInterval(refreshOverview, 20000);
 setInterval(() => { if (!document.hidden && accounts.some(account => account.status?.reconnecting)) paintConnection(); }, 1000);
