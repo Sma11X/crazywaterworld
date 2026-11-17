@@ -205,12 +205,12 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['treasure.marchTargetSeconds', 'treasure.marchSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.marchSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
 });
-test('城战所有分区默认收起，维修与派遣省钻分别嵌在对应加速中',()=>{
+test('一级分区默认展开，二级参数默认收起，维修与派遣省钻仍各自嵌套',()=>{
   const f=fixture({navigation:true});f.editor.draft.cityWar.enabled=true;
   f.editor.draft.fleetSpeed.enabled=true;Object.assign(f.editor.draft.fleetSpeed.fleets[0],{repair:true,march:true});
   f.renderPage();f.activate('world');f.activateGroup('cityWar');
   const sections=f.env.node('config-group-cityWar').querySelectorAll('.config-field-section');
-  assert(sections.length>=5);assert(sections.every(section=>!section.open));
+  assert(sections.length>=5);assert(sections.every(section=>section.open));
   for(const mode of ['repair','march']){
     const smart=f.widget('fleetSpeed.fleets.0.'+mode+'SmartSave');
     assert.equal(smart.parentKey,'fleetSpeed.fleets.0.'+mode);assert(!visible(smart.node));
@@ -218,6 +218,10 @@ test('城战所有分区默认收起，维修与派遣省钻分别嵌在对应�
   }
   assert(!f.editor.fields.has('fleetSpeed.fleets.0.smartSave'));
   assert.equal(f.env.saves,0);
+  sections[0].open=false;sections[0].ontoggle();
+  f.renderPage();
+  assert.equal(f.env.node(sections[0].id).open,false,'普通重绘保留手动收起');
+  assert.equal(f.env.saves,0,'展开收起不保存配置');
 });
 
 test('自动挑战阵容位于推关与试炼对应开关下，挂机迁移后仍可配置并保留管理入口', () => {
@@ -418,6 +422,16 @@ test('本地输入校验展开隐藏的错误项，后台校验保持当前焦�
   assert.equal(f.check({ focus: false }), false);
   assert(visible(budget.node)); assert.equal(f.env.focused, previous);
   assert.equal(f.check(), false); assert.equal(f.env.focused, budget.control); assert(budget.control.reported);
+});
+
+test('新校验结果替换旧字段提示，不强行显示已无错误的下级参数', () => {
+  const f=fixture();f.editor.draft.sample={enabled:false,purchase:false,budget:1};f.mount(nestedFields);
+  const budget=f.widget('sample.budget'),enabled=f.widget('sample.enabled');
+  f.errors({message:'旧草稿错误',fields:{'sample.budget':'旧预算错误'}},{focus:false});
+  assert(visible(budget.node));assert.equal(budget.error.hidden,false);
+  f.errors({message:'新草稿错误',fields:{'sample.enabled':'功能配置错误'}},{focus:false});
+  assert.equal(budget.error.hidden,true);assert.equal(budget.control.getAttribute('aria-invalid'),null);
+  assert(!visible(budget.node));assert.equal(enabled.error.hidden,false);
 });
 
 console.log(`配置层次专项：${passed}/${passed} 组通过`);

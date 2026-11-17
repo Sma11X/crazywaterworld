@@ -13,7 +13,7 @@ const configLegacyGroups = new Map();
 const familyGroups = new Map();
 const configCollapsed = new Set();
 const configDisclosureSeen = new Set();
-const configOpenSections = new Set();
+const configCollapsedSections = new Set();
 const configField = (key, label, kind = 'switch', options = {}) => ({ key, label, kind, ...options });
 function configPlacePanel(root, panel) {
   root.classList.remove('open-up');
@@ -440,25 +440,28 @@ for (const field of configGroups.find(g=>g.id==='cityWar').fields) {
 }
 
 function configGet(key) { return key.split('.').reduce((value, part) => value?.[part], configEditor.draft); }
+function configClearErrors() {
+  configEditor.errors = {};
+  for (const widget of configEditor.widgets.values()) widget.clearError?.();
+}
 function configSet(key, value) {
   const parts = key.split('.'), field = parts.pop();
   const target = parts.reduce((object, part) => object[part], configEditor.draft);
   target[field] = value;configEditor.previewSummary=null;
   if (key === 'cityWar.fleetIds') {
     configEditor.draft.cityWar.defenceFleetIds = (configEditor.draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
-    delete configEditor.errors['cityWar.defenceFleetIds'];
-    configEditor.widgets.get('cityWar.defenceFleetIds')?.clearError?.();
   }
   if (key === 'farm.autoPlant' && value) configEditor.draft.farm.customPlant = false;
   if (key === 'farm.customPlant' && value) configEditor.draft.farm.autoPlant = false;
-  delete configEditor.errors[key];
-  configEditor.widgets.get(key)?.clearError?.();configRenderUsage();
+  // 校验结果属于提交时的整份草稿；修改任意依赖后不能继续展示旧结果。
+  // 改回已保存值不会再次提交，也必须立即清理字段与提示条；版本冲突仍保留。
+  if (!configEditor.saveError?.fields?.revision) {
+    configClearErrors(); configEditor.saveError = null; configMessage('');
+  }
+  configRenderUsage();
   if ($('config-preview-result').childNodes.length) clear($('config-preview-result')).append(el('p', 'config-help', '草稿已更改，请重新预览计划。'));
-  if ($('config-message').dataset.kind === 'success') configMessage('');
   configUpdateVisibility();
   configEditor.saveRetries = 0;
-  // 版本冲突必须重新载入处理；其他错误在用户修正输入后重新尝试。
-  if (!configEditor.saveError?.fields?.revision) configEditor.saveError = null;
   configScheduleSave();
 }
 function configIsDirty() { return !!configEditor.draft && JSON.stringify(configEditor.draft) !== JSON.stringify(configEditor.baseline); }
@@ -672,8 +675,8 @@ function configRenderFields(fields, host) {
   for (const field of children.get(null) ?? []) {
     if (field.section && field.section!==section) {
       section=field.section; const details=el('details','config-field-section'),heading=el('summary','config-subheading',section);
-      details.id='config-section-'+field.key.replaceAll('.','-');details.open=configOpenSections.has(details.id);
-      details.ontoggle=()=>{if(details.open)configOpenSections.add(details.id);else configOpenSections.delete(details.id);};
+      details.id='config-section-'+field.key.replaceAll('.','-');details.open=!configCollapsedSections.has(details.id);
+      details.ontoggle=()=>{if(details.open)configCollapsedSections.delete(details.id);else configCollapsedSections.add(details.id);};
       details.append(heading);host.append(details);sectionHost=details;
     }else if(!field.section){section=null;sectionHost=host;}
     sectionHost.append(render(field).node);
@@ -683,7 +686,7 @@ function configRenderFields(fields, host) {
 function configRevealSection(widget) {
   for(let node=widget?.node?.parentElement;node;node=node.parentElement){
     if(node.classList?.contains('config-field-section')){
-      node.open=true;configOpenSections.add(node.id);
+      node.open=true;configCollapsedSections.delete(node.id);
     }
   }
 }
@@ -969,7 +972,7 @@ async function configLoad(force = false) {
       return;
     }
     configEditor.runtime=runtime;configEditor.previewSummary=null;
-    if(force||configEditor.owner!==account){configCollapsed.clear();configDisclosureSeen.clear();configOpenSections.clear();}
+    if(force||configEditor.owner!==account){configCollapsed.clear();configDisclosureSeen.clear();configCollapsedSections.clear();}
     configEditor.owner = account; configEditor.data = data; configEditor.draft = structuredClone(data.settings); configEditor.baseline = structuredClone(data.settings); configEditor.errors = {};
     configCancelSaveTimer(); configEditor.saveError = null; configEditor.saveRetries = 0;
     configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = '';
@@ -996,12 +999,13 @@ function configAccountChanged() {
   configEditor.serial++; configEditor.owner = null; configEditor.data = null; configEditor.draft = null; configEditor.baseline = null; configEditor.loading = false; configEditor.errors = {};
   configEditor.runtime=null;configEditor.previewSummary=null;
   configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = ''; configEditor.playerWidgets = [];
-  configCollapsed.clear();configDisclosureSeen.clear();configOpenSections.clear();
+  configCollapsed.clear();configDisclosureSeen.clear();configCollapsedSections.clear();
   clear($('config-fields')).append(el('p', 'config-empty', '正在切换账号配置…')); clear($('config-preview-result')); clear($('config-usage')); configBusy(false); configUpdateState();
   if (configVisible()) void configLoad(true);
 }
 
 function configErrors(error, { focus = true } = {}) {
+  configClearErrors();
   configEditor.errors = error.fields ?? {};
   configMessage(error.message, 'error');
   let first;
@@ -1299,7 +1303,7 @@ function configSave(event, { automatic = false } = {}) {
     const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
     configEditor.data = data; configEditor.baseline = structuredClone(data.settings);
     configEditor.saveRetries = 0; loopSettingsRevision = data.revision;
-    configEditor.errors = {}; for (const widget of configEditor.widgets.values()) widget.clearError?.();
+    configClearErrors();
     if (!edited) {
       configEditor.draft=structuredClone(data.settings);configEditor.errors={};
       if (!normalized) configUpdateVisibility();

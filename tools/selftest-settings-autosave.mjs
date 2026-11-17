@@ -51,6 +51,7 @@ function fixture({ catalog = {} } = {}) {
       env.inFlight++; env.maxInFlight = Math.max(env.maxInFlight, env.inFlight);
       try {
         if (env.failPosts-- > 0) throw new TypeError('模拟网络断开');
+        await env.beforePost?.(payload);
         saveAutomationSettings(account, payload.settings, { file, revision: payload.revision });
         const data = view(account);
         await env.onPost?.(payload);
@@ -316,6 +317,53 @@ await test('跨字段校验失败不会循环提交，修正后自动重试', as
   assert.equal(f.env.focuses, 0); assert.equal(f.view('a').settings.treasure.enabled, false);
   f.set('treasure.fleetIds', ['1远征船']); await f.tick(600);
   assert.equal(f.posts().length, 2); assert.equal(f.view('a').settings.treasure.enabled, true); assert(!f.dirty());
+});
+
+const conditionalCases = [
+  ['进攻目标来源', {'cityWar.fleetIds':['1远征船'],'cityWar.enabled':true}, 'cityWar.targetMode', 'selected', 'cityWar.cityRefs'],
+  ['防守目标来源', {'cityWar.fleetIds':['1远征船'],'cityWar.defenceFleetIds':['1远征船'],'cityWar.enabled':true}, 'cityWar.defenceTargetMode', 'selected', 'cityWar.defenceCityRefs'],
+  ['巨轮跟随', {}, 'treasure.follow', true, 'treasure.followNames'],
+  ['巨轮兜底', {'treasure.fallbackQualities':[]}, 'treasure.fallbackEnabled', true, 'treasure.fallbackQualities'],
+  ['自定义种植', {'farm.autoPlant':false}, 'farm.customPlant', true, 'farm.crops'],
+  ['海兽放生', {'pet.releaseQualities':[]}, 'pet.release', true, 'pet.releaseQualities'],
+  ['装备分解', {'forge.decomposeQualities':[]}, 'forge.decompose', true, 'forge.decomposeQualities'],
+  ['藏品激活', {'antique.activate':false,'antique.activateQualities':[]}, 'antique.activate', true, 'antique.activateQualities'],
+  ['藏品升星', {'antique.star':false,'antique.starQualities':[]}, 'antique.star', true, 'antique.starQualities'],
+  ['藏品套装', {'antique.suit':false,'antique.suitQualities':[]}, 'antique.suit', true, 'antique.suitQualities'],
+  ['试炼副本', {'progression.raidIds':[]}, 'progression.trials', true, 'progression.raidIds'],
+  ['海盗舰队', {}, 'pirateHunt.enabled', true, 'pirateHunt.fleetIds'],
+  ['巨轮舰队', {}, 'treasure.enabled', true, 'treasure.fleetIds'],
+  ['城战舰队', {}, 'cityWar.enabled', true, 'cityWar.fleetIds'],
+  ['锻造配方', {}, 'forge.enabled', true, 'forge.recipeIds'],
+];
+await test('15类条件配置切换后改回已保存值，立即清除过期错误且不重复提交', async () => {
+  for (const [label,prepare,key,invalid,errorKey] of conditionalCases) {
+    const f=fixture();await f.load();
+    for(const [field,value] of Object.entries(prepare))f.set(field,value);
+    assert.equal(await f.flush(),true,label+' 初始配置有效');
+    const initial=structuredClone(f.editor.draft),original=key.split('.').reduce((value,part)=>value[part],initial);
+    const attributes=new Map(),error={hidden:true},control={setAttribute:(k,v)=>attributes.set(k,v),removeAttribute:k=>attributes.delete(k)};
+    f.editor.widgets.set(errorKey,{row:{querySelectorAll:()=>[],scrollIntoView(){}},control,error,
+      clearError(){error.hidden=true;control.removeAttribute('aria-invalid');}});
+    f.set(key,invalid);await f.tick(600);
+    assert(f.editor.errors[errorKey],label+' 应提示缺少必要配置');assert.equal(error.hidden,false,label);
+    const submitted=f.posts().length;
+    f.set(key,original);
+    assert.deepEqual(f.editor.draft,initial,label+' 回到原草稿');assert.equal(f.dirty(),false,label);
+    assert.deepEqual(f.editor.errors,{},label+' 不残留前一模式错误');assert.equal(error.hidden,true,label);
+    assert.equal(attributes.has('aria-invalid'),false,label);assert.equal(f.node('config-message').hidden,true,label);
+    await f.tick(10000);assert.equal(f.posts().length,submitted,label+' 无需再次保存原值');
+  }
+});
+
+await test('切回原目标来源后迟到的失败响应不能恢复旧错误', async () => {
+  const f=fixture();await f.load();f.set('cityWar.fleetIds',['1远征船']);f.set('cityWar.enabled',true);assert(await f.flush());
+  const gate=deferred();f.env.beforePost=()=>gate.promise;
+  f.set('cityWar.targetMode','selected');await f.tick(600);assert(f.editor.saving);
+  f.set('cityWar.targetMode','alliance');assert(!f.dirty());
+  f.env.beforePost=null;gate.resolve();await settle();await f.tick(1000);
+  assert.deepEqual(f.editor.errors,{});assert.equal(f.editor.saveError,null);assert.equal(f.node('config-message').hidden,true);
+  assert.equal(f.view('a').settings.cityWar.targetMode,'alliance');
 });
 
 await test('网络失败有界退避重试，恢复后自动保存', async () => {

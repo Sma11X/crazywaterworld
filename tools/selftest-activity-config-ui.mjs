@@ -95,12 +95,13 @@ await test('复开后全部入口和参数恢复，原配置定义未被过滤�
 
 const loadSource = script.slice(script.indexOf('async function configLoad('), script.indexOf('async function configMayChangeAccount('));
 const saveSource = script.slice(script.indexOf('function configSave('), script.indexOf('async function configImportFile('));
+const clearErrorsSource = script.slice(script.indexOf('function configClearErrors('), script.indexOf('function configSet('));
 const dirtySource = script.slice(script.indexOf('function configIsDirty('), script.indexOf('function configVisible('));
 const page = fs.readFileSync(new URL('../src/page.mjs', import.meta.url), 'utf8');
 const toggleSource = page.slice(page.indexOf('async function toggleAutoTask('), page.indexOf('for (const input of taskInputs) input.onclick'));
 function loadFixture(initial = dataFor([])) {
   const state = { next: structuredClone(initial), renders: [], usageRenders: 0, messages: [], calls: [] };
-  const api = new Function('state', 'renderGroups', definitions + '\n' + dirtySource + '\n' + loadSource + '\n' + saveSource + '\n' + toggleSource + `
+  const api = new Function('state', 'renderGroups', definitions + '\n' + clearErrorsSource + '\n' + dirtySource + '\n' + loadSource + '\n' + saveSource + '\n' + toggleSource + `
     const current = 'isolated-account', accounts = [];
     const savingTasks = new Set(), loopIntervalSaves = new Map();
     let loopVersion = 0, loopSettingsRevision = 7;
@@ -108,7 +109,7 @@ function loadFixture(initial = dataFor([])) {
     const refreshLoop = () => {};
     const reportError = error => { throw error; };
     const $ = () => ({});
-    const call = async route => { state.calls.push(route); return route === '/api/settings' ? structuredClone(state.next) : { controls: [] }; };
+    const call = async route => { state.calls.push(route); return route.split('?')[0] === '/api/settings' ? structuredClone(state.next) : { controls: [] }; };
     const configBusy = value => { configEditor.busy = value; };
     const configMessage = (...args) => state.messages.push(args);
     const configUpdateState = () => {};
