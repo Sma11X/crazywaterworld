@@ -1,6 +1,6 @@
 # 疯狂水世界 · 航行控制台
 
-![Node.js 20.11+](https://img.shields.io/badge/Node.js-20.11%2B-417E38) ![Windows](https://img.shields.io/badge/Windows-本地控制台-0078D4) [![仅供学习交流](https://img.shields.io/badge/license-Study%20Only-orange)](LICENSE)
+![Node.js 22.12+](https://img.shields.io/badge/Node.js-22.12%2B-417E38) ![Windows](https://img.shields.io/badge/Windows-本地控制台-0078D4) [![仅供学习交流](https://img.shields.io/badge/license-Study%20Only-orange)](LICENSE)
 
 在本机管理《疯狂水世界》账号，直连游戏 WebSocket，安排领奖、基地经营、英雄养成和舰队任务。每个账号独立保存开关、详细配置和用量记录，运行日志会说明实际完成的操作、收益及跳过原因。
 
@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-需要 Windows 和 Node.js 20.11 或更高版本。请先在电脑版微信中打开一次《疯狂水世界》，供工具读取本机游戏协议包。配置表和世界地图默认从游戏 CDN 自动更新。添加抖音账号还需要登录本机的电脑版抖音。支付宝扫码首次使用时会自动下载与 Playwright 版本匹配的 Chromium（需服务器可访问下载源并预留磁盘空间）；已有浏览器可继续复用，也可通过 `CW_BROWSER_EXECUTABLE` 指定。
+需要 Windows，建议使用 Node.js 22.12 或更高版本；同时兼容 Node.js 20.19+（20.x）。请先在电脑版微信中打开一次《疯狂水世界》，供工具读取本机游戏协议包。配置表和世界地图默认从游戏 CDN 自动更新。添加抖音账号还需要登录本机的电脑版抖音。支付宝扫码首次使用时会自动下载与 Playwright 版本匹配的 Chromium（需服务器可访问下载源并预留磁盘空间）；已有浏览器可继续复用，也可通过 `CW_BROWSER_EXECUTABLE` 指定。
 
 ```powershell
 git clone https://github.com/xutongxue233/crazywaterworld.git
@@ -104,7 +104,9 @@ npm start
 | `.\start-console.cmd recover` | 恢复上次采集留下的代理和证书改动 |
 | `npm run build:ui` | 重新构建控制台页面与样式 |
 | `npm run test:offline` | 运行无需本机游戏协议包的核心回归 |
-| `npm run typecheck` | 检查持久化与用量账本的类型约束 |
+| `npm run typecheck` | 检查全部 UI TS/TSX、持久化与用量账本的类型约束 |
+| `npm run check:ui` | 使用 Biome 检查已迁移客户端代码与配套测试 |
+| `npm run test:client:browser` | 使用隔离账号验收 React 登录设置页面 |
 | `npm test` | 构建界面并运行全部回归，包含真实协议编解码验证 |
 | `npm run sync-resources` | 立即检查并更新配置表和世界地图 |
 
@@ -113,6 +115,8 @@ npm start
 端口、浏览器、资源更新间隔和其他开发命令见使用指南。[启动参数](docs/console-guide.md#启动参数) · [资源自动更新](docs/console-guide.md#资源自动更新) · [开发与辅助命令](docs/console-guide.md#开发与辅助命令)
 
 ## 项目文档
+
+- React 19、Tailwind v4、CSS Modules、Biome 与 Day.js 的接入边界及后续迁移规则。[前端架构与迁移](docs/frontend-architecture.md)
 
 - 安装后的操作、玩法细则、预算、日志和排查说明。[控制台使用指南](docs/console-guide.md)
 - 按日期倒序记录功能和修复。[更新日志](CHANGELOG.md)

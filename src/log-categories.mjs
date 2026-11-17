@@ -1,6 +1,7 @@
 // 根据功能名和请求类型分类，不改动原始日志正文、错误详情与清空水位。
 export const LOG_CATEGORIES = { radar:'联盟情报',pirate:'海盗首杀与扫荡',boss:'世界Boss',merchant:'海商王',forge:'装备锻造',fleet:'舰队与维修',codes:'礼包兑换',orders:'不差钱商人',gather:'采集与打捞',system: '系统与连接', idle: '挂机', building: '建设', production: '生产', events: '基地事件',
   base: '基础养成', treasure: '万吨巨轮', alliance: '联盟/城战', heroes: '英雄', daily: '日常领奖', activity: '活动', trials: '试炼', stages: '主线推关' };
+/** @type {Record<string, (keyof typeof LOG_CATEGORIES)[]>} */
 export const LOG_GROUPS = {
   '系统':['system','idle','codes'],
   '基地与资源':['building','production','gather','forge','events','base'],

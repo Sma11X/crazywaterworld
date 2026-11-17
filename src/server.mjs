@@ -1,3 +1,4 @@
+import { serveClientAsset } from './ui-assets.mjs';
 import { createTraceLog, traceJson, redactLog } from './trace-log.mjs';
 import { createResourceUpdater } from './resource-updater.mjs';
 import {checkFleetSettlement,invalidateFleetReports} from './fleet-settlement.mjs';
@@ -1673,6 +1674,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   async function handle(req, res, body) {
     const parsed = new URL(req.url, 'http://localhost');
+    if (serveClientAsset(req, res, parsed.pathname)) return;
     const route = `${req.method} ${parsed.pathname}`;
     const acceptsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] ?? '');
     const json = (value, code = 200) => {

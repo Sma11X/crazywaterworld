@@ -2,6 +2,7 @@
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @source "./*.tsx";
+@source "./client";
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* neutral 主题；运行时在根节点设置 data-theme，组件与原生控件共用配色。 */

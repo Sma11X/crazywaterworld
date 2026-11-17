@@ -1915,100 +1915,10 @@ ${productionPlanningScript}
 ${settingsScript}
 ${appointmentsScript}
 // ---- 登录设置 --------------------------------------------------------------
-let loginSettingsOwner = null;
-let loginSettingsData = null;
-let loginSettingsBusy = false;
-function loginSettingState(text, kind = '') {
-  const node = $('login-settings-state');
-  if (!node) return;
-  node.textContent = text;
-  node.dataset.kind = kind;
-}
-function loginSetSwitch(id, value) {
-  const node = $(id);
-  if (!node) return;
-  const state = value ? 'checked' : 'unchecked';
-  node.setAttribute('aria-checked', String(Boolean(value)));
-  node.setAttribute('data-state', state);
-  node.querySelector('[data-slot=switch-thumb]')?.setAttribute('data-state', state);
-  node.dataset.checked = value ? 'true' : 'false';
-}
-function loginGetSwitch(id) { return $(id)?.getAttribute('aria-checked') === 'true'; }
-function loginRender(data) {
-  const settings = data?.settings;
-  if (!settings) return;
-  loginSettingsOwner = current;
-  loginSettingsData = data;
-  loginSetSwitch('login-reconnect-enabled', settings.reconnectEnabled);
-  $('login-reconnect-delay').value = settings.baseDelaySeconds;
-  $('login-reconnect-jitter').value = settings.jitterSeconds;
-  $('login-reconnect-max-retries').value = settings.maxRetries;
-  loginSetSwitch('login-deep-enabled', settings.deep.enabled);
-  $('login-deep-start').value = settings.deep.start;
-  $('login-deep-end').value = settings.deep.end;
-  $('login-deep-delay').value = settings.deep.delaySeconds;
-  $('login-reconnect-log').textContent = settings.reconnectEnabled
-    ? '达到 ' + settings.maxRetries + ' 次失败后自动停止重试，并记录错误日志。'
-    : '自动重连当前关闭；开启后达到最大重试次数会自动停止并记录日志。';
-  $('login-settings-save').disabled = false;
-  $('login-settings-reset').disabled = false;
-  loginSettingState(data.savedAt ? '设置已保存' : '使用默认设置', 'success');
-}
-async function loginSettingsLoad(force = false) {
-  if (!current || loginSettingsBusy || (!force && loginSettingsOwner === current && loginSettingsData)) return;
-  const account = current;
-  loginSettingsBusy = true;
-  loginSettingState('正在载入…');
-  try {
-    const data = await call('/api/login-settings');
-    if (account === current) loginRender(data);
-  } catch (error) {
-    if (account === current) loginSettingState(error.message, 'error');
-  } finally { loginSettingsBusy = false; }
-}
+// Only publish the account identity; React owns the contents of this root.
 function loginSettingsAccountChanged() {
-  loginSettingsOwner = null;
-  loginSettingsData = null;
-  $('login-settings-save').disabled = true;
-  $('login-settings-reset').disabled = true;
-  loginSettingState(current ? '尚未载入' : '请先选择账号');
-  if (current && !$('tab-login-settings').classList.contains('hidden')) void loginSettingsLoad(true);
+  $('login-settings-root').dataset.account = current || '';
 }
-function loginSettingsRead() {
-  return {
-    reconnectEnabled: loginGetSwitch('login-reconnect-enabled'),
-    baseDelaySeconds: Number($('login-reconnect-delay').value),
-    jitterSeconds: Number($('login-reconnect-jitter').value),
-    maxRetries: Number($('login-reconnect-max-retries').value),
-    deep: {
-      enabled: loginGetSwitch('login-deep-enabled'),
-      start: $('login-deep-start').value,
-      end: $('login-deep-end').value,
-      delaySeconds: Number($('login-deep-delay').value),
-    },
-  };
-}
-for (const id of ['login-reconnect-enabled', 'login-deep-enabled']) {
-  $(id).onclick = () => loginSetSwitch(id, !loginGetSwitch(id));
-}
-$('login-settings-reset').onclick = () => { if (loginSettingsData) loginRender(loginSettingsData); };
-$('login-settings-form').onsubmit = async event => {
-  event.preventDefault();
-  if (!current || !loginSettingsData || loginSettingsBusy) return;
-  const account = current;
-  loginSettingsBusy = true;
-  $('login-settings-save').disabled = true;
-  loginSettingState('正在保存…');
-  try {
-    const data = await call('/api/login-settings', { method: 'POST', body: JSON.stringify({ settings: loginSettingsRead(), revision: loginSettingsData.revision }) });
-    if (account === current) loginRender(data);
-  } catch (error) {
-    if (account === current) loginSettingState(error.message, 'error');
-  } finally {
-    loginSettingsBusy = false;
-    $('login-settings-save').disabled = false;
-  }
-};
 ${giftCodeScript}
 let selectedResource = 'guild';
 function activateConsolePage(button, resource = selectedResource) {
@@ -2037,7 +1947,6 @@ function activateConsolePage(button, resource = selectedResource) {
     }
     if (button.dataset.tab === 'manual') refreshManualWorld();
     if (button.dataset.tab === 'settings') { void configLoad(); void refreshLoop(); }
-    if (button.dataset.tab === 'login-settings') void loginSettingsLoad();
     if(target==='giftcodes')void refreshGiftCodes();
     if (target === 'activities') refreshActivities();
     if (button.dataset.tab === 'stages') {refreshStages();void refreshSavedLineups();}
@@ -2074,5 +1983,6 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){void refr
 setInterval(() => { void refreshAccountStatuses(); if (!loopReads) refreshLoop(); }, 3000);
 setInterval(refreshStages, 3000);
 </script>
+<script type="module" src="/ui/console-client.js"></script>
 </body>
 </html>`;

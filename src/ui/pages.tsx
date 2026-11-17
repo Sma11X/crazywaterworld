@@ -257,68 +257,13 @@ export function accountPage() {
   </div>)
 }
 
-/**
- * Per-account login recovery settings.  The page deliberately only renders
- * controls and stable IDs; page.mjs owns loading/saving so the same controls
- * can be reused when the active account changes.
- */
+// Client-rendered page; its bundle is loaded when the tab is first opened.
 export function loginSettingsPage() {
-  return renderToStaticMarkup(<div id="login-settings-root" className="login-settings-page">
-    <div className="login-settings-heading">
-      <div className="login-settings-heading-copy">
-        <div><h2 className="text-xl font-semibold">登录设置</h2><p className="dim mt-1">账号被顶号后自动重新连接</p></div>
-      </div>
-      <Badge id="login-settings-state" className="login-settings-state" variant="outline" role="status" aria-live="polite">尚未载入</Badge>
-    </div>
-    <form id="login-settings-form" noValidate>
-      <Card className="login-settings-card">
-        <CardHeader><CardTitle>顶号重连延迟时间</CardTitle><p className="dim">账号在执行任务时被顶号，等待一段时间后再重新登录。</p></CardHeader>
-        <CardContent>
-          <div className="login-settings-toggle-row">
-            <div><strong>启用被顶号后自动重连</strong><span className="dim">仅在检测到“账号在别处登录”时触发。</span></div>
-            <Switch id="login-reconnect-enabled" data-login-setting="reconnectEnabled" aria-label="启用被顶号后自动重连" />
-          </div>
-          <div className="login-settings-grid">
-            <label htmlFor="login-reconnect-delay"><span>基础重连间隔</span><span className="login-settings-field"><Input id="login-reconnect-delay" data-login-setting="baseDelaySeconds" type="number" min="1" max="86400" step="1" defaultValue="900" /><span>秒</span></span></label>
-            <label htmlFor="login-reconnect-jitter"><span>间隔抖动</span><span className="login-settings-field"><Input id="login-reconnect-jitter" data-login-setting="jitterSeconds" type="number" min="0" max="86400" step="1" defaultValue="0" /><span>秒</span></span></label>
-          </div>
-          <p className="dim login-settings-note">实际等待时间会在基础间隔上下随机调整，避免固定时间重复登录。</p>
-        </CardContent>
-      </Card>
-
-      <Card className="login-settings-card">
-        <CardHeader><CardTitle>深夜空窗期</CardTitle><p className="dim">在指定时间段内使用独立的短延迟，适合凌晨自动恢复连接。</p></CardHeader>
-        <CardContent>
-          <div className="login-settings-toggle-row">
-            <div><strong>启用深夜空窗期</strong><span className="dim">跨午夜的时间段也可以使用，例如 23:00–06:00。</span></div>
-            <Switch id="login-deep-enabled" data-login-setting="deep.enabled" aria-label="启用深夜空窗期" />
-          </div>
-          <div className="login-settings-grid login-settings-time-grid">
-            <label htmlFor="login-deep-start"><span>开始时间</span><Input id="login-deep-start" data-login-setting="deep.start" type="time" defaultValue="02:00" /></label>
-            <label htmlFor="login-deep-end"><span>结束时间</span><Input id="login-deep-end" data-login-setting="deep.end" type="time" defaultValue="07:00" /></label>
-            <label htmlFor="login-deep-delay"><span>空窗期重连延迟</span><span className="login-settings-field"><Input id="login-deep-delay" data-login-setting="deep.delaySeconds" type="number" min="1" max="86400" step="1" defaultValue="60" /><span>秒</span></span></label>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="login-settings-card">
-        <CardHeader><CardTitle>重试限制</CardTitle><p className="dim">顶号重连连续失败达到上限后停止本轮重试，并在运行日志中记录原因。</p></CardHeader>
-        <CardContent>
-          <div className="login-settings-grid login-settings-retry-grid">
-            <label htmlFor="login-reconnect-max-retries"><span>最大重试次数</span><span className="login-settings-field"><Input id="login-reconnect-max-retries" data-login-setting="maxRetries" type="number" min="1" max="1000" step="1" defaultValue="5" /><span>次</span></span></label>
-          </div>
-          <p id="login-reconnect-log" className="dim login-settings-log" role="status">超过上限后自动停止重试，详情见运行日志。</p>
-        </CardContent>
-      </Card>
-
-      <div className="login-settings-actions">
-        <Button id="login-settings-reset" type="button" variant="outline">恢复已保存设置</Button>
-        <Button id="login-settings-save" type="submit">保存设置</Button>
-      </div>
-    </form>
+  return renderToStaticMarkup(<div id="login-settings-root" data-account="">
+    <p role="status" className="dim">正在载入登录设置…</p>
+    <noscript>请启用 JavaScript 后编辑登录设置。</noscript>
   </div>)
 }
-
 
 export function guildPage() {
   return renderToStaticMarkup(<div className="grid gap-3">

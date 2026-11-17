@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-微信/抖音小游戏《疯狂水世界》的协议侧挂机工具：直连游戏 WebSocket 网关，并提供本地网页控制台。仅面向 Windows，Node.js >= 20.11，ESM。文档、界面和日志均为中文。
+微信/抖音小游戏《疯狂水世界》的协议侧挂机工具：直连游戏 WebSocket 网关，并提供本地网页控制台。仅面向 Windows，Node.js ^20.19.0 或 >=22.12.0，ESM。文档、界面和日志均为中文。
 
 ## 常用命令
 
@@ -14,9 +14,11 @@ npm start                     # prestart 先构建界面，再启动；端口 17
 .\start-console.cmd url       # 只输出地址并保持窗口，不启动控制台
 .\start-console.cmd status    # 只检查 MITM 证书状态，不启动控制台
 npm run build:ui              # 改 TSX 或 theme.css 后运行，提交 src/ui/dist 产物
-npm test                      # pretest 先构建，再依次执行下面三组，遇错即停
+npm test                      # pretest 先构建，再执行规范、类型与全部分组，遇错即停
 npm run test:offline           # 构建、类型检查及无需本机协议的核心回归
-npm run typecheck              # 账本与文件事务的JSDoc静态检查
+npm run typecheck              # 全部 UI TS/TSX 严格检查及账本/文件事务 JSDoc 检查
+npm run check:ui               # Biome 检查迁移范围内的客户端、资源服务和测试
+npm run test:client:browser    # 构建并离线验收 React 登录设置页面
 npm run test:core             # 核心协议、日常、原有玩法、阵容与掉线处理
 npm run test:progression      # 装备、情报、订单、博物馆、海兽、预留与迁移接线
 npm run test:extra            # 详细配置、活动、调度、维修、城战/锻造、礼包与地图
@@ -73,10 +75,11 @@ npm run sync-art              # 同步素材；缓存缺图可加 -- --fetch
 
 `page.mjs` 在模块加载时生成完整 `PAGE`，页面文件变更后需重启控制台。
 
-- `src/ui/*.tsx` 经 esbuild 输出 `src/ui/dist/console.mjs`，服务端渲染静态标记；浏览器没有 React，组件不能依赖 hooks 或事件属性。
-- 行为使用原生 JS，`page.mjs` 的脚本与 `settings-ui.js`、`ui/progression.js`、`ui/activities.js`、地图、礼包和仓库脚本共享页面作用域。
+- `src/ui/*.tsx` 经 esbuild 输出 `src/ui/dist/console.mjs`，为未迁移页面生成静态标记；这些服务端页面仍不能依赖 hooks 或事件属性。`src/ui/client/` 由 Vite 构建到 `src/ui/dist/client/`，登录设置已完整迁移为 React 19 客户端页面，首次打开时按需加载。
+- 未迁移页面继续使用原生 JS，`page.mjs` 的脚本与 `settings-ui.js`、`ui/progression.js`、`ui/activities.js`、地图、礼包和仓库脚本共享作用域。原页面仅通过根节点的 `data-account` 发布账号；React 独占登录设置根节点内部。新页面使用受控状态、明确账号的 API 客户端和接口契约，不调用共享作用域函数。
 - 界面采用 shadcn/ui new-york-v4 的默认 neutral 主题。`src/ui/{button,card,table,switch,badge,dialog}.tsx` 用官方样式字符串；`theme.css` 的 `@layer components` 按官方样式定义 input、select、textarea、checkbox、radio、range、summary、页签、弹窗和气泡，运行时脚本直接创建原生元素也能得到相同外观，不要再给控件写专用外观。换主色只改 `:root` 的 `--primary`、`--primary-foreground`。
 - 样式层顺序为 `properties, theme, base, components, page, utilities`。`console.css`、`settings.css` 在 `page` 层，只放布局和间距，不用 Tailwind 处理，所以不能写 `@apply`。模板克隆元素带工具类，变体颜色写在 `theme.css` 的 `@layer utilities`。新增运行时模板需在 `layout.tsx` 的 `templates()` 声明。修改 TSX 或 `theme.css` 后执行 `npm run build:ui`，将 `src/ui/dist/` 一起提交；`npm start`、`npm test` 也会先构建。
+- CSS Modules 仅用于迁移页面的局部布局，并放在 `page` 层，主题和通用控件继续使用 Tailwind v4。Biome 只检查 `biome.json` 中声明的迁移范围，新增页面应纳入其中。Day.js 只用于北京时间展示，不改后端计时和换日规则。完整接线、构建及验证约定见 `docs/frontend-architecture.md`。
 - 手机布局以 768px 为界：导航固定到底部，页头不吸顶。`table()` 生成的四列以上表格在 `main` 窄于 600px 时变为卡片，列名来自 `td[data-label]`。图标走 `art-thumbs.mjs` 的单图缩略图，页面不要再引用整张图集。
 - 顶层导航为总览、游戏配置、建筑一览、挑战、资源与玩法、账号、登录设置。各模块启停与参数在同一配置分组编辑，全局挂机启停和间隔保留在页头。总览提供运行状态和只读世界地图。手动玩法归建筑一览、挑战或资源与玩法。
 - 游戏配置按账号草稿编辑。导入、保存、预览分别处理，保存不启动挂机；预览可连接读取真实状态但不写资源，运行安排预览无需连接。
