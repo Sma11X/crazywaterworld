@@ -96,6 +96,7 @@ import { createStageTask } from './stages.mjs';
 import { createChallengeRun } from './challenge-automation.mjs';
 import { runAction } from './actions.mjs';
 import { accountId, loadStore, saveStore, upsertAccount, removeAccount, setActive, pickAccount, describeAccount, revealAccount, rememberSeen, DATA_DIR } from './accounts.mjs';
+import { ACCOUNT_BACKUP_MAX_BYTES, exportAccountBackup, previewAccountImport, importAccountBackup } from './account-backup.mjs';
 import { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture, DEFAULT_PROXY_PORT } from './capture.mjs';
 import { createPhoneLogin, loadDeviceProfile, saveDeviceProfile, DEVICE_PROFILE_PATH } from './phone-login.mjs';
 import { createAlipayLogin } from './alipay-login.mjs';
@@ -2217,14 +2218,38 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         return;
       }
       if (route === 'POST /api/accounts/export') {
-        const { id, all } = jsonBody();
+        const { id, all, includeSettings = false } = jsonBody();
         const store = loadStore();
-        const selected = all === true ? store.accounts : store.accounts.filter(a => a.id === id);
-        if (!selected.length) throw new Error('没有可导出的账号');
-        const backup = { version: store.version, activeId: selected.some(a => a.id === store.activeId) ? store.activeId : selected[0].id, accounts: selected };
+        const backup = exportAccountBackup(store, { id, all, includeSettings,
+          getSettings: account => settingsView(sessionFor(account.id)).settings });
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
-          'content-disposition': 'attachment; filename="accounts.json"' });
+          'content-disposition': 'attachment; filename="' + (includeSettings ? 'accounts-with-settings' : 'accounts') + '.json"' });
         res.end(JSON.stringify(backup, null, 2));
+        return;
+      }
+      if (route === 'POST /api/accounts/import/preview' || route === 'POST /api/accounts/import') {
+        if (Buffer.byteLength(body, 'utf8') > ACCOUNT_BACKUP_MAX_BYTES + 1024) throw new Error('账号文件不能超过 10 MB');
+        let payload;
+        try { payload = jsonBody(); } catch { throw new Error('文件不是有效 JSON，请选择本工具导出的账号文件'); }
+        if (!payload || typeof payload !== 'object') throw new Error('请选择有效的账号文件');
+        res.setHeader('cache-control', 'no-store');
+        if (route.endsWith('/preview')) {
+          json(previewAccountImport(payload.document));
+          return;
+        }
+        needConfirm(payload);
+        const result = importAccountBackup(payload.document, payload.token);
+        for (const entry of result.saved) {
+          const session = sessions.get(entry.id);
+          if (!session) continue;
+          adoptPreferences(session, entry);
+          if (session.client) {
+            for (const task of automationTasks) rewardSchedule(session.client).clearTask(task.key);
+            watchMerchant(session.client).invalidate('账号配置已导入');
+          }
+        }
+        emit(null, 'info', `账号导入完成：新增 ${result.created} 个，更新 ${result.updated} 个，恢复 ${result.settingsCount} 份配置`);
+        json({ ok: true, created: result.created, updated: result.updated, settingsCount: result.settingsCount, activeId: result.activeId });
         return;
       }
       if (route === 'GET /api/accounts/credential') {

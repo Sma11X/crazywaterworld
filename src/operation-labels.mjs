@@ -29,6 +29,7 @@ export const operationLabels = {
   '/api/world/order/reroll':'手动刷新居民订单',
   '/api/guild/tech':'读取联盟科技','/api/guild/tech/upgrade':'升级联盟科技',
   '/api/accounts': '读取账号列表', '/api/accounts/export': '导出账号',
+  '/api/accounts/import/preview': '检查账号导入文件', '/api/accounts/import': '导入账号',
   '/api/accounts/credential': '读取账号凭证', '/api/accounts/active': '切换账号',
   '/api/accounts/label': '修改账号备注', '/api/accounts/remove': '删除账号',
   '/api/accounts/phone-login': '手机号登录', '/api/accounts/phone-login/send-code': '发送短信验证码',

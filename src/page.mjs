@@ -18,6 +18,7 @@ import {mapMotionPosition} from './world-map-geometry.mjs';
 const phoneLoginScript = readFileSync(new URL('./phone-login-ui.js', import.meta.url), 'utf8');
 const alipayLoginScript = readFileSync(new URL('./alipay-login-ui.js', import.meta.url), 'utf8');
 const accountAddScript = readFileSync(new URL('./account-add-ui.js', import.meta.url), 'utf8');
+const accountBackupScript = readFileSync(new URL('./account-backup-ui.js', import.meta.url), 'utf8');
 const accountPickerScript = readFileSync(new URL('./account-picker-ui.js', import.meta.url), 'utf8');
 const helpTipsScript = readFileSync(new URL('./help-tips.js', import.meta.url), 'utf8');
 const appointmentsScript = readFileSync(new URL('./appointments-ui.js', import.meta.url), 'utf8');
@@ -1664,25 +1665,7 @@ function table(headers, rows) {
 }
 
 // ---- 账号页 ----------------------------------------------------------------
-async function exportAccounts(id) {
-  try {
-    const response = await fetch('/api/accounts/export', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(id ? { id } : { all: true }) });
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || '账号导出失败');
-    }
-    const url = URL.createObjectURL(await response.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = (id ? 'account-' : 'accounts-') + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (error) { reportError(error); }
-}
-$('export-accounts').onclick = () => exportAccounts();
+${accountBackupScript}
 function accountChannel(source) {
   return { alipay: '支付宝', phone: '益世界 APP', 'douyin-mitm': '抖音小游戏', mitm: '微信小游戏', wechat: '微信小游戏' }[source] || '已导入账号';
 }
@@ -1747,7 +1730,7 @@ function renderAccounts() {
     if (!box.querySelector('.account-empty')) {
       clear(box);
       const empty = el('div', 'account-empty');
-      empty.append(el('h3', null, '添加第一个游戏账号'), el('p', 'dim', '点击「添加账号」，选择游戏渠道后按步骤登录。'));
+      empty.append(el('h3', null, '添加第一个游戏账号'), el('p', 'dim', '点击「添加账号」登录，或通过「导入账号」恢复备份。'));
       box.appendChild(empty);
     }
     return;

@@ -152,6 +152,8 @@ export function accountPage() {
     <div className="account-page-heading">
       <div className="account-page-title"><h2 className="text-xl font-semibold">账号</h2><span id="account-count" className="dim" aria-live="polite">正在读取</span></div>
       <div className="account-page-actions">
+        <Button id="import-accounts" type="button" variant="outline">导入账号</Button>
+        <input id="import-accounts-file" type="file" accept=".json,application/json" aria-label="选择账号备份文件" hidden />
         <details className="account-backup-menu">
           <summary>备份账号</summary>
           <div className="account-menu-content"><Button id="export-accounts" type="button" variant="ghost" size="sm" className="w-full justify-start">导出全部账号</Button><p className="dim">备份含登录凭证，请妥善保管。</p></div>
@@ -160,7 +162,19 @@ export function accountPage() {
       </div>
     </div>
     <p id="account-add-notice" className="dim" role="status" hidden />
+    <p id="account-transfer-notice" className="dim" role="status" aria-live="polite" hidden />
     <div id="accounts" className="account-grid" />
+
+    <dialog id="account-export-dialog" aria-labelledby="account-export-title" aria-describedby="account-export-scope">
+      <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-export-title">导出账号</DialogTitle></DialogHeader><Button id="account-export-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭账号导出"><X aria-hidden="true" /></Button></div>
+      <p id="account-export-scope" className="dim" />
+      <div className="grid gap-3">
+        <Button id="account-export-only" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>仅账号</strong><span className="text-xs font-normal">保存登录凭据、备注和角色资料</span></span></Button>
+        <Button id="account-export-settings" type="button" variant="outline" className="h-auto pointer-coarse:h-auto whitespace-normal justify-start p-4"><span className="grid gap-1 text-left"><strong>账号及配置</strong><span className="text-xs font-normal">同时保存每个账号的游戏配置和阵容预设</span></span></Button>
+      </div>
+      <p className="dim">文件含登录凭据，请妥善保管。配置不包含用量账本和运行状态。</p>
+      <p id="account-export-error" className="warn" role="alert" hidden />
+    </dialog>
 
     <dialog id="account-info-dialog" aria-labelledby="account-info-title">
       <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-info-title" className="leading-snug">账号详情</DialogTitle></DialogHeader><Button id="account-info-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭账号详情"><X aria-hidden="true" /></Button></div>

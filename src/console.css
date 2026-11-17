@@ -209,7 +209,7 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
 .account-page-heading { justify-content:space-between; flex-wrap:wrap }
 .account-page-title { flex-wrap:wrap }
 .account-page-title h2 { margin:0 }
-.account-page-actions { margin-inline-start:auto }
+.account-page-actions { margin-inline-start:auto; flex-wrap:wrap; justify-content:flex-end }
 .account-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); align-items:start; gap:16px }
 .account-card { min-width:0 }
 .account-card-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:4px }
@@ -236,6 +236,8 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
 .account-grid>.account-empty { grid-column:1 / -1 }
 .account-empty { display:grid; justify-items:center; gap:12px; padding:56px 24px; text-align:center }
 #account-add-dialog,#account-info-dialog { width:min(680px,calc(100vw - 32px)); max-width:none; padding:24px }
+#account-export-dialog { width:min(480px,calc(100vw - 32px)); max-width:none; padding:24px }
+#account-export-dialog p { line-height:1.6; overflow-wrap:anywhere }
 #account-add-dialog[open] { grid-template-rows:auto minmax(0,1fr); gap:20px; overflow:hidden }
 .account-dialog-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px }
 .account-dialog-heading>[data-slot=dialog-header] { min-width:0; padding-top:4px }
