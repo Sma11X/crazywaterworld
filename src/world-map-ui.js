@@ -71,14 +71,18 @@ async function showWorldMapTarget(point,refresh=false){
   for(const action of info.actions??[])detail.append(el('p','',action.label+' · '+(action.costs??[]).map(c=>(c.name||c.id)+' '+c.num).join('、')));
  }catch(error){if(detail.isConnected)detail.textContent='目标详情未同步：'+error.message;}
 }
+function mapWarIcon(kind){
+ const paths={attack:'M6 4 17 15 M6 4 6 8 M6 4 10 4 M5 13 11 19 M8 16 4 20 M18 4 7 15 M18 4 14 4 M18 4 18 8 M13 19 19 13 M16 16 20 20',defence:'M12 3 20 6 V12 C20 17 16 20 12 22 C8 20 4 17 4 12 V6 Z M12 7 V16 M8 12 12 16 16 12',fight:'M13 2 C14 8 21 9 20 15 A8 8 0 0 1 4 15 C3 11 6 8 8 6 C7 11 11 11 13 2 Z M12 12 C15 15 15 18 12 20 C9 19 9 16 12 12 Z',assemble:'M5 21 V3 M6 4 H19 L16 8 19 12 H6 M3 21 H9'};
+ const colors={attack:'#b14538',defence:'#226b9a',fight:'#bf5924',assemble:'#8b642b'};
+ const badge=mapNode('g',{'pointer-events':'none','data-war-icon':kind});badge.append(mapNode('rect',{x:1,y:1,width:22,height:22,rx:5,fill:'#fffdf7',stroke:colors[kind],'stroke-width':1}),mapNode('path',{d:paths[kind],fill:kind==='fight'?'#fff0d4':'none',stroke:colors[kind],'stroke-width':1.7,'stroke-linecap':'round','stroke-linejoin':'round'}));return badge;
+}
 function cityBadge(group,point,x,y,unit,r){
  const kinds=point.fighting?['fight']:point.declared?[point.warRole==='defence'?'defence':'attack']:[];if(point.assemble)kinds.push('assemble');
  if(point.fighting)group.append(mapNode('circle',{cx:x,cy:y,r:r+3*unit,fill:'none',stroke:'#c05a24','stroke-width':1.5,'vector-effect':'non-scaling-stroke'}));
- const paths={attack:'M6 4 17 15 M6 4 6 8 M6 4 10 4 M5 13 11 19 M8 16 4 20 M18 4 7 15 M18 4 14 4 M18 4 18 8 M13 19 19 13 M16 16 20 20',defence:'M12 3 20 6 V12 C20 17 16 20 12 22 C8 20 4 17 4 12 V6 Z M12 7 V16 M8 12 12 16 16 12',fight:'M13 2 C14 8 21 9 20 15 A8 8 0 0 1 4 15 C3 11 6 8 8 6 C7 11 11 11 13 2 Z M12 12 C15 15 15 18 12 20 C9 19 9 16 12 12 Z',assemble:'M5 21 V3 M6 4 H19 L16 8 19 12 H6 M3 21 H9'};
- const colors={attack:'#b14538',defence:'#226b9a',fight:'#bf5924',assemble:'#8b642b'};
- kinds.forEach((kind,index)=>{const badge=mapNode('g',{transform:'translate('+(x+(index?11:-10)*unit)+' '+(y-23*unit)+') scale('+(unit*.53)+')','pointer-events':'none','data-war-icon':kind});badge.append(mapNode('rect',{x:1,y:1,width:22,height:22,rx:5,fill:'#fffdf7',stroke:colors[kind],'stroke-width':1}),mapNode('path',{d:paths[kind],fill:kind==='fight'?'#fff0d4':'none',stroke:colors[kind],'stroke-width':1.7,'stroke-linecap':'round','stroke-linejoin':'round'}));group.append(badge);});
+ kinds.forEach((kind,index)=>{const badge=mapWarIcon(kind);badge.setAttribute('transform','translate('+(x+(index?11:-10)*unit)+' '+(y-23*unit)+') scale('+(unit*.53)+')');group.append(badge);});
 }
-function paintMapStateLegend(){const root=clear($('world-map-state-legend'));for(const [label,kind]of [['我盟宣战','attack'],['我盟受攻','defence'],['交战','fight'],['集结','assemble']]){const item=el('span'),svg=mapNode('svg',{viewBox:'-12 -22 26 24','aria-hidden':'true'});cityBadge(svg,{declared:kind==='attack'||kind==='defence',fighting:kind==='fight',assemble:kind==='assemble',warRole:kind},0,0,1,0);item.append(svg,el('span','',label));root.append(item);}root.append(el('span','','攻/守数字：优先 + 普通队列'));}
+// 图例使用图标自身的坐标，不带地图角标的偏移或交战光圈。
+function paintMapStateLegend(){const root=clear($('world-map-state-legend'));for(const [label,kind]of [['我盟宣战','attack'],['我盟受攻','defence'],['交战','fight'],['集结','assemble']]){const item=el('span'),svg=mapNode('svg',{viewBox:'0 0 24 24','aria-hidden':'true'});svg.append(mapWarIcon(kind));item.append(svg,el('span','',label));root.append(item);}root.append(el('span','','攻/守数字：优先 + 普通队列'));}
 function drawWorldMap(){
  const data=worldMapData;if(!data||!$('world-map-scroll').clientWidth)return;const svg=$('world-map');
  if(worldMapPainted!==data){
