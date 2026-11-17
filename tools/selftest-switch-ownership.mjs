@@ -54,7 +54,8 @@ try {
       const locations = configFields.filter(field => (field.controlFields ?? [field.key]).includes(key)).length + Number(scheduledInHeader.has(key)) + Number(activityKeys.has(key));
       assert.equal(locations, 1, key + ' 应有且仅有一个编辑位置');
     }
-    assert(configGroups.find(group => group.id === 'runtime').fields.some(field => field.key === 'loop.rounds'));
+    assert(!configGroups.some(group => group.id === 'runtime'), '运行安排已从网页配置移除');
+    assert(!configKeys.has('loop.rounds'), '网页挂机持续循环，不提供轮数编辑');
     assert(!configKeys.has('loop.everySeconds'));
   });
 

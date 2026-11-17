@@ -143,6 +143,7 @@ export function accountPage() {
         <Button id="account-add" type="button" aria-haspopup="dialog" aria-controls="account-add-dialog"><Plus aria-hidden="true" />添加账号</Button>
       </div>
     </div>
+    <p className="dim">新账号默认不挂机，点击账号卡片上的「开始挂机」后才会持续运行；可随时点击「暂停挂机」。</p>
     <p id="account-add-notice" className="dim" role="status" hidden />
     <p id="account-transfer-notice" className="dim" role="status" aria-live="polite" hidden />
     <div id="accounts" className="account-grid" />
@@ -227,7 +228,7 @@ export function accountPage() {
               <section id="phone-success" aria-labelledby="phone-success-title" hidden>
                 <h3 id="phone-success-title" tabIndex={-1}>账号已保存</h3>
                 <p id="phone-saved-account" />
-                <p id="phone-success-next" className="dim">点击页面顶部的「连接」进入所选角色，随后可前往「挂机配置」设置任务。</p>
+                <p id="phone-success-next" className="dim">账号已保存，尚未开始挂机。可先在「挂机配置」设置任务，再点击账号卡片或页头的「开始挂机」。</p>
                 <Button id="phone-add-another" type="button" variant="outline">添加其他 APP 账号</Button>
               </section>
             </div>

@@ -187,6 +187,7 @@ await test('生成响应丢失后可重新获取后台等待中的二维码', as
   await f.click('alipay-save');
   assert.deepEqual(f.calls('/save')[0].payload, { confirm: true, id: 'scan-1', choiceId: 'role-1' });
   assert.match(f.node('alipay-hint').textContent, /账号已保存并切换/);
+  assert.match(f.node('alipay-hint').textContent, /尚未开始挂机.*「开始挂机」/);
 });
 
 await test('生成期间重复点击只发送一次请求，失败后可重试', async () => {
@@ -401,7 +402,7 @@ await test('保存后自动挂机已启动或正在连接时显示任务配置�
       return data;
     };
     await f.click('alipay-save');
-    assert.match(f.node('alipay-hint').textContent, /账号已保存并切换.*按保存配置启动自动挂机.*「游戏配置」调整任务/);
+    assert.match(f.node('alipay-hint').textContent, /账号已保存并切换.*按保存配置启动自动挂机.*「挂机配置」调整任务/);
     assert.deepEqual(f.env.accounts.find(account => account.id === 'alipay:account').status, { connected, looping: true });
   }
 });

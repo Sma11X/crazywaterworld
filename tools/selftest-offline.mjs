@@ -56,6 +56,7 @@ const cases = [
   ['selftest-world-production-ui.mjs'],
   ['selftest-resource-updater.mjs'],
   ['selftest-trace-log.mjs'],
+  ['selftest-log-filters.mjs'],
   ['selftest-console-log.mjs'],
   ['selftest-account-status-ui.mjs'],
   ['selftest-account-picker-ui.mjs'],

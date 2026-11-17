@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { operationLabels } from './operation-labels.mjs';
+import { LOG_CATEGORIES, LOG_GROUPS } from './log-categories.mjs';
 import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
@@ -91,7 +92,7 @@ const $ = (id) => document.getElementById(id);
 const logEl = $('log');
 const operationNames = ${JSON.stringify(operationLabels)};
 
-// 同一个页面只伺候一个账号：所有请求都带 ?account=<当前选中>。
+// 游戏操作按顶部账号执行；运行日志独立订阅所有账号并筛选。
 let current = null;
 let accounts = [];
 let stream = null;
@@ -131,7 +132,7 @@ async function call(path, options) {
   if (current && url.indexOf('/api/') === 0 && url.indexOf('account=') < 0) {
     url += (url.indexOf('?') < 0 ? '?' : '&') + 'account=' + encodeURIComponent(current);
   }
-  const account = current;
+  const account = new URL(url, location.href).searchParams.get('account');
   trackCall(1);
   try {
     const res = await fetch(url, opts);
@@ -139,14 +140,14 @@ async function call(path, options) {
     if (!res.ok) {
       const error = new Error(data.error || res.statusText);
       if (data.fields) error.fields = data.fields;
-      if (data.log && (!data.log.account || account === current)) appendLog(data.log);
+      if (data.log) appendLog(data.log);
       error.logged = true;
-      if (!data.log && account === current) reportError(new Error(data.error || ('控制台返回 HTTP ' + res.status)), path);
+      if (!data.log) reportError(new Error(data.error || ('控制台返回 HTTP ' + res.status)), path, account);
       throw error;
     }
     return data;
   } catch (error) {
-    if (!error.logged && account === current) reportError(error, path);
+    if (!error.logged) reportError(error, path, account);
     error.logged = true;
     throw error;
   } finally {
@@ -278,58 +279,142 @@ const seen = new Set();
 const logTime = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
 });
-let logAccount;
+const logCategories = ${JSON.stringify(LOG_CATEGORIES)};
+const logGroups = ${JSON.stringify(LOG_GROUPS)};
+let logAccount = 'all';
+let logGroup = 'all';
 let onlyIssues = false;
 let logCategory = 'all';
 let logReturnFocus;
 function openJournal() {
   if ($('journal-dialog').open) return;
   closeHelpTip(false); logReturnFocus = document.activeElement;
-  document.body.classList.add('has-log-dialog'); $('journal-dialog').showModal(); $('log-category').focus();
+  updateLogAccounts(); updateLogSummary();
+  document.body.classList.add('has-log-dialog'); $('journal-dialog').showModal(); $('log-account').focus();
 }
 $('logs-open').onclick = openJournal;
 $('logs-close').onclick = () => $('journal-dialog').close();
 $('journal-dialog').addEventListener('close', () => { document.body.classList.remove('has-log-dialog'); (logReturnFocus?.isConnected ? logReturnFocus : $('logs-open')).focus(); });
-$('log-category').onchange = () => { logCategory = $('log-category').value; updateLogSummary(); };
-let logClearBefore = 0, logClearAt = 0;
+$('log-category').onchange = () => {
+  logCategory = $('log-category').value;
+  logGroup = Object.keys(logGroups).find(group => logGroups[group].includes(logCategory)) || 'all';
+  updateLogSummary();
+};
+$('log-account').onchange = () => { logAccount = $('log-account').value; updateLogSummary(); };
+const logTabs = [...$('log-tabs').querySelectorAll('[role=tab]')];
+function selectLogGroup(tab) {
+  logGroup = tab.dataset.logGroup; logCategory = 'all'; $('log-category').value = 'all';
+  updateLogSummary();
+}
+for (const [index, tab] of logTabs.entries()) {
+  tab.onclick = () => selectLogGroup(tab);
+  tab.onkeydown = event => {
+    const next = { ArrowRight: (index + 1) % logTabs.length, ArrowLeft: (index + logTabs.length - 1) % logTabs.length, Home: 0, End: logTabs.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); selectLogGroup(logTabs[next]); logTabs[next].focus();
+  };
+}
+const logClearWatermarks = new Map();
+const logAccountNames = new Map();
+let logClearing = false;
+function logAccountLabel(id) {
+  if (!id) return '系统';
+  const account = accounts.find(item => item.id === id);
+  const title = account?.title || account?.label || logAccountNames.get(id) || '账号';
+  logAccountNames.set(id, title);
+  let length = Math.min(8, id.length);
+  const ids = new Set([...accounts.map(item => item.id), ...logAccountNames.keys()]);
+  while (length < id.length && [...ids].some(other => other !== id && other.slice(0, length) === id.slice(0, length))) length++;
+  return title + ' · ' + id.slice(0, length);
+}
+function updateLogAccounts() {
+  const ids = new Set(accounts.map(account => account.id));
+  for (const row of logEl.children) if (row.dataset.account) ids.add(row.dataset.account);
+  if (logAccount !== 'all' && logAccount !== 'system') ids.add(logAccount);
+  const options = [['all', '全部账号'], ['system', '系统日志'], ...[...ids].map(id => [id, logAccountLabel(id)])];
+  const signature = JSON.stringify(options);
+  if ($('log-account').dataset.options !== signature) {
+    $('log-account').replaceChildren(...options.map(([value, text]) => new Option(text, value)));
+    $('log-account').dataset.options = signature;
+    $('log-account').value = logAccount;
+  }
+  for (const row of logEl.children) {
+    const badge = row.querySelector('.log-account');
+    badge.textContent = logAccountLabel(row.dataset.account);
+    badge.title = row.dataset.account ? badge.textContent + ' · ' + row.dataset.account : '控制台系统日志';
+  }
+}
+function clearedLog(entry) {
+  const watermark = logClearWatermarks.get(entry.account || '');
+  return watermark && (entry.id ? entry.id <= watermark.before : entry.t <= watermark.at);
+}
 let guildRefreshTimer;
 function updateLogSummary() {
   let count = 0;
+  const groupCounts = { all: 0 };
   for (const row of logEl.children) {
-    row.hidden = (onlyIssues && !row.classList.contains('error') && !row.classList.contains('warn')) || (logCategory !== 'all' && row.dataset.category !== logCategory);
+    const accountMatches = logAccount === 'all' || (logAccount === 'system' ? !row.dataset.account : row.dataset.account === logAccount);
+    const levelMatches = !onlyIssues || row.classList.contains('error') || row.classList.contains('warn');
+    const group = Object.keys(logGroups).find(key => logGroups[key].includes(row.dataset.category));
+    if (accountMatches && levelMatches) { groupCounts.all++; if (group) groupCounts[group] = (groupCounts[group] || 0) + 1; }
+    row.hidden = !accountMatches || !levelMatches || (logGroup !== 'all' && group !== logGroup) || (logCategory !== 'all' && row.dataset.category !== logCategory);
     if (!row.hidden) count++;
   }
+  for (const tab of logTabs) {
+    const selected = tab.dataset.logGroup === logGroup;
+    tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
+    tab.querySelector('[data-log-group-count]').textContent = groupCounts[tab.dataset.logGroup] || 0;
+    if (selected) $('log-panel').setAttribute('aria-labelledby', tab.id);
+  }
+  const account = accounts.find(item => item.id === logAccount);
+  $('log-clear').disabled = logClearing || !account;
+  $('log-clear').title = account ? '清空“' + logAccountLabel(logAccount) + '”的全部运行日志（不限当前分类）' : '选择一个账号后可清空该账号的全部运行日志';
   $('log-top-count').textContent = logEl.children.length;
   $('log-count').textContent = String(count);
   $('log-empty').hidden = count > 0;
-  $('log-empty').textContent = logCategory !== 'all' ? '这个功能暂无符合筛选条件的记录' : onlyIssues ? '没有警告或错误' : '还没有运行记录';
+  $('log-empty').textContent = logCategory !== 'all' || logGroup !== 'all' || logAccount !== 'all' || onlyIssues ? '没有符合当前账号、分类和等级筛选的记录' : '还没有运行记录';
 }
 function appendLog(entry) {
-  if (entry.account && entry.account !== current) return;
-  if (entry.id ? entry.id <= logClearBefore : entry.t <= logClearAt) return;
+  if (clearedLog(entry)) return;
   if (entry.id && seen.has(entry.id)) return;
   if (entry.id) seen.add(entry.id);
   const atTop = logEl.scrollTop < 30;
-  const anchor = [...logEl.children].find(row => row.getBoundingClientRect().bottom > logEl.getBoundingClientRect().top);
+  const anchor = [...logEl.children].find(row => !row.hidden && row.getBoundingClientRect().bottom > logEl.getBoundingClientRect().top);
   const anchorTop = anchor?.getBoundingClientRect().top;
   const waitKey=entry.extra?.waitKey;
-  const repeated=waitKey && [...logEl.children].find(row=>row.dataset.waitKey===waitKey);
-  if(repeated){repeated.logEntries.unshift(entry);if(repeated.logEntries.length>400){const dropped=repeated.logEntries.pop();seen.delete(dropped.id);}repeated.dataset.waitCount=String(Number(repeated.dataset.waitCount||1)+1);updateLogRow(repeated);logEl.prepend(repeated);updateLogSummary();return;}
+  const sameScope = row => row?.dataset.account === (entry.account || '') && row.dataset.category === (entry.category || 'system') && row.classList.contains(entry.level);
+  const newer = (a, b) => a.t > b.t || (a.t === b.t && (a.id || Infinity) > (b.id || 0));
+  const repeated=waitKey && [...logEl.children].find(row=>sameScope(row) && row.dataset.waitKey===waitKey);
+  if(repeated){
+    repeated.logEntries.push(entry); repeated.logEntries.sort((a,b) => newer(a,b) ? -1 : 1);
+    if(repeated.logEntries.length>400){const dropped=repeated.logEntries.pop();seen.delete(dropped.id);}
+    repeated.dataset.waitCount=String(Number(repeated.dataset.waitCount||1)+1);updateLogRow(repeated);
+    const next=[...logEl.children].find(row=>row!==repeated && newer(repeated.logEntries[0],row.logEntries[0]));
+    logEl.insertBefore(repeated,next||null);updateLogSummary();
+    if(atTop)logEl.scrollTop=0;else if(anchor?.isConnected)logEl.scrollTop+=anchor.getBoundingClientRect().top-anchorTop;
+    return;
+  }
   const batch = entry.extra?.batch;
   const first = logEl.firstElementChild;
-  const newer = (a, b) => a.t > b.t || (a.t === b.t && (a.id || Infinity) > (b.id || 0));
-  if (batch && first?.dataset.batch === batch && first.logEntries.length < 32 && newer(entry, first.logEntries[0])) {
+  if (batch && sameScope(first) && first.dataset.batch === batch && first.logEntries.length < 32 && newer(entry, first.logEntries[0])) {
     first.logEntries.unshift(entry);
     updateLogRow(first);
   } else {
     const row = el('div', 'row ' + entry.level);
     row.dataset.category = entry.category || 'system';
+    row.dataset.account = entry.account || '';
     if(waitKey){row.dataset.waitKey=waitKey;row.dataset.waitCount='1';}
     row.logEntries = [entry];
     if (batch) row.dataset.batch = batch;
     const timestamp = logTime.format(entry.t);
     row.appendChild(el('time', 'ts', timestamp));
     const body = el('div', 'log-body');
+    const meta = el('div', 'log-meta');
+    const accountBadge = component('ui-log-badge'); accountBadge.classList.add('log-account');
+    accountBadge.textContent = logAccountLabel(entry.account);
+    accountBadge.title = entry.account ? accountBadge.textContent + ' · ' + entry.account : '控制台系统日志';
+    const categoryBadge = component('ui-log-badge'); categoryBadge.textContent = logCategories[row.dataset.category] || logCategories.system;
+    meta.append(accountBadge, categoryBadge); body.appendChild(meta);
     const levelName = { error: '错误', warn: '提醒' }[entry.level];
     if (levelName) body.appendChild(el('span', 'log-level', levelName));
     body.appendChild(el('span', 'log-message', entry.message));
@@ -364,10 +449,13 @@ function updateLogRow(row) {
   }
 }
 function clearLogBefore(data) {
-  logClearBefore = Math.max(logClearBefore, data.before);
-  logClearAt = Math.max(logClearAt, data.at);
+  if (!data.account) return;
+  const previous = logClearWatermarks.get(data.account);
+  logClearWatermarks.set(data.account, { before: Math.max(previous?.before || 0, data.before || 0), at: Math.max(previous?.at || 0, data.at || 0) });
   for (const row of [...logEl.children]) {
-    row.logEntries = row.logEntries.filter(entry => entry.id ? entry.id > logClearBefore : entry.t > logClearAt);
+    if (row.dataset.account !== data.account) continue;
+    row.logEntries = row.logEntries.filter(entry => !clearedLog(entry));
+    if (row.dataset.waitKey) row.dataset.waitCount = String(row.logEntries.length);
     if (row.logEntries.length) updateLogRow(row); else row.remove();
   }
   seen.clear();
@@ -375,22 +463,22 @@ function clearLogBefore(data) {
   updateLogSummary();
 }
 $('log-clear').onclick = async () => {
-  if (!current) return;
-  const account = current, button = $('log-clear');
-  button.disabled = true;
+  if (logClearing || !accounts.some(account => account.id === logAccount)) return;
+  const account = logAccount;
+  logClearing = true; updateLogSummary();
   try {
-    const data = await call('/api/logs/clear', { method: 'POST', body: JSON.stringify({ confirm: true }) });
-    if (account === current) clearLogBefore(data);
-  } catch (error) { if (account === current) reportError(error); }
-  finally { button.disabled = false; }
+    const data = await call('/api/logs/clear?account=' + encodeURIComponent(account), { method: 'POST', body: JSON.stringify({ confirm: true }) });
+    clearLogBefore(data);
+  } catch (error) { reportError(error, undefined, account); }
+  finally { logClearing = false; updateLogSummary(); }
 };
-function reportError(error, context) {
+function reportError(error, context, account = current) {
   if (error?.logged) return;
   const api = context?.startsWith('/api/');
   const action = api ? operationNames[context.split('?')[0]] || '控制台操作' : context;
   const raw = error?.message || String(error);
   const reason = raw === 'Failed to fetch' ? '无法连接本地控制台，请检查控制台是否仍在运行' : raw;
-  appendLog({ t: Date.now(), level: 'error', message: (action ? action + '失败：' : '') + reason,
+  appendLog({ t: Date.now(), account, level: 'error', message: (action ? action + '失败：' : '') + reason,
     detail: api ? context + ' · ' + raw : undefined });
   if (error instanceof Error) error.logged = true;
 }
@@ -405,16 +493,13 @@ for (const [id, filtered] of [['log-all', false], ['log-issues', true]]) {
   };
 }
 function subscribe() {
-  if (stream) stream.close();
-  if (logAccount !== current) {
-    seen.clear(); clear(logEl); updateLogSummary(); logAccount = current;
-    logClearBefore = logClearAt = 0;
-  }
-  $('log-clear').disabled = !current;
-  const account = current;
-  stream = new EventSource('/api/events' + (current ? '?account=' + encodeURIComponent(current) : ''));
-  stream.addEventListener('logs-cleared', event => { if (account === current) clearLogBefore(JSON.parse(event.data)); });
-  stream.addEventListener('guild-aid-changed', () => {
+  updateLogAccounts(); updateLogSummary();
+  if (stream) return;
+  stream = new EventSource('/api/events?scope=all');
+  stream.addEventListener('logs-cleared', event => clearLogBefore(JSON.parse(event.data)));
+  stream.addEventListener('guild-aid-changed', event => {
+    const account = JSON.parse(event.data).account;
+    if (account !== current) return;
     clearTimeout(guildRefreshTimer);
     guildRefreshTimer = setTimeout(() => {
       if (account === current && !snapshot.paused && !$('tab-guild').classList.contains('hidden')) {
@@ -423,7 +508,6 @@ function subscribe() {
     }, 300);
   });
   stream.onmessage = (event) => {
-    if (account !== current) return;
     const entry = JSON.parse(event.data);
     appendLog(entry);
     if ((entry.extra?.pauseChanged || entry.extra?.loginBlocked) && entry.account === current) void loadAccounts(false);
@@ -1518,11 +1602,48 @@ async function useAccountCard(id) {
   return true;
 }
 
+async function toggleAccountCardLoop(id) {
+  const account = accounts.find(row => row.id === id);
+  if (!account || hostingActions.has(id)) return;
+  const status = id === current ? snapshot : account.status ?? {};
+  const stop = !!(status.looping || status.reconnecting);
+  if (status.loopStopping || (!stop && id === current && loopAccount !== id)) return;
+  hostingActions.add(id);
+  accountStatusRevision++;
+  if (id === current) loopVersion++;
+  renderAccountSelect();
+  try {
+    if (!stop && id === current) {
+      if (!await configFlush()) throw new Error('配置尚未保存，请先处理配置页的提示');
+      if (current !== id || !await saveLoopInterval() || current !== id) return;
+    }
+    if (!accounts.some(row => row.id === id)) return;
+    const data = await call((stop ? '/api/loop/stop' : '/api/accounts/pause') + '?account=' + encodeURIComponent(id), {
+      method: 'POST', body: JSON.stringify(stop ? { confirm: true } : { confirm: true, paused: false, start: true }),
+    });
+    if (id === current) loopVersion++;
+    setAccountStatus(id, stop ? data.status : data);
+    if (!stop) disconnected.delete(id);
+    if (id === current) {
+      refreshStages();
+      refreshProgression();
+    }
+  } catch (error) {
+    reportError(error);
+  } finally {
+    hostingActions.delete(id);
+    renderAccountSelect();
+    refreshAccountStatuses();
+    if (id === current) refreshLoop();
+  }
+}
+
 function createAccountCard(id) {
   const card = component('ui-account-card');
   card.accountId = id;
   const action = name => card.querySelector('[data-account-action="' + name + '"]');
   action('select').onclick = () => useAccountCard(id);
+  action('loop').onclick = () => toggleAccountCardLoop(id);
   action('details').onclick = async () => {
     if (!await useAccountCard(id)) return;
     const account = accounts.find(row => row.id === id);
@@ -1604,6 +1725,11 @@ function renderAccounts() {
     const select = card.querySelector('[data-account-action="select"]');
     select.disabled = account.id === current;
     select.textContent = account.id === current ? '当前账号' : '切换账号';
+    const loop = card.querySelector('[data-account-action="loop"]');
+    const running = status.looping || status.reconnecting;
+    loop.disabled = hostingActions.has(account.id) || !!status.loopStopping || (!running && account.id === current && loopAccount !== current);
+    loop.textContent = status.loopStopping ? '暂停中…' : hostingActions.has(account.id) ? '处理中…' : running ? '暂停挂机' : '开始挂机';
+    loop.title = running ? '停止此账号自动循环，保留游戏连接和手动操作' : '按此账号已保存的任务持续挂机，直到手动暂停';
     if (box.children[index] !== card) box.insertBefore(card, box.children[index] || null);
   });
 }

@@ -71,17 +71,23 @@ export function journal() {
   return renderToStaticMarkup(<dialog id="journal-dialog" aria-label="运行日志"><aside id="journal" aria-label="运行日志">
     <DialogHeader><DialogTitle className="journal-title">运行日志<Badge id="log-count">0</Badge></DialogTitle></DialogHeader>
     <Button id="logs-close" size="icon-sm" variant="ghost" aria-label="关闭运行日志"><X aria-hidden="true" /></Button>
+    <div id="log-tabs" className="log-filter" role="tablist" aria-label="日志分类">
+      {["全部日志", ...Object.keys(LOG_GROUPS)].map((name, index) => <button key={name} type="button" id={`log-tab-${index}`} role="tab" data-log-group={index === 0 ? "all" : name} aria-selected={index === 0} aria-controls="log-panel" tabIndex={index === 0 ? 0 : -1}>{name}<span data-log-group-count="">0</span></button>)}
+    </div>
     <div className="log-toolbar">
+      <label className="log-category-label" htmlFor="log-account">账号<select id="log-account" aria-label="日志账号筛选" defaultValue="all"><option value="all">全部账号</option><option value="system">系统日志</option></select></label>
       <label className="log-category-label" htmlFor="log-category">功能<select id="log-category" aria-label="日志功能分类" defaultValue="all"><option value="all">全部功能</option>{Object.entries(LOG_GROUPS).map(([group, keys]) => <optgroup key={group} label={group}>{keys.map(key => <option key={key} value={key}>{LOG_CATEGORIES[key]}</option>)}</optgroup>)}</select></label>
       <div className="log-filter" role="group" aria-label="日志筛选">
         <button type="button" id="log-all" aria-pressed="true">全部</button>
         <button type="button" id="log-issues" aria-pressed="false">警告与错误</button>
       </div>
       <a href="https://github.com/xutongxue233/crazywaterworld/issues/new?template=bug_report.yml" target="_blank" rel="noopener noreferrer" title="复现后附上数据目录中的 protocol.log 和 protocol.log.1（如有），以及发生时间、设置和实际结果；不要上传账号文件。">问题反馈（附日志）</a>
-      <Button id="log-clear" size="sm" variant="outline" title="清空当前账号的运行日志">清空日志</Button>
+      <Button id="log-clear" size="sm" variant="outline" disabled title="选择一个账号后可清空该账号的全部运行日志">清空账号日志</Button>
     </div>
-    <div id="log" role="log" aria-live="polite" aria-label="操作记录" />
-    <p id="log-empty">还没有运行记录</p>
+    <div id="log-panel" role="tabpanel" aria-labelledby="log-tab-0" tabIndex={0}>
+      <div id="log" role="log" aria-live="polite" aria-label="操作记录" />
+      <p id="log-empty">还没有运行记录</p>
+    </div>
   </aside></dialog>)
 }
 
@@ -118,6 +124,7 @@ export function templates() {
     <template id="ui-number"><Input type="number" /></template>
     <template id="ui-delete"><Button variant="destructive" size="sm" /></template>
     <template id="ui-badge"><Badge variant="outline" /></template>
+    <template id="ui-log-badge"><Badge variant="outline" className="max-w-full justify-start whitespace-normal text-left" /></template>
     <template id="ui-account-option">
       <Button type="button" variant="ghost" role="option" tabIndex={-1} aria-selected="false" className="account-picker-option grid h-auto pointer-coarse:h-auto w-full min-w-0 items-start justify-start gap-x-3 gap-y-1 rounded-sm px-3 py-2.5 whitespace-normal text-left font-normal">
         <span data-picker-field="title" />
@@ -150,7 +157,7 @@ export function templates() {
             <div><dt>战力</dt><dd data-account-field="power" /></div>
           </dl>
         </CardContent>
-        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" size="sm" data-account-action="select">切换账号</Button></div></CardFooter>
+        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-2" data-account-action="loop">开始挂机</Button></div></CardFooter>
       </Card>
     </template>
   </>)

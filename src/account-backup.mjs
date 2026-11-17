@@ -66,6 +66,8 @@ export function parseAccountBackup(document) {
     if (row.label != null && typeof row.label !== 'string') fail('账号备注必须是文本');
     if (row.loginFrameHex != null && (typeof row.loginFrameHex !== 'string' || !/^(?:[0-9a-f]{2})+$/i.test(row.loginFrameHex))) fail('登录帧必须是完整的十六进制字节');
     const account = accountFromCredential(row, { label: row.label ?? null });
+    // 备份只恢复账号资料；启停偏好保留本机值，新增账号在导入计划中默认关闭。
+    delete account.automation;
     accountKey(account.id);
     if (row.id !== account.id) fail('账号标识与登录凭据或渠道不一致');
     if (ids.has(account.id)) fail('文件中包含重复账号');

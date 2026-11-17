@@ -159,9 +159,20 @@ async function test(name, work) {
 }
 
 try {
-  await test('旧账号未保存启停状态时默认持续挂机，按已保存间隔运行并落盘', async () => {
+  await test('未保存启停状态的账号读取和重启均不挂机，明确开启后才持续运行', async () => {
     const f = account({ everySeconds: 37, rounds: 8 });
     await launch([f]);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const idle = await api(f.id, 'loop');
+      await api(f.id, 'settings');
+      assert.equal(idle.autoStart, false);
+      assert.equal(idle.running, false);
+      assert.equal(saved(f.id).autoStart, false);
+      assert.equal(f.state.logins, 0);
+      await shutdown();
+      await launch();
+    }
+    await api(f.id, 'accounts/pause', { paused: false, start: true });
     await running(f.id);
     const view = await api(f.id, 'loop');
     assert.equal(view.autoStart, true);
@@ -567,12 +578,23 @@ try {
     assert.equal(saved(f.id).autoStart, true);
   });
 
-  await test('新采集账号按默认配置挂机，刷新停止账号凭证保留关闭选择', async () => {
+  await test('新采集账号默认停止，手动开启后运行，暂停与刷新凭证保留关闭选择', async () => {
     const f = account();
     saveAutomationSettings(f.id, settingsFromNative(tasks, { everySeconds: 3600 }), { revision: 0 });
     await launch([]);
     await api('', 'capture/start', {});
     await capturedLogin({ url: f.row.url, body: f.row.login });
+    assert.equal(saved(f.id).autoStart, false);
+    assert.equal(saved(f.id).enabled, false);
+    assert.equal(session(f.id).loop.running, false);
+    assert.equal(f.state.requests.includes('EmailBoxRequest'), false);
+    await shutdown();
+    const metadataLogins = f.state.logins;
+    await launch();
+    assert.equal((await api(f.id, 'loop')).running, false);
+    assert.equal(f.state.logins, metadataLogins);
+    await api('', 'capture/start', {});
+    await api(f.id, 'accounts/pause', { paused: false, start: true });
     await running(f.id);
     assert.equal(saved(f.id).autoStart, true);
     await stop(f.id);
@@ -581,13 +603,18 @@ try {
     assert.equal(saved(f.id).autoStart, false);
   });
 
-  await test('新采集账号首次登录发生网络错误后自动重试并开始挂机', async () => {
+  await test('新采集账号资料读取失败不自动挂机，明确开启后才重试连接', async () => {
     const f = account();
     f.state.loginFailures = 1;
     saveAutomationSettings(f.id, settingsFromNative(tasks, { everySeconds: 3600 }), { revision: 0 });
     await launch([]);
     await api('', 'capture/start', {});
     await capturedLogin({ url: f.row.url, body: f.row.login });
+    await sleep(100);
+    assert.equal(f.state.logins, 1);
+    assert.equal(saved(f.id).autoStart, false);
+    assert.equal(session(f.id).loop.running, false);
+    await api(f.id, 'accounts/pause', { paused: false, start: true });
     await running(f.id);
     assert.equal(f.state.logins, 2);
     assert.equal(saved(f.id).autoStart, true);

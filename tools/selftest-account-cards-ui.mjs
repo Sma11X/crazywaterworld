@@ -148,7 +148,16 @@ function fixture(initial = sampleAccounts()) {
     return card;
   };
   env.guard = async () => env.allowed;
+  env.flush = async () => true;
+  env.saveInterval = async () => true;
   env.respond = async (route, payload) => {
+    const url = new URL(route, 'http://fixture.invalid');
+    if (['/api/accounts/pause', '/api/loop/stop'].includes(url.pathname)) {
+      const row = env.serverRows.find(row => row.id === url.searchParams.get('account'));
+      assert.ok(row, '必须明确指定目标账号');
+      row.status = { connected: true, paused: false, looping: url.pathname === '/api/accounts/pause' };
+      return url.pathname === '/api/loop/stop' ? { status: row.status } : row.status;
+    }
     if (route === '/api/accounts/label') env.serverRows.find(row => row.id === payload.id).label = payload.label;
     if (route === '/api/accounts/remove') env.serverRows = env.serverRows.filter(row => row.id !== payload.id);
     if (route === '/api/accounts') return { accounts: structuredClone(env.serverRows), activeId: env.serverRows[0]?.id ?? null };
@@ -169,6 +178,8 @@ function fixture(initial = sampleAccounts()) {
     const when = value => value;
     const reportError = error => env.errors.push(error);
     const configMayChangeAccount = async id => {env.effects.push(['guard',id]);return env.guard(id);};
+    const configFlush = async () => {env.effects.push(['flush',current]);return env.flush();};
+    const saveLoopInterval = async () => {env.effects.push(['interval',current]);return env.saveInterval();};
     const accountDialog = async (...args) => {env.dialogs.push(args);return env.dialogResult;};
     const exportAccounts = id => env.exports.push(id);
     const refreshProgression = () => {};
@@ -187,18 +198,19 @@ function fixture(initial = sampleAccounts()) {
     const resetWorldMap = () => {};
     const resetProductionPlan = () => {};
     let accounts=structuredClone(env.serverRows),current=env.selected,dailyAccount=current,dailyVersion=0;
-    let worldMapOwner=null,productionPlanOwner=null,productionPlanBusy=false,loopAccount=current;
+    let worldMapOwner=null,productionPlanOwner=null,productionPlanBusy=false,loopAccount=current,loopVersion=0;
     ${accountScript}
     ${cardsScript}
     snapshot=accounts.find(row=>row.id===current)?.status??{};
     accountDetailsOwner=current;
     renderAccountSelect();
     env.api={renderAccounts,refreshAccountStatuses,selectLoadedAccount,setAccountStatus,
-      current:()=>current,rows:()=>accounts,connectingAccounts,
+      current:()=>current,rows:()=>accounts,snapshot:()=>snapshot,connectingAccounts,
       replace(rows) {accounts=structuredClone(rows);snapshot=accounts.find(row=>row.id===current)?.status??{};renderAccounts();}};
   `)(env);
   env.card = id => env.node('accounts').children.find(card => card.accountId === id);
   env.field = (id, name) => env.card(id).querySelector('[data-account-field="' + name + '"]');
+  env.button = (id, name) => env.card(id).querySelector('[data-account-action="' + name + '"]');
   env.action = (id, name) => env.card(id).querySelector('[data-account-action="' + name + '"]').onclick();
   env.effects.length = 0;
   return env;
@@ -427,6 +439,132 @@ await test('卡片或下拉的旧配置确认迟到不再发送切号请求', as
     assert.equal(env.node('account').value, 'fixture-private-c');
     assert.equal(env.node('account-info-dialog').open, false);
   }
+});
+
+await test('账号卡片直接开始及暂停非当前账号，不切号也不提交当前草稿', async () => {
+  const env = fixture();
+  const id = 'fixture-private-b';
+  assert.equal(env.button(id, 'loop').textContent, '开始挂机');
+  await env.action(id, 'loop');
+  await settle();
+  assert.deepEqual(env.calls[0], { route: '/api/accounts/pause?account=' + id,
+    payload: { confirm: true, paused: false, start: true } });
+  assert.equal(env.api.current(), 'fixture-private-a');
+  assert.equal(env.api.snapshot().looping, undefined);
+  assert.equal(env.api.rows()[1].status.paused, false);
+  assert.equal(env.button(id, 'loop').textContent, '暂停挂机');
+  assert.deepEqual(env.effects, []);
+  await env.action(id, 'loop');
+  await settle();
+  assert.ok(env.calls.some(call => call.route === '/api/loop/stop?account=' + id));
+  assert.equal(env.api.rows()[1].status.looping, false);
+  assert.equal(env.api.rows()[1].status.connected, true);
+  assert.equal(env.button(id, 'loop').textContent, '开始挂机');
+  assert.equal(env.api.current(), 'fixture-private-a');
+});
+
+await test('当前账号开始前保存配置和间隔，暂停无需保存且同步页头状态', async () => {
+  const env = fixture();
+  const id = 'fixture-private-a';
+  await env.action(id, 'loop');
+  await settle();
+  assert.deepEqual(env.effects, [['flush', id], ['interval', id]]);
+  assert.equal(env.api.snapshot().looping, true);
+  assert.equal(env.node('loop-toggle').textContent, '暂停挂机');
+  env.effects.length = 0;
+  await env.action(id, 'loop');
+  await settle();
+  assert.deepEqual(env.effects, []);
+  assert.equal(env.node('loop-toggle').textContent, '开始挂机');
+  assert.equal(env.api.snapshot().connected, true);
+});
+
+await test('保存失败或保存期间切号不启动旧账号，控件恢复可用', async () => {
+  for (const failure of ['config', 'interval', 'switch']) {
+    const env = fixture();
+    const gate = deferred();
+    if (failure === 'config') env.flush = async () => false;
+    if (failure === 'interval') env.saveInterval = async () => false;
+    if (failure === 'switch') env.flush = () => gate.promise;
+    const pending = env.action('fixture-private-a', 'loop');
+    await settle();
+    if (failure === 'switch') {
+      env.api.selectLoadedAccount('fixture-private-b');
+      gate.resolve(true);
+    }
+    await pending;
+    await settle();
+    assert.equal(env.calls.some(call => call.route.startsWith('/api/accounts/pause')), false);
+    assert.equal(env.button('fixture-private-a', 'loop').disabled, false);
+    if (failure === 'config') assert.match(env.errors[0].message, /配置尚未保存/);
+  }
+});
+
+await test('开始请求期间拒绝重复点击，迟到结果只更新目标账号', async () => {
+  const env = fixture();
+  const id = 'fixture-private-b';
+  const gate = deferred();
+  const respond = env.respond;
+  env.respond = async (route, payload) => {
+    if (route.startsWith('/api/accounts/pause')) await gate.promise;
+    return respond(route, payload);
+  };
+  const pending = env.action(id, 'loop');
+  await settle();
+  assert.equal(env.button(id, 'loop').disabled, true);
+  assert.equal(env.button(id, 'loop').textContent, '处理中…');
+  await env.action(id, 'loop');
+  assert.equal(env.calls.filter(call => call.route.startsWith('/api/accounts/pause')).length, 1);
+  env.api.selectLoadedAccount(id);
+  assert.equal(env.node('loop-toggle').disabled, true, '页头与卡片共用操作锁');
+  env.api.selectLoadedAccount('fixture-private-a');
+  gate.resolve();
+  await pending;
+  await settle();
+  assert.equal(env.api.current(), 'fixture-private-a');
+  assert.equal(env.api.snapshot().looping, undefined);
+  assert.equal(env.api.rows()[1].status.looping, true);
+  assert.equal(env.button(id, 'loop').disabled, false);
+});
+
+await test('重连中的账号可暂停，正在停止的账号不能再开始', async () => {
+  const rows = sampleAccounts();
+  rows[1].status = { reconnecting: true };
+  const env = fixture(rows);
+  assert.equal(env.button(rows[1].id, 'loop').textContent, '暂停挂机');
+  await env.action(rows[1].id, 'loop');
+  await settle();
+  assert.equal(env.calls[0].route, '/api/loop/stop?account=' + rows[1].id);
+  env.api.setAccountStatus(rows[1].id, { loopStopping: true });
+  env.api.renderAccounts();
+  assert.equal(env.button(rows[1].id, 'loop').textContent, '暂停中…');
+  assert.equal(env.button(rows[1].id, 'loop').disabled, true);
+  const count = env.calls.length;
+  await env.action(rows[1].id, 'loop');
+  assert.equal(env.calls.length, count);
+});
+
+await test('请求失败显示错误并释放锁，旧轮询不覆盖操作结果', async () => {
+  const env = fixture();
+  const id = 'fixture-private-b';
+  const respond = env.respond;
+  env.respond = (route, payload) => {
+    if (route.startsWith('/api/accounts/pause')) throw new Error('测试连接失败');
+    return respond(route, payload);
+  };
+  await env.action(id, 'loop');
+  await settle();
+  assert.match(env.errors[0].message, /测试连接失败/);
+  assert.equal(env.button(id, 'loop').disabled, false);
+  const gate = deferred();
+  const stale = { accounts: structuredClone(env.serverRows) };
+  env.respond = (route, payload) => route === '/api/accounts' ? gate.promise : respond(route, payload);
+  const polling = env.api.refreshAccountStatuses();
+  await env.action(id, 'loop');
+  gate.resolve(stale);
+  await polling;
+  assert.equal(env.api.rows()[1].status.looping, true);
+  assert.equal(env.button(id, 'loop').textContent, '暂停挂机');
 });
 
 console.log(`账号卡片自检通过 ${passed} 项`);

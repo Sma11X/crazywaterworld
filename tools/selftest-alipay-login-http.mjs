@@ -314,8 +314,15 @@ try {
   assert.match(saved.data.account.title, /星海船长/);
   assert.match(saved.data.account.title, /海港2服/);
   const idOfAccount = saved.data.account.id;
+  assert.equal(loadStore().accounts.find(row => row.id === idOfAccount).automation.autoStart, false);
+  assert.equal(app.sessions.get(idOfAccount).loop.running, false);
+  assert.equal(connections.length, beforeSaveConnections, '新账号保存后不启动挂机连接');
+  const started = await fetch(root + '/api/accounts/pause?account=' + encodeURIComponent(idOfAccount), {
+    method: 'POST', body: JSON.stringify({ confirm: true, paused: false, start: true }),
+  });
+  assert.equal(started.status, 200);
   const initialSession = await waitForLoop(idOfAccount, 3000000002);
-  assert.equal(connections.length, beforeSaveConnections + 1, '保存后自动连接所选角色');
+  assert.equal(connections.length, beforeSaveConnections + 1, '明确开始后连接所选角色');
   assert.equal(initialSession.loop.rounds, 0);
   assert.equal(loadStore().accounts.find(row => row.id === idOfAccount).automation.autoStart, true);
   let store = loadStore();
@@ -441,7 +448,8 @@ try {
   assert.equal((await save(single.id)).status, 200);
   assert.equal(loadStore().accounts.find(row => row.id === 'alipay:single-account').lastSeen.nickname, '未命名角色');
   assert.equal(loadStore().accounts.find(row => row.id === 'alipay:single-account').label, '未命名角色');
-  await waitForLoop('alipay:single-account', 3000000008);
+  assert.equal(app.sessions.get('alipay:single-account').loop.running, false);
+  assert.equal(loadStore().accounts.find(row => row.id === 'alipay:single-account').automation.autoStart, false);
   await disconnect('alipay:single-account');
 
   // 查询并发共用同一请求，取消、过期、刷新都丢弃旧结果并关闭临时连接。
@@ -560,7 +568,8 @@ try {
   const cleanupSaved = await save(cleanup.id, cleanup.choices[1].id);
   assert.equal(cleanupSaved.status, 200);
   assert.equal(cleanupSaved.data.account.id, 'alipay:cleanup-account');
-  await waitForLoop('alipay:cleanup-account', 3000000002);
+  assert.equal(app.sessions.get('alipay:cleanup-account').loop.running, false);
+  assert.equal(loadStore().accounts.find(row => row.id === 'alipay:cleanup-account').automation.autoStart, false);
   await disconnect('alipay:cleanup-account');
   assert.equal((await save(cleanup.id, cleanup.choices[1].id)).status, 400);
   assert.equal((await status(cleanup.id)).data.phase, 'cancelled');

@@ -390,6 +390,7 @@ try {
   assert.ok(stoppedClients > 0);
   assert.equal((await request('/save', { confirm: true, id: preview.data.id })).status, 400);
   assert.equal((await request('/save', { confirm: true, id: preview.data.id, choiceId: 'forged-choice', worldId: 42 })).status, 400);
+  const beforeSaveConnections = connections.length;
   const saved = await request('/save', { confirm: true, id: preview.data.id, choiceId: preview.data.choices[1].id });
   assert.equal(saved.status, 200);
   assert.equal(saved.data.account.id, 'fixture-game-id');
@@ -400,6 +401,10 @@ try {
   assert.equal(loadStore().accounts.length, 1);
   assert.equal(loadStore().accounts[0].login.worldId, 3000000002);
   assert.equal(loadStore().accounts[0].lastSeen.nickname, '星海船长');
+  assert.equal(loadStore().accounts[0].automation.autoStart, false);
+  assert.equal((await accountApi('loop')).running, false);
+  assert.equal(connections.length, beforeSaveConnections, '新账号保存和读取状态不启动挂机连接');
+  await accountApi('accounts/pause', { paused: false, start: true });
   const initialSession = await waitForLoop('fixture-game-id', 3000000002);
   assert.equal(initialSession.loop.rounds, 0);
   assert.equal(loadStore().accounts[0].automation.autoStart, true);
@@ -459,7 +464,8 @@ try {
   const savedSecond = await request('/save', { confirm: true, id: smsPreview.data.id, choiceId: smsPreview.data.choices[2].id });
   assert.equal(savedSecond.data.account.id, 'fixture-game-id-2');
   assert.equal(loadStore().accounts.find(row => row.id === 'fixture-game-id-2').login.worldId, 4000000008);
-  await waitForLoop('fixture-game-id-2', 4000000008);
+  assert.equal((await accountApi('loop', undefined, 'fixture-game-id-2')).running, false);
+  assert.equal(loadStore().accounts.find(row => row.id === 'fixture-game-id-2').automation.autoStart, false);
   await disconnect('fixture-game-id-2');
 
   // 单账号读取失败保留其他账号结果，原凭证可重试，已有选择 ID 保持稳定。

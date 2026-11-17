@@ -437,7 +437,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     try { if (onLog) Promise.resolve(onLog(entry)).catch(() => {}); } catch { /* Preserve the in-memory log. */ }
     const payload = `id: ${entry.id}\ndata: ${JSON.stringify(entry)}\n\n`;
     for (const res of streams) {
-      if (entry.account !== null && res.account !== entry.account) continue;
+      if (!res.allAccounts && entry.account !== null && res.account !== entry.account) continue;
       writeStream(res, payload);
     }
     return entry;
@@ -517,7 +517,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       dailySingle: dailySingleState(),
       loop: {
         running: false,
-        autoStart: saved?.autoStart ?? saved?.enabled ?? true,
+        autoStart: saved?.autoStart ?? saved?.enabled ?? false,
         rounds: preferences?.loop.rounds ?? saved?.rounds ?? 0,
         completed: 0,
         everyMs: (preferences?.loop.everySeconds ?? saved?.everySeconds ?? 60) * 1000,
@@ -899,7 +899,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         session.player.power = body.power;
       }
       if (session.client === instance && ['SCGuildAidHelp', 'SCGuildAidRemove', 'SCGuildAidNew'].includes(name) && (body?.type ?? 0) === 0) {
-        for (const stream of streams) if (stream.account === session.id) writeStream(stream, 'event: guild-aid-changed\ndata: {}\n\n');
+        for (const stream of streams) if (stream.allAccounts || stream.account === session.id) writeStream(stream, `event: guild-aid-changed\ndata: ${JSON.stringify({ account: session.id })}\n\n`);
       }
       if (session.client === instance && session.player) {
         if (name === 'SCJoinGuild') session.player.guildId = body.guildId;
@@ -2236,12 +2236,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       if (route === 'POST /api/logs/clear') {
         needConfirm(jsonBody());
         const { session } = scoped_(parsed);
-        const cleared = { before: logId, at: Date.now() };
+        const cleared = { account: session.id, before: logId, at: Date.now() };
         session.log.length = 0;
         session.logClearBefore = cleared.before;
         session.logClearAt = cleared.at;
         for (const stream of streams) {
-          if (stream.account === session.id) writeStream(stream, `event: logs-cleared\ndata: ${JSON.stringify(cleared)}\n\n`);
+          if (stream.allAccounts || stream.account === session.id) writeStream(stream, `event: logs-cleared\ndata: ${JSON.stringify(cleared)}\n\n`);
         }
         json(cleared);
         return;
@@ -2253,14 +2253,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           connection: 'keep-alive',
         });
         res.account = parsed.searchParams.get('account');
+        res.allAccounts = parsed.searchParams.get('scope') === 'all';
         streams.add(res);
         res.once('close', () => streams.delete(res));
         const logSession = sessions.get(res.account);
-        const since = Math.max(Number(req.headers['last-event-id'] ?? 0) || 0, logSession?.logClearBefore ?? 0);
-        if (logSession?.logClearAt) {
-          if (!writeStream(res, `event: logs-cleared\ndata: ${JSON.stringify({ before: logSession.logClearBefore, at: logSession.logClearAt })}\n\n`)) return;
+        const logSessions = res.allAccounts ? [...sessions.values()] : logSession ? [logSession] : [];
+        const since = Math.max(Number(req.headers['last-event-id'] ?? 0) || 0, res.allAccounts ? 0 : logSession?.logClearBefore ?? 0);
+        for (const item of logSessions) {
+          if (item.logClearAt && !writeStream(res, `event: logs-cleared\ndata: ${JSON.stringify({ account: item.id, before: item.logClearBefore, at: item.logClearAt })}\n\n`)) return;
         }
-        const entries = [...globalLog, ...(logSession?.log ?? [])]
+        const entries = [...globalLog, ...logSessions.flatMap(item => item.log)]
           .sort((a, b) => a.id - b.id).slice(-LOG_LIMIT);
         for (const entry of entries) {
           if (entry.id > since && !writeStream(res, `id: ${entry.id}\ndata: ${JSON.stringify(entry)}\n\n`)) return;
@@ -3594,7 +3596,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
 
   function autoStartEnabled(account) {
-    return account.automation?.autoStart ?? account.automation?.enabled ?? true;
+    return account.automation?.autoStart ?? account.automation?.enabled ?? false;
   }
 
   async function startAutomaticLoop(session) {

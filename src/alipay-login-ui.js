@@ -93,14 +93,14 @@ function renderAlipayLogin() {
     expired: '本次登录已过期，请刷新二维码重新扫码。',
     error: '登录失败，请刷新二维码重试。',
     cancelled: '已取消本次登录。',
-    saved: '账号已保存并切换。点击页面顶部的「连接」进入游戏。',
+    saved: '账号已保存并切换，尚未开始挂机。可先在「挂机配置」设置任务，再点击账号卡片或页头的「开始挂机」。',
   };
   if (state.account?.status?.paused || state.account?.status?.loginBlocked) {
     messages.saved = '账号已保存并切换。点击页面顶部的「恢复托管」，连接后核对角色和区服。';
   } else if (state.account?.status?.looping) {
-    messages.saved = '账号已保存并切换，已按保存配置启动自动挂机。可前往「游戏配置」调整任务。';
+    messages.saved = '账号已保存并切换，已按保存配置启动自动挂机。可前往「挂机配置」调整任务。';
   } else if (state.account?.status?.connected) {
-    messages.saved = '账号已保存并切换，游戏已连接。可在上方查看角色概况，随后前往「游戏配置」设置任务。';
+    messages.saved = '账号已保存并切换，游戏已连接，尚未开始挂机。可先在「挂机配置」设置任务，再点击账号卡片或页头的「开始挂机」。';
   }
   const hint = $('alipay-hint');
   hint.textContent = state.error || state.roleError || messages[state.phase] || '正在读取登录状态…';

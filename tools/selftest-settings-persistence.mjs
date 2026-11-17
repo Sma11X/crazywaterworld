@@ -97,9 +97,9 @@ try {
       assert.equal(app.sessions.get(id).client, null);
     }
   });
-  await test('启动未传参数时沿用保存值，重复启动不制造新配置版本', async () => {
+  await test('显式有限轮数沿用保存间隔，重复启动不制造新配置版本', async () => {
     const before = loadAutomationSettings('detailed');
-    const view = await api('loop/start', {});
+    const view = await api('loop/start', { rounds: 1 });
     assert.equal(view.rounds, 1); assert.equal(view.everyMs, 17000);
     await finished('detailed');
     assert.deepEqual(loadAutomationSettings('detailed'), before);

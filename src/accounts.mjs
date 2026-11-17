@@ -51,6 +51,7 @@ export function accountFromCredential(credential, { label = null, now = new Date
     capturedAt: credential.capturedAt ?? null,
     addedAt: now,
     lastSeen: null,
+    automation: { enabled: false, autoStart: false },
   };
 }
 

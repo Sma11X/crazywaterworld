@@ -595,7 +595,7 @@ await test('保存失败保留可重试预览，重试成功切换到返回账�
   ]);
   assert.deepEqual(f.env.selections, ['saved-account']);
   assert.deepEqual(f.env.disconnectedAtSelection, [true], '保存未连接账号应先阻止页面读取自动连接');
-  assert.match(f.node('phone-success-next').textContent, /顶部的「连接」/);
+  assert.match(f.node('phone-success-next').textContent, /尚未开始挂机.*「开始挂机」/);
   assert.equal(f.node('phone-success').hidden, false);
   assert.equal(f.node('phone-preview').hidden, true);
   assert.equal(f.node('phone-save').disabled, true);
@@ -661,7 +661,7 @@ await test('保存后自动挂机已启动或正在连接时显示任务配置�
       return data;
     };
     await f.click('phone-save');
-    assert.match(f.node('phone-success-next').textContent, /按保存配置启动自动挂机.*「游戏配置」调整任务/);
+    assert.match(f.node('phone-success-next').textContent, /按保存配置启动自动挂机.*「挂机配置」调整任务/);
     assert.equal(f.node('phone-step').textContent, '所选角色已保存 → 自动挂机');
     assert.equal(f.node('phone-success').hidden, false);
     assert.deepEqual(f.env.accounts[1].status, { connected, looping: true });
@@ -694,7 +694,7 @@ await test('同一APP切换角色采用保存后的断开状态并清除旧角�
   assert.equal(f.env.disconnected.has('saved-account'), true);
   assert.equal(f.node('phone-success').hidden, false);
   assert.equal(f.node('phone-saved-account').textContent, '远航船长 · 海港456服');
-  assert.match(f.node('phone-success-next').textContent, /点击页面顶部的「连接」进入所选角色/);
+  assert.match(f.node('phone-success-next').textContent, /尚未开始挂机.*「开始挂机」/);
   assert.equal(Object.hasOwn(globalThis, 'accountDetailsOwner'), false, '界面脚本状态应留在测试闭包中');
 });
 
