@@ -5,6 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { formatConsoleLog } from '../src/console-log.mjs';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-log-filters-'));
 process.env.CW_DATA_DIR = directory;
@@ -20,7 +21,8 @@ saveStore({ version: 1, activeId: 'logs-a', accounts: ['logs-a', 'logs-b'].map(i
   id, label: '日志测试', url: 'wss://fixture.invalid', login: {},
   automation: { enabled: false, autoStart: false, paused: true },
 })) });
-const app = createConsole({ port: 0, protocol: {} });
+const terminal = [];
+const app = createConsole({ port: 0, protocol: {}, onLog: entry => terminal.push(formatConsoleLog(entry)) });
 const streams = new Set();
 let base;
 async function waitFor(predicate, label) {
@@ -70,6 +72,9 @@ try {
   assert(!messages(scoped).includes('乙账号旧记录'));
   assert(!messages(system).includes('甲账号旧记录'));
   assert(all.events.some(event => event.data.account === 'logs-b' && event.data.level === 'warn'));
+  assert(all.events.some(event => event.data.accountName === '日志测试（1）'));
+  assert(all.events.some(event => event.data.accountName === '日志测试（2）'));
+  assert(terminal.some(line => line.includes('[日志测试（2）] [系统与连接] [警告] 乙账号旧记录')));
   console.log('通过：全账号、单账号和系统订阅保持各自范围，历史回放包含账号标识');
 
   const live = app.emit(b, 'error', '乙账号实时日志 token=private-value');
@@ -80,7 +85,19 @@ try {
   assert(!messages(system).some(message => message.includes('乙账号实时日志')));
   assert.doesNotMatch(JSON.stringify(all.events), /private-value/);
   assert.equal(live.account, 'logs-b');
+  assert.equal(live.accountName, '日志测试（2）');
   console.log('通过：其他账号实时日志到达全账号订阅，敏感字段仍脱敏');
+
+  const renamed = await fetch(base + '/api/accounts/label', { method: 'POST', body: JSON.stringify({ confirm: true, id: 'logs-a', label: '新船长名称' }) });
+  assert.equal(renamed.status, 200);
+  assert.equal(app.emit(a, 'info', '备注修改后的日志').accountName, '新船长名称');
+  assert.equal(app.emit(b, 'info', '同名消除后的日志').accountName, '日志测试');
+  const readFileSync = fs.readFileSync;
+  try {
+    fs.readFileSync = () => { throw new Error('日志输出不应重新读取账号文件'); };
+    assert.equal(app.emit(a, 'info', '复用公开名称缓存').accountName, '新船长名称');
+  } finally { fs.readFileSync = readFileSync; }
+  console.log('通过：账号备注立即更新到业务日志，日志热路径不读取账号凭据文件');
 
   const cleared = await clear('logs-a');
   assert.equal(cleared.account, 'logs-a');

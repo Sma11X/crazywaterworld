@@ -8,7 +8,7 @@ import { DialogFooter, DialogHeader, DialogTitle } from "./dialog"
 import { NativeSelect } from "./native-select"
 import { Input } from "./input"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "./table"
-import { LOG_CATEGORIES, LOG_GROUPS } from "../log-categories.mjs"
+import { LOG_GROUPS, LOG_GROUP_TONES } from "../log-categories.mjs"
 
 // 手机底栏只有约 55px 宽，所以另备短名。
 const tabs = [
@@ -71,18 +71,18 @@ export function journal() {
   return renderToStaticMarkup(<dialog id="journal-dialog" aria-label="运行日志"><aside id="journal" aria-label="运行日志">
     <DialogHeader><DialogTitle className="journal-title">运行日志<Badge id="log-count">0</Badge></DialogTitle></DialogHeader>
     <Button id="logs-close" size="icon-sm" variant="ghost" aria-label="关闭运行日志"><X aria-hidden="true" /></Button>
-    <div id="log-tabs" className="log-filter" role="tablist" aria-label="日志分类">
-      {["全部日志", ...Object.keys(LOG_GROUPS)].map((name, index) => <button key={name} type="button" id={`log-tab-${index}`} role="tab" data-log-group={index === 0 ? "all" : name} aria-selected={index === 0} aria-controls="log-panel" tabIndex={index === 0 ? 0 : -1}>{name}<span data-log-group-count="">0</span></button>)}
-    </div>
-    <div className="log-toolbar">
-      <label className="log-category-label" htmlFor="log-account">账号<select id="log-account" aria-label="日志账号筛选" defaultValue="all"><option value="all">全部账号</option><option value="system">系统日志</option></select></label>
-      <label className="log-category-label" htmlFor="log-category">功能<select id="log-category" aria-label="日志功能分类" defaultValue="all"><option value="all">全部功能</option>{Object.entries(LOG_GROUPS).map(([group, keys]) => <optgroup key={group} label={group}>{keys.map(key => <option key={key} value={key}>{LOG_CATEGORIES[key]}</option>)}</optgroup>)}</select></label>
+    <div className="log-filter-row"><span className="log-filter-label" id="log-groups-label">分类</span><div id="log-tabs" className="log-tags" role="tablist" aria-labelledby="log-groups-label">
+      {["全部", ...Object.keys(LOG_GROUPS)].map((name, index) => <button key={name} type="button" id={`log-tab-${index}`} className="log-tag log-group-tag" data-tone={LOG_GROUP_TONES[name] || "neutral"} role="tab" data-log-group={index === 0 ? "all" : name} aria-selected={index === 0} aria-controls="log-panel" tabIndex={index === 0 ? 0 : -1}>{name}<span data-log-group-count="">0</span></button>)}
+    </div></div>
+    <div className="log-filter-row"><span className="log-filter-label" id="log-accounts-label">账号</span><div id="log-account-tabs" className="log-tags" role="group" aria-labelledby="log-accounts-label">
+      <button type="button" className="log-tag log-group-tag log-account-filter" data-tone="neutral" data-log-account="all" aria-pressed="true" aria-controls="log-panel"><span data-log-account-name="">全部</span><span data-log-account-count="">0</span></button>
+    </div></div>
+    <div className="log-actions">
       <div className="log-filter" role="group" aria-label="日志筛选">
         <button type="button" id="log-all" aria-pressed="true">全部</button>
         <button type="button" id="log-issues" aria-pressed="false">警告与错误</button>
       </div>
-      <a href="https://github.com/xutongxue233/crazywaterworld/issues/new?template=bug_report.yml" target="_blank" rel="noopener noreferrer" title="复现后附上数据目录中的 protocol.log 和 protocol.log.1（如有），以及发生时间、设置和实际结果；不要上传账号文件。">问题反馈（附日志）</a>
-      <Button id="log-clear" size="sm" variant="outline" disabled title="选择一个账号后可清空该账号的全部运行日志">清空账号日志</Button>
+      <Button id="log-clear" size="sm" variant="outline" disabled aria-label="清空所选账号日志" title="选择一个账号后可清空该账号的全部运行日志">清空</Button>
     </div>
     <div id="log-panel" role="tabpanel" aria-labelledby="log-tab-0" tabIndex={0}>
       <div id="log" role="log" aria-live="polite" aria-label="操作记录" />
@@ -124,7 +124,9 @@ export function templates() {
     <template id="ui-number"><Input type="number" /></template>
     <template id="ui-delete"><Button variant="destructive" size="sm" /></template>
     <template id="ui-badge"><Badge variant="outline" /></template>
-    <template id="ui-log-badge"><Badge variant="outline" className="max-w-full justify-start whitespace-normal text-left" /></template>
+    <template id="ui-log-badge"><Badge variant="outline" className="log-tag max-w-full justify-start text-left" /></template>
+    <template id="ui-log-account"><button type="button" className="log-tag log-account"><CircleUserRound aria-hidden="true" className="size-3" /><span className="log-account-name" /></button></template>
+    <template id="ui-log-account-filter"><button type="button" className="log-tag log-group-tag log-account-filter" data-tone="neutral" aria-pressed="false" aria-controls="log-panel" tabIndex={-1}><span data-log-account-name="" /><span data-log-account-count="">0</span></button></template>
     <template id="ui-account-option">
       <Button type="button" variant="ghost" role="option" tabIndex={-1} aria-selected="false" className="account-picker-option grid h-auto pointer-coarse:h-auto w-full min-w-0 items-start justify-start gap-x-3 gap-y-1 rounded-sm px-3 py-2.5 whitespace-normal text-left font-normal">
         <span data-picker-field="title" />

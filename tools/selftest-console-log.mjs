@@ -5,21 +5,47 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatConsoleLog } from '../src/console-log.mjs';
+import { createLogAccountLabels } from '../src/log-accounts.mjs';
+import { LOG_CATEGORIES } from '../src/log-categories.mjs';
 
 const time = new Date(2026, 10, 12, 13, 14, 15).getTime();
 const clock = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
 }).format(time);
-const entry = { t: time, account: 'account-123456', level: 'info', message: '自动挂机开始' };
-const prefix = (account = 'account-', level = '信息') => `[${clock}] [${account}] [${level}] `;
+const entry = { t: time, account: 'account-123456', category: 'idle', level: 'info', message: '自动挂机开始' };
+const prefix = (account = 'account-', level = '信息', category = '挂机') => `[${clock}] [${account}] [${category}] [${level}] `;
 let passed = 0;
 function test(name, fn) {
   fn(); passed++; console.log('通过：' + name);
 }
 
-test('时间按本地时区显示，账号仅显示前八个字符', () => {
+test('时间按本地时区显示，旧日志缺名称时回退到账号短标识', () => {
   assert.equal(formatConsoleLog(entry), prefix() + '自动挂机开始');
   assert.equal(formatConsoleLog({ ...entry, account: 'a' }), prefix('a') + '自动挂机开始');
+});
+
+test('终端显示完整账号名称、中文功能分类和等级', () => {
+  for (const [category, name] of Object.entries(LOG_CATEGORIES)) {
+    assert.equal(formatConsoleLog({ ...entry, accountName: '远航舰队的生产主账号', category }), prefix('远航舰队的生产主账号', '信息', name) + entry.message);
+  }
+  assert.equal(formatConsoleLog({ ...entry, accountName: '船长甲', category: 'unknown' }), prefix('船长甲') + entry.message);
+  assert.equal(formatConsoleLog({ ...entry, accountName: '船长甲', category: undefined, message: '工厂完成木板生产' }), prefix('船长甲', '信息', '生产') + '工厂完成木板生产');
+});
+
+test('账号名称与正文都移除控制符并脱敏，多行记录保留全部标签', () => {
+  const name = '\u001b[31m船长\r\n甲\u001b[0m token=private-value';
+  const formatted = formatConsoleLog({ ...entry, accountName: name, message: '第一条\n第二条' });
+  assert.equal(formatted, ['第一条', '第二条'].map(line => prefix('船长甲 token=[已脱敏]') + line).join('\n'));
+  assert.doesNotMatch(formatted, /private-value|\u001b/);
+});
+
+test('网页和终端使用一致的人类可读名称，同名账号用序号区分', () => {
+  const labels = createLogAccountLabels([
+    { id: 'same-prefix-a', label: '船长' }, { id: 'same-prefix-b', label: '船长' },
+    { id: 'nickname', lastSeen: { nickname: '角色名' } }, { id: 'no-name' },
+  ]);
+  assert.deepEqual([...labels.values()], ['船长（1）', '船长（2）', '角色名', '未命名账号']);
+  assert.doesNotMatch([...labels.values()].join(' '), /same-prefix|nickname|no-name/);
 });
 
 test('系统日志和中文等级', () => {
@@ -60,7 +86,7 @@ test('不访问或输出 detail、extra 和其他原始字段', () => {
 
 test('空正文和无效时间不会使日志输出抛错', () => {
   assert.equal(formatConsoleLog({ ...entry, message: null }), prefix());
-  assert.equal(formatConsoleLog({ ...entry, t: 'invalid' }), '[--:--:--] [account-] [信息] 自动挂机开始');
+  assert.equal(formatConsoleLog({ ...entry, t: 'invalid' }), '[--:--:--] [account-] [挂机] [信息] 自动挂机开始');
 });
 
 // Exercise the real CLI entrypoint with an empty, isolated account store. The
@@ -102,7 +128,7 @@ try {
   child.stderr.setEncoding('utf8');
   let stdout = '', stderr = '';
   child.stderr.on('data', text => { stderr += text; });
-  const started = /\[\d{2}:\d{2}:\d{2}\] \[系统\] \[信息\] 控制台已启动 (http:\/\/127\.0\.0\.1:([1-9]\d*))/;
+  const started = /\[\d{2}:\d{2}:\d{2}\] \[系统\] \[系统与连接\] \[信息\] 控制台已启动 (http:\/\/127\.0\.0\.1:([1-9]\d*))/;
   const guidance = '关闭网页后挂机会继续，运行日志显示在此窗口。请保持此窗口打开；Ctrl+C 或关闭此窗口会结束后台进程。';
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => finish(new Error('CLI 启动输出超时：' + stderr)), 10000);

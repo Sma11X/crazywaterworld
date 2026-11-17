@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { operationLabels } from './operation-labels.mjs';
-import { LOG_CATEGORIES, LOG_GROUPS } from './log-categories.mjs';
+import { LOG_CATEGORIES, LOG_GROUPS, LOG_GROUP_TONES } from './log-categories.mjs';
+import { createLogAccountLabels } from './log-accounts.mjs';
 import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
@@ -281,37 +282,55 @@ const logTime = new Intl.DateTimeFormat('zh-CN', {
 });
 const logCategories = ${JSON.stringify(LOG_CATEGORIES)};
 const logGroups = ${JSON.stringify(LOG_GROUPS)};
+const logGroupTones = ${JSON.stringify(LOG_GROUP_TONES)};
+const createLogAccountLabels = ${createLogAccountLabels.toString()};
 let logAccount = 'all';
 let logGroup = 'all';
 let onlyIssues = false;
-let logCategory = 'all';
 let logReturnFocus;
 function openJournal() {
   if ($('journal-dialog').open) return;
   closeHelpTip(false); logReturnFocus = document.activeElement;
-  updateLogAccounts(); updateLogSummary();
-  document.body.classList.add('has-log-dialog'); $('journal-dialog').showModal(); $('log-account').focus();
+  updateLogSummary();
+  document.body.classList.add('has-log-dialog'); $('journal-dialog').showModal();
+  const selectedAccount = $('log-account-tabs').querySelector('[aria-pressed=true]');
+  selectedAccount.focus({ preventScroll: true });
+  revealLogFilter(selectedAccount); revealLogFilter($('log-tabs').querySelector('[aria-selected=true]'));
 }
 $('logs-open').onclick = openJournal;
 $('logs-close').onclick = () => $('journal-dialog').close();
 $('journal-dialog').addEventListener('close', () => { document.body.classList.remove('has-log-dialog'); (logReturnFocus?.isConnected ? logReturnFocus : $('logs-open')).focus(); });
-$('log-category').onchange = () => {
-  logCategory = $('log-category').value;
-  logGroup = Object.keys(logGroups).find(group => logGroups[group].includes(logCategory)) || 'all';
-  updateLogSummary();
-};
-$('log-account').onchange = () => { logAccount = $('log-account').value; updateLogSummary(); };
 const logTabs = [...$('log-tabs').querySelectorAll('[role=tab]')];
-function selectLogGroup(tab) {
-  logGroup = tab.dataset.logGroup; logCategory = 'all'; $('log-category').value = 'all';
-  updateLogSummary();
+function revealLogFilter(button) {
+  // 使用布局坐标，避免弹窗开场缩放影响横向定位。
+  const container = button.parentElement, left = button.offsetLeft - 3, right = button.offsetLeft + button.offsetWidth + 3;
+  if (left < container.scrollLeft) container.scrollLeft = left;
+  else if (right > container.scrollLeft + container.clientWidth) container.scrollLeft = right - container.clientWidth;
 }
+function selectLogGroup(tab) {
+  logGroup = tab.dataset.logGroup;
+  updateLogSummary();
+  revealLogFilter(tab);
+}
+function selectLogAccount(id) {
+  logAccount = id;
+  updateLogSummary();
+  revealLogFilter($('log-account-tabs').querySelector('[aria-pressed=true]'));
+}
+$('log-account-tabs').onkeydown = event => {
+  const buttons = [...$('log-account-tabs').querySelectorAll('[data-log-account]')];
+  const index = buttons.indexOf(event.target.closest('[data-log-account]'));
+  if (index < 0) return;
+  const next = { ArrowRight: (index + 1) % buttons.length, ArrowLeft: (index + buttons.length - 1) % buttons.length, Home: 0, End: buttons.length - 1 }[event.key];
+  if (next === undefined) return;
+  event.preventDefault(); selectLogAccount(buttons[next].dataset.logAccount); buttons[next].focus({ preventScroll: true });
+};
 for (const [index, tab] of logTabs.entries()) {
   tab.onclick = () => selectLogGroup(tab);
   tab.onkeydown = event => {
     const next = { ArrowRight: (index + 1) % logTabs.length, ArrowLeft: (index + logTabs.length - 1) % logTabs.length, Home: 0, End: logTabs.length - 1 }[event.key];
     if (next === undefined) return;
-    event.preventDefault(); selectLogGroup(logTabs[next]); logTabs[next].focus();
+    event.preventDefault(); selectLogGroup(logTabs[next]); logTabs[next].focus({ preventScroll: true });
   };
 }
 const logClearWatermarks = new Map();
@@ -319,29 +338,39 @@ const logAccountNames = new Map();
 let logClearing = false;
 function logAccountLabel(id) {
   if (!id) return '系统';
-  const account = accounts.find(item => item.id === id);
-  const title = account?.title || account?.label || logAccountNames.get(id) || '账号';
-  logAccountNames.set(id, title);
-  let length = Math.min(8, id.length);
-  const ids = new Set([...accounts.map(item => item.id), ...logAccountNames.keys()]);
-  while (length < id.length && [...ids].some(other => other !== id && other.slice(0, length) === id.slice(0, length))) length++;
-  return title + ' · ' + id.slice(0, length);
+  for (const [key, name] of createLogAccountLabels(accounts)) logAccountNames.set(key, name);
+  return logAccountNames.get(id) || '已移除账号';
+}
+function paintLogAccount(badge, id) {
+  const label = logAccountLabel(id);
+  badge.querySelector('.log-account-name').textContent = label;
+  badge.title = id ? label + ' · ' + id : '控制台系统日志';
+  badge.setAttribute('aria-label', '筛选账号：' + label);
+  badge.dataset.tone = 'neutral';
 }
 function updateLogAccounts() {
   const ids = new Set(accounts.map(account => account.id));
   for (const row of logEl.children) if (row.dataset.account) ids.add(row.dataset.account);
-  if (logAccount !== 'all' && logAccount !== 'system') ids.add(logAccount);
-  const options = [['all', '全部账号'], ['system', '系统日志'], ...[...ids].map(id => [id, logAccountLabel(id)])];
+  if (logAccount !== 'all') ids.add(logAccount);
+  const options = [['all', '全部'], ...[...ids].map(id => [id, logAccountLabel(id)])];
   const signature = JSON.stringify(options);
-  if ($('log-account').dataset.options !== signature) {
-    $('log-account').replaceChildren(...options.map(([value, text]) => new Option(text, value)));
-    $('log-account').dataset.options = signature;
-    $('log-account').value = logAccount;
+  const container = $('log-account-tabs');
+  if (container.dataset.options === signature) return;
+  const existing = new Map([...container.children].map(button => [button.dataset.logAccount, button]));
+  for (const [index, [id, label]] of options.entries()) {
+    const button = existing.get(id) || component('ui-log-account-filter');
+    existing.delete(id);
+    button.dataset.logAccount = id;
+    button.querySelector('[data-log-account-name]').textContent = label;
+    button.title = id === 'all' ? '查看全部账号与系统记录' : label;
+    button.onclick = () => selectLogAccount(id);
+    if (container.children[index] !== button) container.insertBefore(button, container.children[index] || null);
   }
+  for (const button of existing.values()) button.remove();
+  container.dataset.options = signature;
   for (const row of logEl.children) {
     const badge = row.querySelector('.log-account');
-    badge.textContent = logAccountLabel(row.dataset.account);
-    badge.title = row.dataset.account ? badge.textContent + ' · ' + row.dataset.account : '控制台系统日志';
+    if (badge) paintLogAccount(badge, row.dataset.account);
   }
 }
 function clearedLog(entry) {
@@ -350,15 +379,29 @@ function clearedLog(entry) {
 }
 let guildRefreshTimer;
 function updateLogSummary() {
+  updateLogAccounts();
   let count = 0;
   const groupCounts = { all: 0 };
+  const accountCounts = new Map([['all', 0]]);
   for (const row of logEl.children) {
-    const accountMatches = logAccount === 'all' || (logAccount === 'system' ? !row.dataset.account : row.dataset.account === logAccount);
+    const accountMatches = logAccount === 'all' || row.dataset.account === logAccount;
     const levelMatches = !onlyIssues || row.classList.contains('error') || row.classList.contains('warn');
     const group = Object.keys(logGroups).find(key => logGroups[key].includes(row.dataset.category));
+    const groupMatches = logGroup === 'all' || group === logGroup;
     if (accountMatches && levelMatches) { groupCounts.all++; if (group) groupCounts[group] = (groupCounts[group] || 0) + 1; }
-    row.hidden = !accountMatches || !levelMatches || (logGroup !== 'all' && group !== logGroup) || (logCategory !== 'all' && row.dataset.category !== logCategory);
+    if (groupMatches && levelMatches) {
+      accountCounts.set('all', accountCounts.get('all') + 1);
+      if (row.dataset.account) accountCounts.set(row.dataset.account, (accountCounts.get(row.dataset.account) || 0) + 1);
+    }
+    row.hidden = !accountMatches || !levelMatches || !groupMatches;
     if (!row.hidden) count++;
+  }
+  for (const button of $('log-account-tabs').children) {
+    const selected = button.dataset.logAccount === logAccount;
+    button.setAttribute('aria-pressed', String(selected)); button.tabIndex = selected ? 0 : -1;
+    const counter = button.querySelector('[data-log-account-count]');
+    const value = String(accountCounts.get(button.dataset.logAccount) || 0);
+    if (counter.textContent !== value) counter.textContent = value;
   }
   for (const tab of logTabs) {
     const selected = tab.dataset.logGroup === logGroup;
@@ -372,12 +415,13 @@ function updateLogSummary() {
   $('log-top-count').textContent = logEl.children.length;
   $('log-count').textContent = String(count);
   $('log-empty').hidden = count > 0;
-  $('log-empty').textContent = logCategory !== 'all' || logGroup !== 'all' || logAccount !== 'all' || onlyIssues ? '没有符合当前账号、分类和等级筛选的记录' : '还没有运行记录';
+  $('log-empty').textContent = logGroup !== 'all' || logAccount !== 'all' || onlyIssues ? '没有符合当前账号、分类和等级筛选的记录' : '还没有运行记录';
 }
 function appendLog(entry) {
   if (clearedLog(entry)) return;
   if (entry.id && seen.has(entry.id)) return;
   if (entry.id) seen.add(entry.id);
+  if (entry.account && entry.accountName) logAccountNames.set(entry.account, entry.accountName);
   const atTop = logEl.scrollTop < 30;
   const anchor = [...logEl.children].find(row => !row.hidden && row.getBoundingClientRect().bottom > logEl.getBoundingClientRect().top);
   const anchorTop = anchor?.getBoundingClientRect().top;
@@ -407,16 +451,28 @@ function appendLog(entry) {
     row.logEntries = [entry];
     if (batch) row.dataset.batch = batch;
     const timestamp = logTime.format(entry.t);
-    row.appendChild(el('time', 'ts', timestamp));
     const body = el('div', 'log-body');
     const meta = el('div', 'log-meta');
-    const accountBadge = component('ui-log-badge'); accountBadge.classList.add('log-account');
-    accountBadge.textContent = logAccountLabel(entry.account);
-    accountBadge.title = entry.account ? accountBadge.textContent + ' · ' + entry.account : '控制台系统日志';
-    const categoryBadge = component('ui-log-badge'); categoryBadge.textContent = logCategories[row.dataset.category] || logCategories.system;
-    meta.append(accountBadge, categoryBadge); body.appendChild(meta);
-    const levelName = { error: '错误', warn: '提醒' }[entry.level];
-    if (levelName) body.appendChild(el('span', 'log-level', levelName));
+    const accountBadge = component(entry.account ? 'ui-log-account' : 'ui-log-badge');
+    if (entry.account) {
+      paintLogAccount(accountBadge, entry.account);
+      accountBadge.onclick = () => selectLogAccount(entry.account);
+    } else {
+      accountBadge.textContent = '系统'; accountBadge.dataset.tone = 'neutral'; accountBadge.classList.add('log-system-tag');
+      accountBadge.title = '控制台系统日志';
+    }
+    const categoryBadge = component('ui-log-badge'); categoryBadge.classList.add('log-category-tag');
+    categoryBadge.textContent = logCategories[row.dataset.category] || logCategories.system;
+    const group = Object.keys(logGroups).find(key => logGroups[key].includes(row.dataset.category));
+    categoryBadge.dataset.tone = logGroupTones[group] || 'neutral';
+    meta.append(el('time', 'ts', timestamp), accountBadge, categoryBadge);
+    const levelName = { error: '错误', warn: '警告' }[entry.level];
+    if (levelName) {
+      const levelBadge = component('ui-log-badge'); levelBadge.classList.add('log-level-tag');
+      levelBadge.dataset.tone = entry.level === 'error' ? 'error' : 'warning'; levelBadge.textContent = levelName;
+      meta.appendChild(levelBadge);
+    }
+    body.appendChild(meta);
     body.appendChild(el('span', 'log-message', entry.message));
     if (entry.detail || batch) {
       const details = el('details', 'log-details');
@@ -493,7 +549,7 @@ for (const [id, filtered] of [['log-all', false], ['log-issues', true]]) {
   };
 }
 function subscribe() {
-  updateLogAccounts(); updateLogSummary();
+  updateLogSummary();
   if (stream) return;
   stream = new EventSource('/api/events?scope=all');
   stream.addEventListener('logs-cleared', event => clearLogBefore(JSON.parse(event.data)));

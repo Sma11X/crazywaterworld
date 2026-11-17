@@ -103,11 +103,11 @@ await test('极窄窗口安全退化，扩大后可恢复置顶', async () => {
   await sink.close();
 });
 
-await test('重定向不含ANSI，日志保持账号时间格式与完整提示', async () => {
+await test('重定向不含ANSI，日志保留账号名称、功能类型、等级与完整提示', async () => {
   const terminal = new Terminal({ isTTY: false }), sink = output(terminal);
-  sink.log({ t: Date.now(), account: 'abcd1234long', level: 'info', message: '后台运行' });
+  sink.log({ t: Date.now(), account: 'abcd1234long', accountName: '生产主账号', category: 'production', level: 'info', message: '后台运行' });
   sink.start(url); await sink.close();
-  assert.match(terminal.text(), /\[\d{2}:\d{2}:\d{2}\] \[abcd1234\] \[信息\] 后台运行/);
+  assert.match(terminal.text(), /\[\d{2}:\d{2}:\d{2}\] \[生产主账号\] \[生产\] \[信息\] 后台运行/);
   assert(terminal.text().includes(CONSOLE_GUIDANCE)); assert(!terminal.text().includes('\u001b'));
 });
 

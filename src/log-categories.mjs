@@ -8,6 +8,8 @@ export const LOG_GROUPS = {
   '世界与联盟':['treasure','radar','pirate','boss','fleet','alliance'],
   '日常与活动':['heroes','daily','activity','merchant','orders','trials','stages']
 };
+/** @type {Record<string, string>} */
+export const LOG_GROUP_TONES = { '系统': 'neutral', '基地与资源': 'green', '世界与联盟': 'blue', '日常与活动': 'purple' };
 export function classifyLog(message, extra = {}) {
   if (Object.hasOwn(LOG_CATEGORIES, extra?.category)) return extra.category;
   if (String(message).startsWith('联盟互助')) return 'alliance';

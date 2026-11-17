@@ -77,6 +77,7 @@ import { makeTypeResolver, weekFactoryInfo, surveyWorld, planWorld, runWorldRoun
 import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
 import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
+import { createLogAccountLabels } from './log-accounts.mjs';
 import { operationLabels } from './operation-labels.mjs';
 import { automationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
 import { rewardSchedule } from './reward-schedule.mjs';
@@ -375,6 +376,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     rememberSeen(account, { ...choice.role, nickname: choice.role.nickname || '未命名角色', worldId: roleWorldId });
     setActive(store, account.id);
     saveStore(store);
+    rememberLogAccounts(store.accounts);
     emit(null, 'info', `${sourceLabel}${created ? '已新增' : '已更新'}账号 ${describeAccount(account).title}，已选择 ${choice.worldName} ${choice.role.nickname || '未命名角色'}`);
     const savedSession = sessionFor(account.id);
     savedSession.loginBlocked = false;
@@ -394,6 +396,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     return result;
   }
   let logId = 0;
+  const logAccountLabels = new Map();
+  function rememberLogAccounts(accounts) {
+    for (const [id, label] of createLogAccountLabels(accounts)) logAccountLabels.set(id, label);
+  }
   trace(null, 'runtime', { startedAt: RUN_VERSION, node: process.version });
 
   const logLimit = (list) => {
@@ -428,6 +434,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     ].filter(Boolean).join('\n') : '';
     const detail = [extra?.diagnostic, display.detail, operationDetail].filter(Boolean).join('\n');
     const entry = redactLog({ id: ++logId, t: Date.now(), level, category: classifyLog(display.message, extra), message: display.message, detail: detail || undefined, extra, account: session?.id ?? null,
+      accountName: session ? logAccountLabels.get(session.id) || session.player?.nickname || '未命名账号' : undefined,
       operationId: extra?.operationId, dedupeKey: extra?.dedupeKey, module: extra?.module, phase: extra?.phase, result: extra?.result });
     trace(session, 'business', entry);
     const list = session ? session.log : globalLog;
@@ -474,7 +481,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
 
   function newSession(id) {
-    const saved = loadStore().accounts.find(account => account.id === id)?.automation;
+    const accounts = loadStore().accounts;
+    rememberLogAccounts(accounts);
+    const saved = accounts.find(account => account.id === id)?.automation;
     const detailed = loadAutomationSettings(id);
     const preferences = detailed.revision ? detailed.settings : null;
     return {
@@ -1268,6 +1277,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       target.lastSeen = { nickname: role?.nickname ?? null, level: role?.level ?? null, power: role?.power ?? null, worldId: role?.worldId ?? null, at: new Date().toISOString() };
       if (!target.label && role?.nickname) target.label = role.nickname;
       saveStore(store);
+      rememberLogAccounts(store.accounts);
     } catch {
       /* 回填失败不影响连接 */
     }
@@ -1401,6 +1411,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   // 每个请求都带 ?account=<id>；不给就是当前选中的那个账号。
   function resolve(url) {
     const store = loadStore();
+    rememberLogAccounts(store.accounts);
     const account = pickAccount(store, url.searchParams.get('account'));
     if (!account) throw new Error('还没有任何账号，先在「账号」页添加一个');
     return { store, account, session: sessionFor(account.id) };
@@ -2274,6 +2285,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       // ---- 账号 ----
       if (route === 'GET /api/accounts') {
         const store = loadStore();
+        rememberLogAccounts(store.accounts);
         json({
           activeId: store.activeId,
           accounts: store.accounts.map((account) => ({
@@ -2305,6 +2317,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         }
         needConfirm(payload);
         const result = importAccountBackup(payload.document, payload.token);
+        rememberLogAccounts(loadStore().accounts);
         for (const entry of result.saved) {
           const session = sessions.get(entry.id);
           if (!session) continue;
@@ -2345,6 +2358,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!account) throw new Error('没有这个账号');
         account.label = String(payload.label ?? '').trim() || null;
         saveStore(store);
+        rememberLogAccounts(store.accounts);
         json({ ok: true });
         return;
       }
