@@ -45,6 +45,7 @@ function openingReason(config, player, time) {
   if (!exactAutomationId(player?.worldId) || !exactAutomationId(player?.playerId)) return '角色或区服身份未确认';
   return '';
 }
+export { openingReason as siliconOpeningReason };
 export function siliconInWindow(windows, time) {
   if (!windows?.length) return true;
   const minute = Math.floor(((time + 28800) % 86400) / 60);
@@ -285,7 +286,7 @@ async function reconcile(client, protocol, snapshot, ledger) {
     const fleet = snapshot.fleets.find(row => row.buildingId === details.buildingId), position = ownSlot(snapshot, details.buildingId);
     if (['siliconDispatch','siliconRetreat'].includes(details.kind) && !snapshot.mines.some(mine => mine.gridId === details.gridId && !mine.reason)) continue;
     if (details.kind === 'siliconDispatch') {
-      const occupied = position?.mine.gridId === details.gridId && position.position.index === details.index;
+      const occupied = position?.mine.gridId === details.gridId && (position.position.index === details.index || details.manualShortcut && details.color === protocol.Color.BLUE);
       const traveling = fleet?.state === 2 && fleet.targetGridIdx === details.gridId;
       if (!record.confirmed && (occupied || traveling)) ledger.resolveKey(key, true, { ...details, occupied: occupied || details.occupied, active: true });
       else if (occupied && !details.occupied) ledger.updateKeyDetails(key, { ...details, occupied: true, active: true });
@@ -340,14 +341,15 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
     if (!integer(cost, 1) || cost > counters.diamonds) return false;
   }
   const details = { kind: step.kind, worldId: snapshot.worldId, buildingId: step.buildingId, gridId: step.gridId ?? 0, index: step.index ?? 0,
-    color: step.color ?? 0, opponent: step.opponent ?? null, huntTarget: step.huntTarget ?? null, sentAt: snapshot.checkedAt, active: true, occupied: false,
+    color: step.color ?? 0, opponent: step.opponent ?? null, huntTarget: step.huntTarget ?? null, sentAt: snapshot.checkedAt, active: true, occupied: false, manualShortcut: options.manualShortcut === true,
     beforeDurability: step.beforeDurability ?? 0, beforeEnd: step.beforeEnd ?? 0, moveStartTs: step.moveStartTs ?? 0, repair: !!step.repair, targetDurability: step.targetDurability ?? 0 };
   let ticket;
   try { ticket = ledger.reserve(counters, limits, {}, { uniqueKey: key, details }); }
   catch (error) { report({ label: step.label, skipped: true, reason: error.message }); return false; }
   const allowed = () => {
     const policy = getSettings()?.silicon?.fleets?.find(fleet => fleet.id === step.buildingId);
-    return enabled() && client.connected !== false && identity(player) === who && getSettings() === settings && settings.silicon.enabled && day(now(client)) === today && policy?.enabled
+    const manual = options.manualShortcut === true && ['siliconDispatch', 'siliconRetreat'].includes(step.kind);
+    return enabled() && client.connected !== false && identity(player) === who && getSettings() === settings && day(now(client)) === today && (manual || settings.silicon.enabled && policy?.enabled)
       && (step.kind !== 'siliconRepair' || policy.autoRepair)
       && (step.kind !== 'siliconSpeed' || (step.repair ? policy.repairSpeedUp : policy.marchSpeedUp) && settings.resources.allowDiamonds);
   };
@@ -359,6 +361,7 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
     await client.sendWatch(step.request, step.body, { window: 500 });
     const fresh = await readSiliconMining(client, protocol, options.config, player, { settings: getSettings(), ledger });
     if (who !== identity(player)) throw Error('写入后账号已切换，保留待确认记录');
+    if (options.manualShortcut && !enabled()) throw Error('写入后连接已变化，保留待确认记录');
     await reconcile(client, protocol, fresh, ledger);
     const record = ledger.keyRecords()[key], confirmed = !record || record.confirmed;
     report({ label: step.label, ok: confirmed, status: confirmed ? 'confirmed' : 'unknown', reason: confirmed ? '服务器业务状态已确认' : '请求已发送，结果未确认；保留预算及舰队锁，不重复发送' });
@@ -366,8 +369,106 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
   } catch (error) {
     const rejected = error.prompt && error.request === step.request;
     if (!sent || rejected || error.notSent && error.request === step.request) { ledger.cancel(ticket); watchFleetRepairPricing(client).cancel(pricingTicket); }
-    report({ label: step.label, ok: false, status: rejected ? 'rejected' : 'unknown', error: error.message }); return false;
+    report({ label: step.label, ok: false, status: rejected ? 'rejected' : error.notSent && error.request === step.request ? 'cancelled' : 'unknown', error: error.message }); return false;
   }
+}
+
+function shortcutIntent(intent) {
+  if (!intent || !['dispatch', 'retreat'].includes(intent.kind)) throw Error('仅支持空位采集或撤回自己的舰队');
+  if (!integer(intent.gridId, 1)) throw Error('请选择明确的矿区');
+  if (intent.kind === 'dispatch' && !integer(intent.index)) throw Error('请选择明确的空矿位');
+  if (intent.kind === 'retreat' && !fleetNumber(intent.fleetId)) throw Error('请选择自己的采矿舰队');
+  return { kind: intent.kind, gridId: intent.gridId, ...(intent.kind === 'dispatch' ? { index: intent.index } : { fleetId: intent.fleetId }) };
+}
+
+// 快捷操作只指定一次动作，不修改自动化开关、时段或目标策略；仍共用预算与舰队锁。
+function planSiliconShortcut(snapshot, settings, ledger, client, intent, fleetId) {
+  if (snapshot.reason || !snapshot.reward) throw Error(snapshot.reason || '奖励信息未同步');
+  const policy = settings.silicon?.fleets?.find(row => row.id === fleetId);
+  if (!policy || !fleetNumber(fleetId)) throw Error('舰队配置未同步');
+  const fleet = snapshot.fleets.find(row => row.buildingId === fleetId);
+  const mine = snapshot.mines.find(row => row.gridId === intent.gridId);
+  if (!mine || mine.reason) throw Error(mine?.reason || '矿区不存在或未同步');
+  if (intent.kind === 'retreat') {
+    const own = ownSlot(snapshot, fleetId);
+    if (!own || own.mine.gridId !== intent.gridId || !fleet || fleet.state !== 5 || !fleet.chipWar
+      || fleet.curGridIdx !== own.mine.gridId || fleet.ownerPlayerId && fleet.ownerPlayerId !== snapshot.playerId) throw Error('舰队已不在这个矿区采集，请刷新');
+    if (!(own.position.player.rewardTimes > 0)) throw Error('尚未完成首次采集，首奖后才能撤回');
+    const keys = Object.fromEntries(Object.entries(ledger.keyRecords()).filter(([key, record]) => !(key === slotKey(snapshot.worldId, fleetId)
+      && record.confirmed && record.details.gridId === mine.gridId && (mine.tier === 'BLUE' || record.details.index === own.position.index))));
+    const held = fleetRecordReason(keys, fleetId, snapshot.worldId) || dispatchReservationReason(client, settings, 'silicon', fleetId, { ignoreLegacy: true })
+      || (isFleetReserved(client, fleetId, ['silicon', 'dispatch-ledger']) ? '舰队有其他操作尚未结束' : '');
+    if (held) throw Error(held);
+    return { kind: 'siliconRetreat', request: 'ChipMineRetreatRequest', body: { fleetId }, buildingId: fleetId,
+      gridId: mine.gridId, index: own.position.index, color: mine.color, beforeRewardTs: fleet.chipWar.rewardTs,
+      cost: 0, costs: [], label: fleetId + '手动撤回' + mine.name };
+  }
+  const cap = capReason(snapshot, settings.silicon);
+  if (cap) throw Error(cap);
+  const blocked = fleetReason(snapshot, policy, settings, ledger, client);
+  if (blocked) throw Error(blocked);
+  const personal = mine.tier === 'BLUE', positions = mine.positions.filter(row => row.player);
+  if (intent.index >= (personal ? 3 : mine.positionNum)) throw Error('矿位不存在');
+  if (personal ? positions[intent.index] : positions.some(row => row.index === intent.index)) throw Error('矿位已被占领，请刷新后选择空位');
+  if (!personal && (positions.length !== mine.occupiedNum || mine.occupiedNum > mine.positionNum)) throw Error('矿位数量未同步，请刷新');
+  const records = Object.values(ledger.keyRecords()).filter(record => record.details?.worldId === snapshot.worldId && record.details.active !== false);
+  if (records.some(record => record.details.kind === 'siliconDispatch' && record.details.gridId === mine.gridId && record.details.index === intent.index
+    || record.details.kind === 'siliconRetreat' && record.details.huntTarget?.gridId === mine.gridId && record.details.huntTarget?.index === intent.index)) throw Error('该矿位已有派遣或返航追击任务');
+  const intendedFuel = records.filter(record => record.details.kind === 'siliconRetreat' && record.details.huntTarget).length * snapshot.petrolCost;
+  if (snapshot.fuel - pendingPetrol(ledger) - intendedFuel - snapshot.petrolCost < settings.silicon.petrolReserve) throw Error('汽油不足或将低于保留量');
+  if (settings.silicon.dailyPetrolLimit > 0 && (ledger.snapshot().counters.siliconPetrol ?? 0) + intendedFuel + snapshot.petrolCost > settings.silicon.dailyPetrolLimit) throw Error('今日硅矿汽油预算不足');
+  return { kind: 'siliconDispatch', request: 'ChipMineSendFleetRequest', body: { gridId: mine.gridId, index: intent.index, fleetId },
+    buildingId: fleetId, gridId: mine.gridId, index: intent.index, color: mine.color, opponent: null,
+    cost: snapshot.petrolCost, costs: [{ id: '汽油', num: snapshot.petrolCost }], label: fleetId + '手动采集' + mine.name };
+}
+
+export async function previewSiliconShortcut(client, protocol, config, player, rawIntent, options) {
+  const intent = shortcutIntent(rawIntent), { getSettings, ledger, enabled = () => true } = options;
+  const settings = getSettings(), who = identity(player);
+  if (!enabled() || active.has(client)) throw Error('硅矿任务正在处理或连接已变化，请稍后再试');
+  const snapshot = await readSiliconMining(client, protocol, config, player, { settings, ledger });
+  if (!enabled() || who !== identity(player) || settings !== getSettings()) throw Error('账号或配置已变化，请重新选择');
+  // 同步已完成操作的账本证据，自动化关闭后也能继续手动操作；不发送游戏写入。
+  await reconcile(client, protocol, snapshot, ledger);
+  if (!enabled()) throw Error('账号连接已变化，请重新选择');
+  const ids = intent.kind === 'retreat' ? [intent.fleetId] : snapshot.fleets.map(fleet => fleet.buildingId).filter(fleetNumber);
+  const fleets = ids.map(id => {
+    const fleet = snapshot.fleets.find(row => row.buildingId === id);
+    let step = null, reason = '';
+    try { step = planSiliconShortcut(snapshot, settings, ledger, client, intent, id); } catch (error) { reason = error.message; }
+    return { id, name: id.replace('远征船', '号舰队'), power: fleet?.power ?? null,
+      durability: fleet?.durability ?? null, maxDura: fleet?.maxDura ?? null, reason, step };
+  });
+  const mine = snapshot.mines.find(row => row.gridId === intent.gridId);
+  return { intent, checkedAt: snapshot.checkedAt, worldId: snapshot.worldId, mineName: mine?.name || '硅矿',
+    fuel: snapshot.fuel, cost: intent.kind === 'retreat' ? 0 : snapshot.petrolCost, fleets,
+    reason: snapshot.reason || (!fleets.length ? '没有已同步的远征舰队' : ''),
+    automatic: !!settings.silicon.enabled };
+}
+
+export async function runSiliconShortcut(client, protocol, config, player, preview, fleetId, options) {
+  const intent = shortcutIntent(preview?.intent), { getSettings, ledger, enabled = () => true } = options;
+  const proposed = preview.fleets?.find(row => row.id === fleetId && row.step)?.step;
+  if (!proposed) throw Error('这支舰队未通过本次确认，请重新选择');
+  if (!enabled() || active.has(client)) throw Error('硅矿任务正在处理或连接已变化，请重新选择');
+  const settings = getSettings(), who = identity(player);
+  if (preview.worldId !== exactAutomationId(player.worldId)) throw Error('所在区服已变化，请重新选择');
+  active.add(client); installReservations(client, ledger, preview.worldId);
+  try {
+    const snapshot = await readSiliconMining(client, protocol, config, player, { settings, ledger });
+    if (!enabled() || who !== identity(player) || settings !== getSettings()) throw Error('账号或配置已变化，操作未发送');
+    await reconcile(client, protocol, snapshot, ledger);
+    const step = planSiliconShortcut(snapshot, settings, ledger, client, intent, fleetId);
+    if (step.cost > preview.cost || step.color !== proposed.color) throw Error('矿区费用或品质已变化，请重新确认');
+    if (intent.kind === 'retreat' && (step.index !== proposed.index || step.beforeRewardTs !== proposed.beforeRewardTs)) throw Error('采矿进度已变化，请重新确认撤回');
+    if (!enabled() || who !== identity(player) || settings !== getSettings()) throw Error('账号或配置已变化，操作未发送');
+    reserveDispatch(client, 'silicon', [fleetId]);
+    let result;
+    await sendAndCheck(client, protocol, player, { ...options, config, manualShortcut: true, report: entry => { result = entry; options.report?.(entry); } }, snapshot, step,
+      intent.kind === 'dispatch' ? { siliconPetrol: step.cost, siliconDispatches: 1 } : {},
+      intent.kind === 'dispatch' && settings.silicon.dailyPetrolLimit > 0 ? { siliconPetrol: settings.silicon.dailyPetrolLimit } : {});
+    return { ...(result || { ok: false, status: 'skipped', reason: '状态已变化，操作未发送，请重新读取' }), cost: step.cost, kind: intent.kind, fleetId };
+  } finally { reserveDispatch(client, 'silicon', []); active.delete(client); }
 }
 
 // 缺少本连接 SCSpeedUp 累计分钟时用真实价格表最高档保守占用钻石预算。

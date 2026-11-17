@@ -1346,6 +1346,7 @@ function configSave(event, { automatic = false } = {}) {
     const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
     configEditor.data = data; configEditor.baseline = structuredClone(data.settings);
     configEditor.saveRetries = 0; loopSettingsRevision = data.revision;
+    if (typeof siliconSettingsMainSaved === 'function') siliconSettingsMainSaved(account);
     configClearErrors();
     if (!edited) {
       configEditor.draft=structuredClone(data.settings);configEditor.errors={};

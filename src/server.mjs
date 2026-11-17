@@ -15,7 +15,8 @@ import {runtimeProgress, museumRuntimeStatus} from './runtime-progress.mjs';
 import {watchTreasureTravel} from './treasure-follow.mjs';
 import { watchGuildShipPushes } from './guild-ships.mjs';
 import { watchHeroRaidPushes } from './hero-raid-automation.mjs';
-import { watchSiliconMining } from './silicon-mining.mjs';
+import { watchSiliconMining, previewSiliconShortcut, runSiliconShortcut } from './silicon-mining.mjs';
+import { readSiliconOverview } from './silicon-overview.mjs';
 import { previewExtended } from './extended-preview.mjs';
 import {watchFleetMaintenance,fleetMaintenanceEnabled} from './fleet-maintenance.mjs';
 import {watchFleetSpeed,readFleetSpeed,planFleetSpeed} from './fleet-speed.mjs';
@@ -750,6 +751,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   function heroRaidSettingsView(session) {
     const current = settingsView(session);
     return { settings: current.settings.heroRaid, revision: current.revision, baseRevision: current.baseRevision };
+  }
+
+  function siliconSettingsView(session) {
+    const current = settingsView(session);
+    return { settings: current.settings.silicon, revision: current.revision, baseRevision: current.baseRevision, savedAt: current.savedAt,
+      fleets: current.catalog.expeditionFleets, fleetAvailability: current.catalog.fleetAvailability, running: current.running };
   }
 
   function guildShipSettingsView(session) {
@@ -1708,7 +1715,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       scoped = found.session;
       if (req.method === 'POST' && found.session.syncingProduction
         && !['/api/accounts/pause', '/api/disconnect', '/api/loop/stop', '/api/stages/stop', '/api/pirates/advance/stop',
-          '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/appointments/settings', '/api/logs/clear',
+          '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/appointments/settings', '/api/silicon/settings', '/api/logs/clear',
           '/api/lineup-presets/save', '/api/lineup-presets/delete', '/api/lineup-presets/bind'].includes(parsed.pathname)) {
         throw new Error('正在自动同步手动操作后的生产状态，请等待同步完成后操作');
       }
@@ -3057,6 +3064,94 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const {session}=scoped_(parsed);
         if(!session.client?.connected||session.paused)throw Error('请先连接当前账号，再读取目标详情');
         const result=await readJob(session,()=>readWorldTarget(session.client,protocol,loadConfigSafe(),session.player,settingsView(session).settings,usageFor(session),{layer:parsed.searchParams.get('layer'),key:parsed.searchParams.get('key'),pirateSpent:pirateRunState(session).spent??0}));json(result);return;
+      }
+      if (route === 'GET /api/silicon/settings') {
+        const { session } = scoped_(parsed);
+        json(siliconSettingsView(session)); return;
+      }
+      if (route === 'POST /api/silicon/settings') {
+        const payload = jsonBody();
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+          || Object.keys(payload).some(key => !['key', 'value', 'fleetId', 'revision', 'baseRevision', 'confirm'].includes(key))
+          || !['enabled', 'tier', 'emptyOnly'].includes(payload.key)
+          || (payload.key === 'tier' ? !['BLUE', 'PURPLE', 'ORANGE'].includes(payload.value) : typeof payload.value !== 'boolean')
+          || (payload.fleetId === undefined ? payload.key !== 'enabled' : !/^[1-3]远征船$/.test(payload.fleetId))) {
+          throw new SettingsError({ settings: '请选择有效的硅矿快捷配置' });
+        }
+        needConfirm(payload);
+        const { session } = scoped_(parsed), current = settingsView(session);
+        if (!Number.isSafeInteger(payload.revision) || payload.revision !== current.revision
+          || !current.revision && payload.baseRevision !== current.baseRevision) {
+          throw new SettingsError({ revision: '硅矿配置已变化，请重新读取后再保存' });
+        }
+        const next = structuredClone(current.settings);
+        if (payload.fleetId !== undefined) {
+          if (!current.catalog.expeditionFleets.some(fleet => fleet.value === payload.fleetId)) {
+            throw new SettingsError({ fleetId: '该舰队尚未确认已建成，请连接并刷新硅矿' });
+          }
+          const fleet = next.silicon.fleets.find(row => row.id === payload.fleetId);
+          if (!fleet) throw new SettingsError({ fleetId: '舰队配置已变化，请重新读取' });
+          fleet[payload.key] = payload.value;
+        } else next.silicon.enabled = payload.value;
+        adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: current.revision }));
+        emit(session, 'info', '硅矿快捷配置已保存');
+        json(siliconSettingsView(session)); return;
+      }
+      if (route === 'POST /api/silicon/preview') {
+        const { session } = scoped_(parsed), intent = jsonBody();
+        if (!session.client?.connected || session.paused) throw Error('请先连接当前账号，再操作硅矿');
+        const client = session.client, generation = session.generation, player = session.player;
+        const settings = settingsView(session).settings, settingsKey = JSON.stringify(settings);
+        const enabled = () => session.client === client && client.connected && !session.paused && generation === session.generation
+          && session.player === player && JSON.stringify(settingsView(session).settings) === settingsKey;
+        const preview = await readJob(session, () => previewSiliconShortcut(client, protocol, loadConfigSafe(), player, intent,
+          { getSettings: () => settings, ledger: usageFor(session), enabled }));
+        if (!enabled()) throw Error('账号或配置已变化，请重新操作');
+        const quotes = session.siliconShortcutQuotes ??= new Map();
+        for (const [key, quote] of quotes) if (Date.now() > quote.expiresAt && (!quote.job || quote.completed)) quotes.delete(key);
+        if (quotes.size >= 30) throw Error('待处理的确认过多，请稍后再试');
+        const token = preview.fleets.some(fleet => fleet.step) ? randomUUID() : null, expiresAt = Date.now() + 120000;
+        if (token) quotes.set(token, { preview, expiresAt, enabled, settings, client, player, job: null });
+        json({ token, expiresAt, kind: preview.intent.kind, gridId: preview.intent.gridId,
+          index: preview.intent.index ?? null, mineName: preview.mineName, cost: preview.cost, fuel: preview.fuel,
+          reason: preview.reason, automatic: preview.automatic,
+          fleets: preview.fleets.map(({ step, ...fleet }) => ({ ...fleet, available: !!step })) }); return;
+      }
+      if (route === 'POST /api/silicon/action') {
+        const payload = jsonBody(); needConfirm(payload);
+        const { session } = scoped_(parsed), quote = session.siliconShortcutQuotes?.get(payload.token);
+        if (!quote) throw Error('操作确认已失效，请重新选择矿位或舰队');
+        if (quote.job && quote.fleetId !== payload.fleetId) throw Error('本次确认已用于另一支舰队，请重新选择');
+        if (!quote.job) {
+          if (Date.now() > quote.expiresAt || !quote.enabled()) throw Error('确认已过期或账号配置已变化，请重新选择');
+          if (!quote.preview.fleets.some(row => row.id === payload.fleetId && row.step)) throw Error('请选择本次确认中可用的舰队');
+          quote.fleetId = payload.fleetId;
+          // 同一确认只执行一次；重复点击或响应丢失后重传共用同一结果。
+          quote.job = enqueue(session, async () => {
+            if (Date.now() > quote.expiresAt || !quote.enabled()) throw Error('排队期间确认已过期或连接已变化，操作未发送');
+            return runSiliconShortcut(quote.client, protocol, loadConfigSafe(), quote.player, quote.preview, quote.fleetId,
+              { getSettings: () => quote.settings, ledger: usageFor(session), enabled: quote.enabled,
+                report: entry => emit(session, entry.ok ? 'info' : 'warn', (entry.label || '硅矿快捷操作') + '：' + (entry.reason || entry.error || '状态待确认')) });
+          }, quote.preview.intent.kind === 'dispatch' ? '手动派遣采矿' : '手动撤回采矿舰队').finally(() => { quote.completed = true; });
+        }
+        json(await quote.job); return;
+      }
+      if (route === 'GET /api/silicon/overview') {
+        const { session } = scoped_(parsed);
+        if (!session.client?.connected || session.paused) throw new Error('请先连接当前账号，再读取硅矿概览');
+        if (!session.siliconOverviewRead) {
+          const client = session.client, generation = session.generation, player = session.player;
+          const enabled = () => session.client === client && client.connected && !session.paused && generation === session.generation && session.player === player;
+          const job = readJob(session, async () => {
+            if (!enabled()) throw new Error('账号连接已变化，请重新读取硅矿');
+            const view = await readSiliconOverview(client, protocol, loadConfigSafe(), player, { enabled });
+            if (!enabled()) throw new Error('账号连接已变化，请重新读取硅矿');
+            if (view.fleetsSynced) observeOwnedFleets(session, view.fleets.map(fleet => ({ buildingId: fleet.id })), { complete: true });
+            return view;
+          }).finally(() => { if (session.siliconOverviewRead === job) session.siliconOverviewRead = null; });
+          session.siliconOverviewRead = job;
+        }
+        json(await session.siliconOverviewRead); return;
       }
       if (route === 'GET /api/world/overview') {
         const {session}=scoped_(parsed);

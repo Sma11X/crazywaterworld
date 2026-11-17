@@ -49,6 +49,28 @@ export function overviewPage() {
       <div className="world-map-layout"><div id="world-map-scroll" className="world-map-scroll"><svg id="world-map" role="group" aria-label="只读世界地图" /></div><div id="world-map-legend" className="world-map-legend" /><div id="world-map-state-legend" className="world-map-state-legend" /><p className="world-map-help"><span className="for-mouse">拖动平移 · Ctrl+滚轮缩放 · </span><span className="for-touch">点「移动地图」后单指拖动 · 用缩放滑块放大 · </span>放大查看舰队名和攻守优先+排队数</p><aside id="world-map-detail" className="world-map-detail" hidden /></div>
       <p id="world-map-notes" className="dim" />
     </Panel>
+    <Panel title="硅矿概览" help="点击空矿位可选择舰队采集；自己的采矿舰队首奖后可撤回。单次派遣与撤回不会改变自动配置。快捷配置与挂机配置共用同一份设置，保存不会启动挂机。奖励由服务器自动发放，倒计时结束后需同步确认。" titleAfter={<div className="bar"><a className="inline-link" href="#config-group-silicon">高级配置</a><Button id="silicon-refresh" variant="outline" size="sm" disabled>刷新硅矿</Button></div>}>
+      <section id="silicon-settings" className="silicon-settings" aria-label="硅矿快捷配置">
+        <div className="silicon-settings-heading"><h3>自动采矿</h3><div className="bar"><Switch id="silicon-auto-enabled" aria-label="硅矿自动采矿" disabled /><span id="silicon-auto-state" className="dim">尚未读取</span></div></div>
+        <div id="silicon-settings-fleets" className="silicon-settings-fleets" />
+        <p className="dim silicon-settings-help">关闭总开关或某队参与，只停止后续自动操作，已在采矿的舰队仍会采集。要撤回后不再自动出发，请先关闭该队参与，再撤回。</p>
+        <div className="silicon-settings-heading"><span id="silicon-settings-status" className="dim" role="status">请选择账号</span><Button id="silicon-settings-reload" variant="outline" size="sm">重新读取配置</Button></div>
+        <template id="silicon-switch-template"><Switch /></template>
+      </section>
+      <section id="silicon-overview" aria-label="硅矿概览">
+        <div className="silicon-toolbar"><span id="silicon-status" className="dim" role="status">连接账号后读取硅矿</span><span className="dim">总览可见时每 30 秒同步</span></div>
+        <p id="silicon-feedback" className="silicon-feedback" role="status" hidden />
+        <div id="silicon-summary" className="silicon-summary" />
+        <div id="silicon-fleets" className="silicon-fleets" aria-label="硅矿舰队状态" />
+        <div id="silicon-mines" className="silicon-mines" />
+        <p id="silicon-notes" className="dim" />
+      </section>
+      <dialog id="silicon-action-dialog" aria-labelledby="silicon-action-title">
+        <DialogHeader><DialogTitle id="silicon-action-title">硅矿快捷操作</DialogTitle></DialogHeader>
+        <div id="silicon-action-body" />
+        <DialogFooter><Button id="silicon-action-confirm" disabled>确认操作</Button><Button id="silicon-action-cancel" variant="outline">取消</Button></DialogFooter>
+      </dialog>
+    </Panel>
   </div>)
 }
 
