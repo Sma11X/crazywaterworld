@@ -97,10 +97,10 @@ await test('页头间隔输入与挂机、托管两个独立按钮依次排列',
 await test('重复定时卡片及旧节点绑定已移除，挂机与挑战仍可操作', () => {
   for (const removed of ['idle-schedule', 'loop-auto-start', 'loop-start', 'loop-stop', 'loop-rounds',
     'idle-notes', 'idle-more', 'challenge-run-state', 'single-task-status', 'single-go-pirate',
-    'single-go-stages', 'single-go-mutual', 'idle-go-settings', 'idle-go-overview', 'runtime-version']) {
+    'single-go-stages', 'single-go-mutual', 'idle-go-settings', 'idle-go-overview', 'runtime-version', 'tab-idle', 'idle-search']) {
     assert.equal(PAGE.includes(removed), false, removed + ' 应从页面和脚本中移除');
   }
-  for (const id of ['idle-search', 'stage-start', 'trial-refresh', 'pirate-advance-start']) {
+  for (const id of ['config-form', 'stage-start', 'trial-refresh', 'pirate-advance-start']) {
     assert.equal([...PAGE.matchAll(new RegExp('id="' + id + '"', 'g'))].length, 1, id);
   }
 });

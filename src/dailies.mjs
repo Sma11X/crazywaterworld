@@ -285,7 +285,7 @@ export const DAILY_DRIVERS = {
     evaluate({ task, probe }) {
       if (task.progress >= task.targetProgress) return { status: 'done' };
       const ships = probe('CargoShipsRequest')?.ship ?? [];
-      return { status: 'blocked', reason: ships.length ? '货轮由挂机页「贸易港交货与收货」处理' : '当前没有可用货轮' };
+      return { status: 'blocked', reason: ships.length ? '货轮由游戏配置中的「贸易港口」挂机开关控制' : '当前没有可用货轮' };
     },
   },
 

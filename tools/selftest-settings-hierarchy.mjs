@@ -374,7 +374,7 @@ test('收起子组与关闭多层开关时焦点回到仍可见的父控件', ()
   assert.equal(f.env.focused, parent.control); assert(visible(parent.control));
 });
 
-test('父项迁往挂机页后子项回到组级，各字段只渲染一次', () => {
+test('模块主控单独置顶后子项回到组级，各字段只渲染一次', () => {
   const f = fixture(), moved = new Set(settingsUiRules().controlFields);
   for (const group of f.groups) {
     const fields = group.fields.filter(field => !moved.has(field.key));
@@ -389,6 +389,29 @@ test('父项迁往挂机页后子项回到组级，各字段只渲染一次', ()
       }
     }
   }
+});
+
+test('所有模块主控与参数在同组，英雄组合主控保留细项且运行安排可导航', () => {
+  const f = fixture({ navigation: true }); f.renderPage();
+  for (const control of settingsUiRules().moduleControls) {
+    const widget = f.widget(control.key), group = f.env.node('config-group-' + control.configTarget);
+    assert(widget?.spec.moduleControl, control.key);
+    assert(group.contains(widget.node), control.key + ' 归属配置');
+    assert.deepEqual(widget.spec.controlFields, control.fields);
+  }
+  f.set('heroes.enabled', false);
+  assert.equal(f.editor.draft.heroes.enabled, false);
+  assert.equal(f.editor.draft.loop.heroes, false);
+  const details = { ...f.editor.draft.heroes }; delete details.enabled;
+  f.set('heroes.enabled', true);
+  assert.equal(f.editor.draft.loop.heroes, true);
+  assert.deepEqual(f.editor.draft.heroes, { ...details, enabled: true });
+  f.set('antique.enabled', false);
+  f.activate('heroes'); f.activateGroup('antique');
+  assert(visible(f.widget('antique.activate').node), '暂停藏品模块仍可调整执行动作');
+  f.env.hash = '#config-group-runtime'; f.applyHash();
+  assert.equal(f.editor.category, 'runtime');
+  assert(visible(f.widget('loop.rounds').node));
 });
 
 const nestedFields = [

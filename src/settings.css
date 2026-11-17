@@ -28,6 +28,9 @@
 .config-control { min-width:0 }
 .config-row[data-kind=switch] .config-control { justify-self:end }
 .config-control>button[role=switch] { margin-left:0 }
+.config-module-control { padding-block:12px }
+.config-module-control .config-label-line { flex-wrap:wrap }
+.config-module-control .config-help { flex-basis:100% }
 
 /* 主项与参数共用一个分组，嵌套参数沿左侧引导线逐层缩进。 */
 .config-branch { min-width:0; margin:10px 0; padding:0 14px }

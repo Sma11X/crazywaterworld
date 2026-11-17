@@ -1,6 +1,6 @@
 // 游戏配置编辑器：按账号合并连续输入，校验后自动保存，预览仍使用独立只读接口。
 const configEditor = { owner: null, data: null, draft: null, baseline: null, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
-const configCategories = { base: '基地', world: '世界', heroes: '英雄', daily: '日常与活动' };
+const configCategories = { base: '基地', world: '世界', heroes: '英雄', daily: '日常与活动', runtime: '运行安排' };
 const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const baseFamilies = [
@@ -395,18 +395,18 @@ const configGroups = [
   ] },
   { id: 'antique', title: '藏品养成', category: 'heroes', fields: [
     configField('antique.enabled', '藏品养成总开关', 'switch', { help: '只在已有碎片、经验或金币足够时操作，不购买、不消耗钻石。结果未知时保留记录，不重复发送。' }),
-    configField('antique.activate', '自动激活藏品', 'switch', { parent: 'antique.enabled', when: d => d.antique.enabled, help: '使用对应藏品碎片激活，稀有/史诗/传说/超凡分别需要 10/10/10/50 个碎片。万能碎片不会自动兑换。' }),
-    configField('antique.activateQualities', '激活品质', 'multi', { parent: 'antique.activate', catalog: 'antiqueQualities', empty: '未选择，不激活', when: d => d.antique.enabled && d.antique.activate }),
-    configField('antique.star', '自动升星', 'switch', { parent: 'antique.enabled', when: d => d.antique.enabled, help: '按当前星级消耗对应颜色碎片；已激活藏品按品质和顺序处理。' }),
-    configField('antique.starQualities', '升星品质', 'multi', { parent: 'antique.star', catalog: 'antiqueQualities', empty: '未选择，不升星', when: d => d.antique.enabled && d.antique.star }),
-    configField('antique.targetStar', '升星目标星级', 'number', { parent: 'antique.star', unit: '星', when: d => d.antique.enabled && d.antique.star, help: '0 表示升到当前配置最高星级。' }),
-    configField('antique.universal', '允许万能碎片补足升星', 'switch', { parent: 'antique.star', when: d => d.antique.enabled && d.antique.star, help: '只在普通碎片不足时使用；不会用于激活。' }),
-    configField('antique.master', '自动提升藏品大师等级', 'switch', { parent: 'antique.enabled', when: d => d.antique.enabled, help: '消耗藏品大师徽章，并满足下一等级要求的总星级。' }),
-    configField('antique.targetMasterLevel', '大师目标等级', 'number', { parent: 'antique.master', unit: '级', when: d => d.antique.enabled && d.antique.master, help: '0 表示升到当前配置最高等级。' }),
-    configField('antique.suit', '自动激活/升级套装', 'switch', { parent: 'antique.enabled', when: d => d.antique.enabled, help: '普通套装需集齐本套装藏品；红色套装至少激活 2 件。升级消耗金币和对应颜色藏品经验。' }),
-    configField('antique.suitQualities', '套装品质', 'multi', { parent: 'antique.suit', catalog: 'antiqueQualities', empty: '未选择，不升级套装', when: d => d.antique.enabled && d.antique.suit }),
-    configField('antique.goldReserve', '套装升级后保留金币', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.enabled && d.antique.suit }),
-    configField('antique.dailyGoldLimit', '每日套装金币预算', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.enabled && d.antique.suit, help: '0 表示不限额；跨日重置，未确认的消耗仍占预算。' }),
+    configField('antique.activate', '自动激活藏品', 'switch', { parent: 'antique.enabled', help: '使用对应藏品碎片激活，稀有/史诗/传说/超凡分别需要 10/10/10/50 个碎片。万能碎片不会自动兑换。' }),
+    configField('antique.activateQualities', '激活品质', 'multi', { parent: 'antique.activate', catalog: 'antiqueQualities', empty: '未选择，不激活', when: d => d.antique.activate }),
+    configField('antique.star', '自动升星', 'switch', { parent: 'antique.enabled', help: '按当前星级消耗对应颜色碎片；已激活藏品按品质和顺序处理。' }),
+    configField('antique.starQualities', '升星品质', 'multi', { parent: 'antique.star', catalog: 'antiqueQualities', empty: '未选择，不升星', when: d => d.antique.star }),
+    configField('antique.targetStar', '升星目标星级', 'number', { parent: 'antique.star', unit: '星', when: d => d.antique.star, help: '0 表示升到当前配置最高星级。' }),
+    configField('antique.universal', '允许万能碎片补足升星', 'switch', { parent: 'antique.star', when: d => d.antique.star, help: '只在普通碎片不足时使用；不会用于激活。' }),
+    configField('antique.master', '自动提升藏品大师等级', 'switch', { parent: 'antique.enabled', help: '消耗藏品大师徽章，并满足下一等级要求的总星级。' }),
+    configField('antique.targetMasterLevel', '大师目标等级', 'number', { parent: 'antique.master', unit: '级', when: d => d.antique.master, help: '0 表示升到当前配置最高等级。' }),
+    configField('antique.suit', '自动激活/升级套装', 'switch', { parent: 'antique.enabled', help: '普通套装需集齐本套装藏品；红色套装至少激活 2 件。升级消耗金币和对应颜色藏品经验。' }),
+    configField('antique.suitQualities', '套装品质', 'multi', { parent: 'antique.suit', catalog: 'antiqueQualities', empty: '未选择，不升级套装', when: d => d.antique.suit }),
+    configField('antique.goldReserve', '套装升级后保留金币', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.suit }),
+    configField('antique.dailyGoldLimit', '每日套装金币预算', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.suit, help: '0 表示不限额；跨日重置，未确认的消耗仍占预算。' }),
     configField('antique.maxActions', '每轮最多执行动作', 'number', { unit: '项', help: '包含激活、升星、大师和套装升级。' }),
     configField('antique.checkEverySeconds', '藏品检查间隔', 'number', { unit: '秒' }),
   ] },
@@ -446,9 +446,13 @@ function configClearErrors() {
   for (const widget of configEditor.widgets.values()) widget.clearError?.();
 }
 function configSet(key, value) {
-  const parts = key.split('.'), field = parts.pop();
-  const target = parts.reduce((object, part) => object[part], configEditor.draft);
-  target[field] = value;configEditor.previewSummary=null;
+  // 组合主控一次保存所有关联字段，关闭模块不更改细项和参数。
+  for (const path of configEditor.fields.get(key)?.controlFields ?? [key]) {
+    const parts = path.split('.'), field = parts.pop();
+    const target = parts.reduce((object, part) => object[part], configEditor.draft);
+    target[field] = value;
+  }
+  configEditor.previewSummary=null;
   if (key === 'cityWar.fleetIds') {
     configEditor.draft.cityWar.defenceFleetIds = (configEditor.draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
   }
@@ -581,7 +585,6 @@ function configActivateGroup(id, focus = false, writeHash = true, forcePreview =
 function configApplyHash() {
   let id;
   try { id = decodeURIComponent(location.hash.replace(/^#config-group-/, '')); } catch { return; }
-  if(id==='runtime'){document.querySelector('#tabs [data-tab=idle]').click();return;}
   id = configLegacyGroups.get(id) || id;
   if (!location.hash.startsWith('#config-group-') || !configEditor.groups.has(id)) return;
   const group = configEditor.groups.get(id);
@@ -593,7 +596,7 @@ function configUpdateVisibility() {
     const { spec, children = [] } = widget;
     const key = spec.key;
     const visible = parentActive && (!spec.when || spec.when(configEditor.draft));
-    const active = visible && (spec.kind !== 'switch' || !!configGet(key));
+    const active = visible && (spec.moduleControl || spec.kind !== 'switch' || configSwitchValue(spec));
     let hasError = !!configEditor.errors[key] || !widget.error.hidden;
     for (const child of children) {
       const childHasError = update(child, active);
@@ -602,7 +605,15 @@ function configUpdateVisibility() {
     if(hasError)configRevealSection(widget);
     widget.row.hidden = !visible && !hasError;
     widget.node.hidden = widget.row.hidden;
-    if (widget.spec.kind === 'switch') configPaintSwitch(widget.control, !!configGet(key));
+    if (widget.spec.kind === 'switch') configPaintSwitch(widget.control, configSwitchValue(spec));
+    if (widget.moduleNote) {
+      const enabled = configSwitchValue(spec);
+      const blocked = (spec.gates ?? []).filter(path => !configGet(path));
+      const labels = blocked.map(path => configEditor.fields.get(path)?.label || path);
+      widget.moduleNote.textContent = enabled && spec.configuredFields?.length && !spec.configuredFields.some(path => configGet(path))
+        ? '尚未选择执行动作，请在下方设置。' : enabled && labels.length ? '需先开启：' + labels.join('、') : '';
+      widget.moduleNote.hidden = !widget.moduleNote.textContent;
+    }
     if (widget.spec.kind === 'cityWarRoles') widget.control?.refresh?.();
     if (widget.spec.kind === 'lineup' || widget.spec.kind === 'trialLineups') widget.control?.refresh?.();
     if (widget.childPanel) {
@@ -624,6 +635,9 @@ function configUpdateVisibility() {
     if (!widget.parentKey) update(widget);
   }
 }
+function configSwitchValue(spec) {
+  return (spec.controlFields ?? [spec.key]).every(key => configGet(key) === true);
+}
 function configPaintSwitch(button, checked) {
   button.setAttribute('aria-checked', String(checked)); button.dataset.state = checked ? 'checked' : 'unchecked';
   for (const thumb of button.querySelectorAll('[data-state]')) thumb.dataset.state = button.dataset.state;
@@ -637,7 +651,7 @@ function configRenderFields(fields, host) {
   const children = new Map();
   for (const field of fields) {
     configEditor.fields.set(field.key, field);
-    // 总开关移到挂机页后，其参数仍可在当前分组配置。
+    // 模块启停始终置顶，暂停时仍可调整下面的执行细项。
     const parent = keys.has(field.parent) ? field.parent : null;
     if (!children.has(parent)) children.set(parent, []);
     children.get(parent).push(field);
@@ -732,11 +746,14 @@ function configRender() {
   const movedFields = new Set(configEditor.data.rules?.controlFields ?? []);
   movedFields.add('loop.everySeconds');
   for (const group of groups) {
-    group.controlGroup = group.id==='pirate-hunt'?'世界':configEditor.data.rules?.controlGroups?.[group.fields.find(field=>movedFields.has(field.key))?.key] ?? '总控制';
-    group.controlKeys=group.fields.map(field=>field.key);
-    group.movedCount = group.fields.filter(field=>movedFields.has(field.key)).length;
-    group.movedHelp = group.fields.filter(field=>movedFields.has(field.key) && field.help).map(field=>field.label + '：' + field.help);
-    group.fields = group.fields.filter(field=>!movedFields.has(field.key));
+    const controls = (configEditor.data.rules?.moduleControls ?? []).filter(control => control.configTarget === group.id && !hiddenFields.has(control.key));
+    const switches = controls.map(control => configField(control.key, control.label, 'switch', {
+      help: control.help || group.fields.find(field => field.key === control.key)?.help,
+      moduleControl: true, controlFields: control.fields, gates: control.gates, configuredFields: control.configuredFields,
+    }));
+    group.controlKeys=[...new Set([...group.fields.map(field=>field.key), ...controls.flatMap(control=>control.fields)])];
+    group.fields = [...switches, ...group.fields.filter(field=>!movedFields.has(field.key)).map(field =>
+      movedFields.has(field.parent) ? { ...field, parent: undefined } : field)];
     configEditor.groups.set(group.id, group);
   }
   const scopeSelect=$('config-preview-scope');
@@ -788,11 +805,7 @@ function configRender() {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
         section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新载入配置；已保存设置会保留。'));
       }
-      if (group.movedCount || group.id === 'pirate-hunt') {
-        const jump=el('button','config-small-button','前往挂机启停');jump.type='button';
-        jump.onclick=()=>openIdleControls(group.controlKeys.find(key=>key!=='loop.everySeconds'&&movedFields.has(key)));
-        const note=el('div','config-help',group.id==='runtime'?'每轮间隔在页头修改，任务开关在挂机页设置。':'是否自动运行由挂机页控制。执行细项、策略、权限和参数在这里设置。');note.append(jump);section.append(note);
-      }
+      if (group.id === 'runtime') section.append(el('p', 'config-help', '挂机启停和每轮间隔在页头调整，各模块开关在对应配置中设置。'));
       configRenderFields(group.fields.map(spec => ({ ...spec, category, groupId: group.id })), section);
       if (group.id === 'progression') {
         const lineups = el('button', 'config-small-button', '管理自定义阵容'); lineups.type = 'button';
@@ -824,6 +837,7 @@ function configRenderField(spec) {
   }
 
   const row = el('div', 'config-row' + (spec.wide ? ' is-wide' : '')); row.dataset.kind = spec.kind;
+  if (spec.moduleControl) row.classList.add('config-module-control');
   const id = 'config-field-' + spec.key.replaceAll('.', '-');
   const name = el('div', 'config-label-line'); const label = el('label', 'config-label', spec.label); label.htmlFor = id; name.append(label);
   label.id = id + '-label';
@@ -832,8 +846,8 @@ function configRenderField(spec) {
   let control;
   if (spec.kind === 'switch') {
     control = $('config-switch-template').content.firstElementChild.cloneNode(true); control.id = id; control.type = 'button';
-    control.setAttribute('aria-label', spec.label); configPaintSwitch(control, !!configGet(spec.key));
-    control.onclick = () => { configSet(spec.key, !configGet(spec.key)); };
+    control.setAttribute('aria-label', spec.label); configPaintSwitch(control, configSwitchValue(spec));
+    control.onclick = () => { configSet(spec.key, !configSwitchValue(spec)); };
     box.append(control);
   } else if (spec.kind === 'number') {
     const line = el('div', 'config-number'); control = el('input'); control.type = 'number'; control.required = true; control.step = '1';
@@ -885,6 +899,12 @@ function configRenderField(spec) {
   }
   box.append(error); row.append(name, box);
   const widget = { row, node: row, control, error, spec, clearError() { error.hidden = true; error.textContent = ''; control?.removeAttribute('aria-invalid'); } };
+  if (spec.moduleControl) {
+    widget.moduleNote = el('span', 'config-help'); widget.moduleNote.hidden = true;
+    widget.moduleNote.id = id + '-note'; widget.moduleNote.setAttribute('role', 'status');
+    name.append(widget.moduleNote);
+    control.setAttribute('aria-describedby', control.getAttribute('aria-describedby') + ' ' + widget.moduleNote.id);
+  }
   configEditor.widgets.set(spec.key, widget);
   return row;
 }

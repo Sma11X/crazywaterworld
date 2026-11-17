@@ -35,7 +35,7 @@ export function giftCodesPage() {
 
 export function overviewPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="运行概览" help="按功能分别查看当前进度与当前条件。这里只读展示；开关仍在挂机页设置。">
+    <Panel title="运行概览" help="按功能分别查看当前进度与当前条件。这里只读展示；开关与参数在对应游戏配置中设置。">
       <div className="bar overview-task-filter"><Input id="overview-task-search" type="search" aria-label="查找运行状态" placeholder="功能名称或状态" /><label htmlFor="overview-task-filter">显示</label><select id="overview-task-filter" defaultValue="enabled"><option value="enabled">已开启</option><option value="issues">异常 / 受总控限制</option><option value="all">全部项目</option></select></div>
       <p id="overview-task-summary" className="dim" role="status">等待读取运行状态</p>
       <div id="overview-task-groups" />
@@ -128,7 +128,7 @@ export function heroesPage() {
       <div id="saved-lineup-view" className="progression-view" />
     </Panel>
     <Panel title="推荐阵容"><div className="bar"><Button id="lineup-refresh" variant="outline">刷新推荐</Button></div><div id="lineup-view" className="progression-view" aria-live="polite" /></Panel>
-    <Panel title="远征舰队编队" help="保留空编队的初始化入口。已有编队不会自动重排；舰队状态在总览查看，首杀连续推进在挂机页开启。"><div id="formation-view" className="progression-view" aria-live="polite" /></Panel>
+    <Panel title="远征舰队编队" help="保留空编队的初始化入口。已有编队不会自动重排；舰队状态在总览查看，首杀连续推进在挑战页开启。"><div id="formation-view" className="progression-view" aria-live="polite" /></Panel>
   </div>)
 }
 
@@ -227,7 +227,7 @@ export function accountPage() {
               <section id="phone-success" aria-labelledby="phone-success-title" hidden>
                 <h3 id="phone-success-title" tabIndex={-1}>账号已保存</h3>
                 <p id="phone-saved-account" />
-                <p id="phone-success-next" className="dim">点击页面顶部的「连接」进入所选角色，随后可前往「挂机」设置任务。</p>
+                <p id="phone-success-next" className="dim">点击页面顶部的「连接」进入所选角色，随后可前往「游戏配置」设置任务。</p>
                 <Button id="phone-add-another" type="button" variant="outline">添加其他 APP 账号</Button>
               </section>
             </div>

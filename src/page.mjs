@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { automationControls } from './automation-controls.mjs';
 import { operationLabels } from './operation-labels.mjs';
-import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, idlePanel, stagePanel, settingsPage } from './ui/dist/console.mjs';
+import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
 const progressionScript = readFileSync(new URL('./ui/progression.js', import.meta.url), 'utf8');
@@ -45,10 +44,6 @@ ${chrome()}
   </nav>
   <section id="tab-overview">
     ${overviewPage()}
-  </section>
-
-  <section id="tab-idle" class="hidden">
-    ${idlePanel(automationControls)}
   </section>
 
   <section id="tab-settings" class="hidden">
@@ -875,27 +870,6 @@ let loopAccount = null,loopFieldDefaults=null;
 const savingTasks = new Set();
 const loopIntervalSaves = new Map();
 let loopSettingsRevision = null;
-function selectIdleGroup(value) {
-  document.querySelector('[aria-label="挂机设置分组"]').hidden=false;
-  $('idle-search').value='';$('idle-filter').value='all';
-  document.querySelectorAll('[data-idle-group]').forEach(tab=>tab.setAttribute('aria-selected',String(tab.dataset.idleGroup===String(value))));
-  document.querySelectorAll('[data-idle-panel]').forEach(panel=>panel.hidden=panel.dataset.idlePanel!==String(value));
-  filterIdleControls();
-}
-function openIdleControls(key) {
-  document.querySelector('#tabs [data-tab="idle"]').click();
-  const input=$('auto-'+key),panel=input?.closest('[data-idle-panel]');
-  if(panel) { selectIdleGroup(panel.dataset.idlePanel); input.closest('.task-setting').scrollIntoView({block:'center'}); input.focus({preventScroll:true}); }
-}
-for(const button of document.querySelectorAll('[data-idle-group]')) {
-  button.onclick=()=>selectIdleGroup(button.dataset.idleGroup);
-  button.onkeydown=event=>{
-    const buttons=[...document.querySelectorAll('[data-idle-group]')],at=buttons.indexOf(button);
-    const next=event.key==='ArrowRight'?(at+1)%buttons.length:event.key==='ArrowLeft'?(at+buttons.length-1)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:null;
-    if(next!==null){event.preventDefault();buttons[next].click();buttons[next].focus();}
-  };
-}
-const taskInputs = [...document.querySelectorAll('[data-auto-task]:not([data-legacy])')];
 function setTaskSwitch(input, enabled) {
   input.setAttribute('aria-checked', String(enabled));
   input.dataset.state = enabled ? 'checked' : 'unchecked';
@@ -966,37 +940,16 @@ function renderAutomationOverview(data){
 }
 $('overview-task-search').oninput=()=>{if(overviewLoopData&&overviewLoopOwner===current)renderAutomationOverview(overviewLoopData);};
 $('overview-task-filter').onchange=$('overview-task-search').oninput;
-function filterIdleControls(){
- const query=$('idle-search').value.trim().toLowerCase(),mode=$('idle-filter').value;let count=0;
- for(const input of taskInputs){const row=input.closest('.task-setting');const match=row.dataset.unavailable!=='true'&&(!query||row.textContent.toLowerCase().includes(query))&&(mode!=='enabled'||input.getAttribute('aria-checked')==='true')&&(mode!=='blocked'||row.dataset.blocked==='true');row.hidden=!match;if(match)count++;}
- const filtering=!!query||mode!=='all';
- document.querySelector('[aria-label="挂机设置分组"]').hidden=filtering;
- for(const panel of document.querySelectorAll('[data-idle-panel]'))panel.hidden=filtering?![...panel.querySelectorAll('.task-setting')].some(row=>!row.hidden):document.querySelector('[data-idle-group="'+panel.dataset.idlePanel+'"]').getAttribute('aria-selected')!=='true';
- $('idle-filter-count').textContent=filtering?'跨分组找到 '+count+' 项':'';
-}
-$('idle-search').oninput=filterIdleControls;$('idle-filter').onchange=filterIdleControls;
 function renderLoop(data) {
   renderAutomationOverview(data);
   renderPirateAdvance(data.pirateAdvance);
   loopSettingsRevision = data.settingsRevision;
   snapshot.looping = data.running;
   snapshot.loopStopping = data.stopping;
-  for (const input of taskInputs) {
-    if (savingTasks.has(current + ':' + input.dataset.autoTask)) continue;
-    const task = (data.controls ?? []).find(t => t.key === input.dataset.autoTask);
-    input.closest('.task-setting').dataset.unavailable=String(!task);
-    setTaskSwitch(input, task?.enabled === true);
-    input.closest('.task-setting').dataset.blocked=String(task?.enabled&&!!task?.blockedBy?.length);
-    input.title=task?.blockedBy?.length?'需先开启：'+task.blockedBy.join('、'):'';
-    const note=input.closest('.task-setting').querySelector('[data-module-note]');
-    if(note){note.textContent=task?.configurationNote||(task?.enabled&&task?.blockedBy?.length?'需先开启：'+task.blockedBy.join('、'):'');note.hidden=!note.textContent;}
-    input.disabled = !task;
-  }
   if (loopAccount !== current || !loopIntervalSaves.has(current) && $('loop-every').value === String(loopFieldDefaults?.seconds)) {
     $('loop-every').value = data.everyMs / 1000;
   }
   loopFieldDefaults={seconds:data.everyMs/1000};
-  filterIdleControls();
   loopAccount = current;
   renderHostingControl();
   $('loop-every').disabled = !current || loopIntervalSaves.has(current);
@@ -1011,11 +964,6 @@ async function refreshLoop() {
   const account = current, version = ++loopVersion;
   if (loopAccount !== account || !account) {
     $('loop-hint').textContent = account ? '正在读取设置' : '请选择账号';
-    for (const input of taskInputs) {
-      input.disabled = true;
-      setTaskSwitch(input, false);
-
-    }
     if(overviewLoopOwner!==account){overviewLoopData=null;overviewLoopOwner=account;overviewRenderKey='';clear($('overview-task-groups'));$('overview-task-summary').textContent=account?'正在读取运行状态':'请先选择账号';}
     loopSettingsRevision = null;
     $('loop-every').disabled = true;
@@ -1070,7 +1018,6 @@ async function toggleAutoTask(input) {
     }
   }
 }
-for (const input of taskInputs) input.onclick = () => toggleAutoTask(input);
 
 async function saveLoopInterval() {
   const account = current, input = $('loop-every');
@@ -2089,7 +2036,6 @@ function activateConsolePage(button, resource = selectedResource) {
       pollCapture();
     }
     if (button.dataset.tab === 'manual') refreshManualWorld();
-    if (button.dataset.tab === 'idle') refreshLoop();
     if (button.dataset.tab === 'settings') { void configLoad(); void refreshLoop(); }
     if (button.dataset.tab === 'login-settings') void loginSettingsLoad();
     if(target==='giftcodes')void refreshGiftCodes();

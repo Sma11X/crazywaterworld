@@ -10,11 +10,10 @@ process.env.CW_CONFIG_PACK = path.join(directory, 'config.json');
 fs.writeFileSync(process.env.CW_CONFIG_PACK, '[]');
 const { defaultSettings, validateSettings, loadAutomationSettings, saveAutomationSettings, importAutomationSettings,
   exportAutomationSettings, settingsFromNative, nativeTaskValues, applyNativeTask, settingsUiRules, hasBaseWork, createUsageLedger } = await import('../src/automation-settings.mjs');
-const { automationControls, idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
+const { idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
 const { nativePreferenceEnabled, createActionGuard } = await import('../src/automation-policy.mjs');
 const { planBaseAutomation, runBaseAutomation } = await import('../src/base-automation.mjs');
 const { runAllianceRadar } = await import('../src/alliance-radar.mjs');
-const { idlePanel } = await import('../src/ui/dist/console.mjs');
 const { pirateAdvanceFixture } = await import('./fixtures/pirate-advance.mjs');
 const { loadProtocol } = await import('../src/proto.mjs');
 const { planRadarPreview } = await import('../src/dispatch-preview.mjs');
@@ -24,14 +23,11 @@ const pairs = { museum: ['museumCollect', 'museumExplore'], radar: ['radarAuto',
 let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 try {
-  await check('博物馆与情报各只显示一个挂机开关，配置入口和未配置提示保留', () => {
-    const html = idlePanel(automationControls), rules = settingsUiRules();
+  await check('博物馆与情报总开关各归属自己的配置，未配置提示保留', () => {
+    const rules = settingsUiRules();
     for (const [group, keys] of Object.entries(pairs)) {
       assert.deepEqual(idleAutomationControls.filter(c => c.configTarget === group).map(c => c.key), [group + '.runEnabled']);
-      assert(html.includes('data-auto-task="' + group + '.runEnabled"'));
-      assert(!html.includes('data-auto-task="' + group + '.enabled"'));
-      for (const key of keys) assert(!html.includes('data-auto-task="schedule.' + key + '"'));
-      assert(html.includes('href="#config-group-' + group + '"'));
+      assert.deepEqual(rules.moduleControls.filter(c => c.configTarget === group).map(c => c.key), [group + '.runEnabled']);
       assert(rules.controlFields.includes(group + '.runEnabled'));
       assert(!rules.controlFields.includes(group + '.enabled'));
       const defaults = defaultSettings();
@@ -39,7 +35,6 @@ try {
       defaults.schedule[keys[0]] = true;
       assert.equal(automationControlView(defaults).find(c => c.key === group + '.runEnabled').configurationNote, '');
     }
-    assert(html.includes('data-module-note=""'));
   });
   await check('开关往返保留混合细项，旧入口修改不偷偷重开，阻断原因可见', () => {
     for (const [group, keys] of Object.entries(pairs)) {

@@ -24,7 +24,7 @@ add('gather.enabled','采集总开关','采集',{gates:['loop.world'],help:'在�
 for (const [key,label] of [['fishing','自动钓鱼'],['floaters','拾取海面原料漂浮物'],['antiqueFloaters','打捞海面藏品宝箱'],['diving','潜水打捞原料'],['salvage','拾荒船自动拾荒'],['upgradeFishing','钓具强化与升级'],['upgradeDiving','潜水船坞强化与升级'],['upgradeSalvage','拾荒船强化与升级']]) add('gather.'+key,label,'采集',{gates:['loop.world','gather.enabled']});
 for (const [key,label] of [['claimTasks','领取每日任务奖励'],['claimDailyChest','领取每日活跃宝箱'],['claimWeeklyChest','领取每周活跃宝箱'],['claimGift','每日免费赠礼']]) add('dailies.'+key,label,'任务与领奖',{gates:['dailies.enabled']});
 add('worldBoss.enabled','世界Boss每日首战派遣','世界与挑战',{help:'每天仅在服务器计数为0时派出一支空闲舰队；消耗汽油，结果不明确时不重复派遣。'});
-add('radar.runEnabled','联盟情报总开关','世界与挑战',{help:'统一暂停或恢复联盟情报的自动处理、旧规则派遣和旧规则维修，保留配置中的细项选择。请先点“配置”选择执行动作。'});
+add('radar.runEnabled','联盟情报总开关','世界与挑战',{help:'统一暂停或恢复联盟情报的自动处理、旧规则派遣和旧规则维修，保留配置中的细项选择。请在下方选择执行动作。'});
 add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'逐条领取已完成奖励，并用所选空闲舰队处理新情报。不会开启游戏原生月卡自动功能；消耗遵守情报预算。'});
 add('treasure.enabled','万吨巨轮自动参与','世界与挑战');
 add('cityWar.enabled','联盟城战','世界与挑战');
@@ -51,7 +51,7 @@ for (const task of automationTasks) {
  if (['radarAuto','radarRepair'].includes(task.key)) gates.push('radar.runEnabled');
  add('schedule.'+task.key,task.label,group,{gates,taskKey:task.key,...(task.key==='pirate'?{help:'在游戏配置 → 世界 → 海盗日常扫荡选择种类。只使用每日免费次数，无需派舰队，不消耗汽油；与首杀配置独立。'}:{}),...(task.key==='guildTitleReward'?{help:'默认开启，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
 }
-// 挂机页仅展示现有模块入口；其余细项仍使用原字段，在游戏配置编辑。
+// 模块主控与细项在同一配置分组编辑；主控仍保留独立的保存字段。
 const idleModules = {
  'alliance.enabled':['世界','alliance','联盟募兵与互助'],
  'guildFort.enabled':['世界','guildFort','联盟工事'], 'silicon.enabled':['世界','silicon','硅矿'],
@@ -79,7 +79,7 @@ const idleModules = {
  'schedule.petBreed':['基地','pet','海兽培育'],
 };
 for(const control of controls){const module=idleModules[control.key];if(module)Object.assign(control,{idleGroup:module[0],configTarget:module[1],idleLabel:module[2]});}
-Object.assign(controls.find(c=>c.key==='museum.runEnabled'),{help:'统一暂停或恢复自动探宝、探险领奖、旧规则派遣和博物馆升级，保留配置中的细项选择。请先点“配置”选择执行动作。',configuredFields:['museum.enabled','museum.upgrade','schedule.museumCollect','schedule.museumExplore']});
+Object.assign(controls.find(c=>c.key==='museum.runEnabled'),{help:'统一暂停或恢复自动探宝、探险领奖、旧规则派遣和博物馆升级，保留配置中的细项选择。请在下方选择执行动作。',configuredFields:['museum.enabled','museum.upgrade','schedule.museumCollect','schedule.museumExplore']});
 Object.assign(controls.find(c=>c.key==='radar.runEnabled'),{configuredFields:['radar.enabled','schedule.radarAuto','schedule.radarRepair']});
 export const idleAutomationControls=controls.filter(c=>c.idleGroup);
 export const idleControlFields=idleAutomationControls.flatMap(c=>c.fields);
@@ -87,7 +87,7 @@ export const automationControls = controls;
 export const automationControlFields = controls.flatMap(c=>c.fields);
 const get = (settings,path) => path.split('.').reduce((obj,key)=>obj?.[key],settings);
 export function automationControlView(settings) {
- return controls.map(c=>({ ...c, enabled:c.fields.every(path=>get(settings,path)===true), configurationNote:c.configuredFields && get(settings,c.key) === true && !c.configuredFields.some(path=>get(settings,path)===true) ? '尚未选择执行动作，请点“配置”设置。' : '', blockedBy:(c.gates??[]).filter(path=>get(settings,path)!==true).map(path=>controls.find(x=>x.key===path)?.label??path) }));
+ return controls.map(c=>({ ...c, enabled:c.fields.every(path=>get(settings,path)===true), configurationNote:c.configuredFields && get(settings,c.key) === true && !c.configuredFields.some(path=>get(settings,path)===true) ? '尚未选择执行动作，请在对应配置中设置。' : '', blockedBy:(c.gates??[]).filter(path=>get(settings,path)!==true).map(path=>controls.find(x=>x.key===path)?.label??path) }));
 }
 export function setAutomationControl(settings,key,enabled) {
  const control=controls.find(c=>c.key===key);

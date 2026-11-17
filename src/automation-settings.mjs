@@ -1,4 +1,4 @@
-import { automationControlFields, automationControls, idleControlFields } from './automation-controls.mjs';
+import { automationControlFields, automationControls, idleAutomationControls, idleControlFields } from './automation-controls.mjs';
 import path from 'node:path';
 import { atomicJson, readJson, withFileLock } from './json-store.mjs';
 import { accountKey, dataDirectory } from './usage-ledger.mjs';
@@ -226,7 +226,7 @@ export function hasBaseWork(settings) {
     (settings.loop.dailies && settings.gold.enabled));
 }
 export function settingsUiRules() {
-  return { controlFields: idleControlFields, controlGroups: Object.fromEntries(automationControls.flatMap(c=>c.fields.map(path=>[path,c.idleGroup??c.group]))), mappedTasks: Object.keys(nativeFields), numbers: Object.fromEntries(Object.entries(constraints).filter(([, rule]) => rule.kind === 'number').map(([key, rule]) => [key, { min: rule.min, max: rule.max }])) };
+  return { moduleControls: idleAutomationControls, controlFields: idleControlFields, controlGroups: Object.fromEntries(automationControls.flatMap(c=>c.fields.map(path=>[path,c.idleGroup??c.group]))), mappedTasks: Object.keys(nativeFields), numbers: Object.fromEntries(Object.entries(constraints).filter(([, rule]) => rule.kind === 'number').map(([key, rule]) => [key, { min: rule.min, max: rule.max }])) };
 }
 
 export function validateSettings(input, { partial = false, catalog = null } = {}) {

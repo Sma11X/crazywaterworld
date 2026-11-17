@@ -389,7 +389,7 @@ await test('保存已连接账号后展示连接状态', async () => {
   assert.equal(f.env.disconnected.has('alipay:account'), false);
 });
 
-await test('保存后自动挂机已启动或正在连接时显示任务状态入口', async () => {
+await test('保存后自动挂机已启动或正在连接时显示任务配置入口', async () => {
   for (const connected of [false, true]) {
     const f = fixture();
     await f.click('alipay-start');
@@ -401,7 +401,7 @@ await test('保存后自动挂机已启动或正在连接时显示任务状态�
       return data;
     };
     await f.click('alipay-save');
-    assert.match(f.node('alipay-hint').textContent, /账号已保存并切换.*按保存配置启动自动挂机.*「挂机」查看状态或调整任务/);
+    assert.match(f.node('alipay-hint').textContent, /账号已保存并切换.*按保存配置启动自动挂机.*「游戏配置」调整任务/);
     assert.deepEqual(f.env.accounts.find(account => account.id === 'alipay:account').status, { connected, looping: true });
   }
 });

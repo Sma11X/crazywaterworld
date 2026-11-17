@@ -9,10 +9,9 @@ process.env.CW_CONFIG_PACK = path.join(directory, 'config.json');
 fs.writeFileSync(process.env.CW_CONFIG_PACK, '[]');
 const { defaultSettings, validateSettings, loadAutomationSettings, saveAutomationSettings, importAutomationSettings,
   exportAutomationSettings, settingsFromNative, nativeTaskValues, applyNativeTask, settingsUiRules, hasExtraWork } = await import('../src/automation-settings.mjs');
-const { automationControls, idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
+const { idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
 const { nativePreferenceEnabled, worldPreferenceEnabled, createActionGuard } = await import('../src/automation-policy.mjs');
 const { previewNativeAutomation, planBaseAutomation, runBaseAutomation } = await import('../src/base-automation.mjs');
-const { idlePanel } = await import('../src/ui/dist/console.mjs');
 const pairs = [
   ['autoFish', 'fishing'], ['autoDive', 'diving'], ['autoSalvage', 'salvage'], ['floaters', 'floaters'],
   ['antiqueFloaters', 'antiqueFloaters'], ['fishEnhance', 'upgradeFishing'], ['diveEnhance', 'upgradeDiving'], ['salvageEnhance', 'upgradeSalvage'],
@@ -20,11 +19,9 @@ const pairs = [
 let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('ok ' + name); };
 try {
-  await check('挂机只显示一个采集总开关，细项留在配置且带直达链接', () => {
+  await check('采集总开关与细项归属同一配置', () => {
     assert.deepEqual(idleAutomationControls.filter(c => c.key.startsWith('gather.')).map(c => c.key), ['gather.enabled']);
-    const html = idlePanel(automationControls);
-    assert.deepEqual([...html.matchAll(/data-auto-task="(gather\.[^"]+)"/g)].map(m => m[1]), ['gather.enabled']);
-    assert.match(html, /href="#config-group-gather" aria-label="配置采集"/);
+    assert.deepEqual(settingsUiRules().moduleControls.filter(c => c.configTarget === 'gather').map(c => c.key), ['gather.enabled']);
     const rules = settingsUiRules(); assert.ok(rules.controlFields.includes('gather.enabled'));
     for (const [, field] of pairs) assert.ok(!rules.controlFields.includes('gather.' + field));
   });

@@ -11,6 +11,7 @@
     "test:accounts": "node tools/selftest-account-backup-http.mjs && node tools/selftest-account-backup-ui.mjs",
     "test:accounts:browser": "npm run build:ui && node tools/selftest-account-backup-browser.mjs",
     "test:fleet-speed:browser": "npm run build:ui && node tools/selftest-fleet-speed-browser.mjs",
+    "test:unified-config:browser": "npm run build:ui && node tools/selftest-unified-config-browser.mjs",
     "test:production": "node tools/selftest-production-eligibility.mjs && node tools/selftest-production-optimizer.mjs && node tools/selftest-production-snapshot.mjs && node tools/selftest-production-timing.mjs && node tools/selftest-production-planning.mjs && node tools/selftest-production-plan-http.mjs && node tools/selftest-production-planning-ui.mjs",
     "test:core-subset": "node tools/selftest-trial-sweeps.mjs && node tools/selftest-hero-equipment.mjs && node tools/selftest-guild.mjs && node tools/selftest-fleet-formation.mjs && node tools/selftest-pirate-hunt.mjs",
     "test:capture": "node tools/selftest-raw-capture.mjs && node tools/selftest-douyin-cli.mjs",

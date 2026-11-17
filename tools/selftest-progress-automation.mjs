@@ -5,6 +5,7 @@ import { runLoop } from '../src/loop.mjs';
 import { rewardSchedule } from '../src/reward-schedule.mjs';
 import { surveyDailies } from '../src/dailies.mjs';
 import { PAGE } from '../src/page.mjs';
+import { settingsUiRules } from '../src/automation-settings.mjs';
 
 const keys = ['guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft',
   'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
@@ -14,8 +15,8 @@ for (const key of keys) {
   assert.equal(migrated[key], false, 'existing accounts must opt in to new spending');
   const module = ['radarAuto', 'radarRepair'].includes(key) ? 'radar' : ['museumCollect', 'museumExplore'].includes(key) ? 'museum' : null;
   const controlKey = module ? module + '.runEnabled' : 'schedule.' + key;
-  const control = [...PAGE.matchAll(/<button\b[^>]*>/g)].map(match => match[0]).find(button => button.includes('data-auto-task="' + controlKey + '"'));
-  assert.ok(control?.includes('role="switch"'), 'the saved schedule control must be a real rendered switch');
+  const control = settingsUiRules().moduleControls.find(control => control.key === controlKey);
+  assert.ok(control?.configTarget, 'the saved schedule control belongs to its configuration module');
   if (module) assert(PAGE.includes("configField('schedule." + key + "'"), 'the legacy choice remains editable in detailed settings');
   assert.ok(!PAGE.includes('data-legacy="true"'), 'compatibility controls must be real switches');
 }

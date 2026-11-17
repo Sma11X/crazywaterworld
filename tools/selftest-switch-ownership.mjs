@@ -1,4 +1,4 @@
-// 挂机管理自动执行入口，游戏配置与活动详情各自拥有唯一的编辑字段。
+// 模块启停与参数统一在游戏配置，活动详情保留各自唯一的编辑字段。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,11 +10,10 @@ process.env.CW_CONFIG_PACK = path.join(directory, 'config.json');
 fs.writeFileSync(process.env.CW_CONFIG_PACK, JSON.stringify([
   [1, 'FarmlandPlantCfg', { data: [{ id: '小麦', material: ['小麦种子', 1], time: 60, produceNum: 5 }] }],
 ]));
-const { automationControls, idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
+const { idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
 const { defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, settingsUiRules } = await import('../src/automation-settings.mjs');
 const { automationTasks } = await import('../src/automation.mjs');
 const { activityAutomationFields } = await import('../src/activity-automation.mjs');
-const { idlePanel } = await import('../src/ui/dist/console.mjs');
 const script = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
 const definitions = script.slice(0, script.indexOf('function configGet('));
 const { staticGroups, merchantFields, guildShipFields } = new Function(definitions + '\nreturn { staticGroups: configGroups, merchantFields: merchantActivityFields, guildShipFields: guildShipActivityFields };')();
@@ -35,30 +34,31 @@ let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 
 try {
-  await check('挂机显示32个自动执行入口，全部字段在挂机、游戏配置或活动页有唯一编辑位置', () => {
-    const html = idlePanel(automationControls), rendered = [...html.matchAll(/data-auto-task="([^"]+)"/g)].map(match => match[1]);
+  await check('32个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
+    const rendered = configFields.filter(field => field.moduleControl).map(field => field.key);
     const idleKeys = idleAutomationControls.map(control => control.key), movedFields = idleAutomationControls.flatMap(control => control.fields);
     assert.equal(idleKeys.length, 32, '超凡英雄和联盟商船统一在活动页编辑，其余紧凑模块和独立任务入口保留');
     assert.equal(rendered.length, new Set(rendered).size, '每个入口只显示一次');
     assert.deepEqual(new Set(rendered), new Set(idleKeys));
     assert.deepEqual(new Set(settingsUiRules().controlFields), new Set(movedFields));
-    for (const field of movedFields) assert(!configKeys.has(field), field + ' 主控不重复出现在配置');
+    assert.equal(configFields.length, configKeys.size, '配置字段不重复');
     for (const control of idleAutomationControls) {
       assert(['基地', '世界', '英雄', '日常与活动'].includes(control.idleGroup), control.key);
       assert(configGroups.some(group => group.id === control.configTarget), control.key + ' 配置入口存在');
+      const group = configGroups.find(group => group.id === control.configTarget);
+      assert(group.fields.some(field => field.key === control.key && field.moduleControl), control.key + ' 在自己的配置中启停');
     }
     const scheduledInHeader = new Set(['loop.everySeconds']);
     const fields = new Set([...staticGroups.flatMap(group => group.fields.map(field => field.key)), ...activityKeys]);
     for (const key of fields) {
-      const locations = Number(movedFields.includes(key)) + Number(configKeys.has(key)) + Number(scheduledInHeader.has(key)) + Number(activityKeys.has(key));
+      const locations = configFields.filter(field => (field.controlFields ?? [field.key]).includes(key)).length + Number(scheduledInHeader.has(key)) + Number(activityKeys.has(key));
       assert.equal(locations, 1, key + ' 应有且仅有一个编辑位置');
     }
-    assert(!html.includes('id="loop-rounds"') && !html.includes('id="loop-every"'));
     assert(configGroups.find(group => group.id === 'runtime').fields.some(field => field.key === 'loop.rounds'));
     assert(!configKeys.has('loop.everySeconds'));
   });
 
-  await check('执行细项、资源权限、策略与预算没有被搬到挂机', () => {
+  await check('模块下方保留执行细项、资源权限、策略与预算', () => {
     const details = ['building.collect', 'building.upgrade', 'factory.produce', 'factory.demandFirst',
       'farm.harvest', 'farm.autoPlant', 'farm.customPlant', 'gather.fishing', 'gather.keyOpen',
       'museum.enabled', 'museum.upgrade', 'schedule.museumCollect', 'radar.enabled', 'schedule.radarRepair',
@@ -104,11 +104,9 @@ try {
 
   await check('每个活动自动挂机总开关仅由活动配置管理，挂机面板不生成入口', () => {
     const idleKeys = new Set(idleAutomationControls.flatMap(control => control.fields));
-    const html = idlePanel(automationControls);
     for (const field of activityAutomationFields) {
       assert.equal(typeof read(defaultSettings(), field.key), 'boolean', field.key + ' 有持久化布尔值');
       assert(!idleKeys.has(field.key), field.key + ' 不在挂机入口');
-      assert(!html.includes('data-auto-task="' + field.key + '"'), field.key + ' 不重复渲染');
       assert(!configKeys.has(field.key), field.key + ' 不在通用配置重复编辑');
       assert(activityKeys.has(field.key), field.key + ' 由活动配置拥有');
     }
@@ -137,7 +135,8 @@ try {
     const hero = idleAutomationControls.find(control => control.key === 'heroes.enabled');
     assert(hero); assert.deepEqual(new Set(hero.fields), new Set(['heroes.enabled', 'loop.heroes']));
     assert(!idleAutomationControls.some(control => control.key === 'loop.heroes'));
-    assert(!configKeys.has('heroes.enabled') && !configKeys.has('loop.heroes'));
+    assert(configKeys.has('heroes.enabled') && !configKeys.has('loop.heroes'));
+    assert.deepEqual(configFields.find(field => field.key === 'heroes.enabled').controlFields, ['heroes.enabled', 'loop.heroes']);
     for (const [enabled, auto] of [[false, false], [true, false], [false, true], [true, true]]) {
       const original = defaultSettings(); original.heroes.enabled = enabled; original.loop.heroes = auto;
       original.heroes.level = false; original.heroes.star = true; original.heroes.skill = false;
@@ -163,7 +162,7 @@ try {
     initial.heroes.enabled = true; initial.loop.heroes = false;
     saveAutomationSettings('switch-a', validateSettings(initial), { revision: 0 });
     const { createConsole } = await import('../src/server.mjs');
-    const app = createConsole({ port: 0 }); await app.listen();
+    const app = createConsole({ port: 0, protocol: {} }); await app.listen();
     const api = async (route, body, account = 'switch-a') => {
       const response = await fetch('http://127.0.0.1:' + app.server.address().port + '/api/' + route + '?account=' + account, {
         method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}),

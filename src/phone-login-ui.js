@@ -434,16 +434,16 @@ $('phone-save').onclick = async () => {
     $('phone-success').hidden = false;
     $('phone-saved-account').textContent = (role.nickname || '未命名角色') + ' · ' + phoneRoleWorld(role);
     let nextStep = '连接游戏';
-    let nextHint = '点击页面顶部的「连接」进入所选角色，随后可前往「挂机」设置任务。';
+    let nextHint = '点击页面顶部的「连接」进入所选角色，随后可前往「游戏配置」设置任务。';
     if (snapshot.paused || snapshot.loginBlocked) {
       nextStep = '恢复托管';
       nextHint = '请点击页面顶部的「恢复托管」，连接后核对角色和区服。';
     } else if (snapshot.looping) {
       nextStep = '自动挂机';
-      nextHint = '已按保存配置启动自动挂机，可前往「挂机」查看状态或调整任务。';
+      nextHint = '已按保存配置启动自动挂机，可前往「游戏配置」调整任务。';
     } else if (snapshot.connected) {
       nextStep = '查看任务';
-      nextHint = '所选角色已连接，可在上方查看角色概况，随后前往「挂机」设置任务。';
+      nextHint = '所选角色已连接，可在上方查看角色概况，随后前往「游戏配置」设置任务。';
     }
     $('phone-step').textContent = '所选角色已保存 → ' + nextStep;
     $('phone-success-next').textContent = nextHint;

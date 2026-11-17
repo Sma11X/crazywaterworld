@@ -1,6 +1,6 @@
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Boxes, Building2, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, Timer, X } from "lucide-react"
+import { Boxes, Building2, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, X } from "lucide-react"
 import { Button } from "./button"
 import { Badge } from "./badge"
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "./card"
@@ -12,7 +12,7 @@ import { LOG_CATEGORIES, LOG_GROUPS } from "../log-categories.mjs"
 
 // 手机底栏只有约 55px 宽，所以另备短名。
 const tabs = [
-  ["overview", "总览", "总览", LayoutDashboard], ["idle", "挂机", "挂机", Timer],
+  ["overview", "总览", "总览", LayoutDashboard],
   ["settings", "游戏配置", "配置", Settings2], ["manual", "建筑一览", "建筑", Building2],
   ["stages", "挑战", "挑战", Swords], ["resources", "资源与玩法", "资源", Boxes],
   ["account", "账号", "账号", CircleUserRound], ["login-settings", "登录设置", "登录", LogIn],

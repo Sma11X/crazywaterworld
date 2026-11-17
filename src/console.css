@@ -151,19 +151,6 @@ section h2:first-child { margin-top:0 }
 .world-nearby-list { max-height:160px; overflow:auto; margin-top:8px }
 #world-view:empty { display:none }
 
-/* ---- 挂机 ---- */
-.idle-filter-bar { margin-block:0 }
-.idle-filter-bar #idle-search { flex:1 1 130px; width:auto; max-width:320px }
-.idle-filter-bar label { color:var(--muted-foreground); font-weight:400 }
-.task-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); gap:0 24px }
-.task-setting { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:44px; border-bottom:1px solid var(--border) }
-.task-setting label { flex:1; cursor:pointer; font-weight:400 }
-.task-label-block { flex:1; min-width:0 }
-.task-label-line { display:flex; align-items:center; gap:6px }
-.task-setting[data-blocked=true] label { color:var(--warning) }
-.idle-module-grid { grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)) }
-.idle-module-actions { display:flex; align-items:center; gap:8px; flex:none }
-
 /* ---- 建筑一览 ---- */
 .factory-table td { vertical-align:top; white-space:normal }
 .factory-queue { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:16px }
@@ -453,7 +440,7 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
   #logs-open { grid-column:3; grid-row:4 }
   #hint { grid-column:1 / -1; grid-row:5; white-space:normal }
   /* 导航固定到底部，八个入口一屏放下。 */
-  #tabs { position:fixed; inset:auto 0 0; z-index:40; display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:0; width:100%; margin:0; padding:4px calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left)); overflow:visible; background:var(--background); border-top:1px solid var(--border) }
+  #tabs { position:fixed; inset:auto 0 0; z-index:40; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:0; width:100%; margin:0; padding:4px calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left)); overflow:visible; background:var(--background); border-top:1px solid var(--border) }
   .nav-tab { flex-direction:column; justify-content:center; gap:2px; height:48px; padding:0; font-size:11px; min-width:0 }
   .nav-tab svg { width:20px; height:20px }
   .nav-full { display:none }

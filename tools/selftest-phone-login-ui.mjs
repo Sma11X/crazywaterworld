@@ -649,7 +649,7 @@ await test('保存暂停或异地登录阻止的账号优先提示恢复托管',
   }
 });
 
-await test('保存后自动挂机已启动或正在连接时显示任务状态入口', async () => {
+await test('保存后自动挂机已启动或正在连接时显示任务配置入口', async () => {
   for (const connected of [false, true]) {
     const f = fixture();
     await f.login();
@@ -661,7 +661,7 @@ await test('保存后自动挂机已启动或正在连接时显示任务状态�
       return data;
     };
     await f.click('phone-save');
-    assert.match(f.node('phone-success-next').textContent, /按保存配置启动自动挂机.*「挂机」查看状态或调整任务/);
+    assert.match(f.node('phone-success-next').textContent, /按保存配置启动自动挂机.*「游戏配置」调整任务/);
     assert.equal(f.node('phone-step').textContent, '所选角色已保存 → 自动挂机');
     assert.equal(f.node('phone-success').hidden, false);
     assert.deepEqual(f.env.accounts[1].status, { connected, looping: true });

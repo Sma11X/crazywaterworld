@@ -210,13 +210,15 @@ try {
         assert.equal(loop.controls.find(control => control.key === key).observation.text, task + ' 已检查');
       }
       const page = await (await fetch(url)).text();
-      assert(page.includes('data-auto-task="progression.enabled"')); assert(page.includes('data-auto-task="pirateHunt.enabled"'));
+      const settingsResponse = await (await fetch(url + '/api/settings?account=a')).json();
+      for (const [key, target] of [['progression.enabled', 'progression'], ['pirateHunt.enabled', 'pirate-hunt']]) {
+        assert(settingsResponse.rules.moduleControls.some(control => control.key === key && control.configTarget === target));
+      }
       assert(page.includes('失败停止次数')); assert(!page.includes('>次数</label>'));
       const stageHtml = page.slice(page.indexOf('id="tab-stages"'), page.indexOf('id="tab-stages"') + 18000);
       assert.match(stageHtml, /<input[^>]*id="stage-failures"/);
       assert(stageHtml.includes('id="pirate-advance-start"'));
-      const idleHtml = page.slice(page.indexOf('id="tab-idle"'), page.indexOf('id="tab-settings"'));
-      assert(!idleHtml.includes('id="pirate-advance-start"'));
+      assert(!page.includes('id="tab-idle"'));
       for (const [, script] of page.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) new Function(script);
     } finally { app.server.closeAllConnections(); await app.close(); }
   });
