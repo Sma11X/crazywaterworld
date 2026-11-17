@@ -6,7 +6,7 @@ import { activityAutomationFields } from '../src/activity-automation.mjs';
 
 const script = fs.readFileSync(new URL('../src/ui/activities.js', import.meta.url), 'utf8');
 const configScript = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
-const merchantActivityFields = new Function(configScript.slice(0, configScript.indexOf('function configGet(')) + '\nreturn merchantActivityFields;')();
+const { merchantActivityFields, guildShipActivityFields } = new Function(configScript.slice(0, configScript.indexOf('function configGet(')) + '\nreturn { merchantActivityFields, guildShipActivityFields };')();
 const clone = value => JSON.parse(JSON.stringify(value));
 const deferred = () => {
   let resolve, reject;
@@ -27,6 +27,7 @@ function fixture() {
       this.dataset = {};
       this.attributes = new Map();
       this.hidden = false;
+      this.value = '';
       this.disabled = false;
       this.classList = {
         contains: name => this.className.split(' ').includes(name),
@@ -101,6 +102,12 @@ function fixture() {
     rules: { numbers: settingsUiRules().numbers }, revision, baseRevision: 'base-' + revision,
   });
   const seaSaved = new Map([['merchant-a', seaSettings()], ['merchant-b', seaSettings({ profitLimit: 100 }, { merchantRewards: false }, 3)]]);
+  const shipSettings = (values = {}, revision = 1) => ({
+    settings: { guildShip: { ...defaultSettings().guildShip, ...values } },
+    catalog: { materials: [{ value: '木板', label: '木板' }, { value: '橡胶圈', label: '橡胶圈' }] },
+    rules: { numbers: settingsUiRules().numbers }, revision, baseRevision: 'base-' + revision,
+  });
+  const shipSaved = new Map([['merchant-a', shipSettings()], ['merchant-b', shipSettings({ mode: 'small' }, 3)]]);
   const automationSettings = (values = {}, revision = 1) => ({
     settings: { ...Object.fromEntries(activityAutomationFields.map(({ key }) =>
       [key, key.split('.').reduce((value, part) => value[part], defaultSettings())])), ...values },
@@ -122,7 +129,9 @@ function fixture() {
   const context = {
     current: 'merchant-a', snapshot: { paused: false, connected: true }, disconnected: new Set(), savingTasks: new Set(),
     loopSettingsRevision: 1,
-    merchantActivityFields,
+    merchantActivityFields, guildShipActivityFields,
+    configButton: (text, onclick) => Object.assign(element('button', '', text), { onclick }),
+    configPlacePanel() {},
     $: node, el: element,
     clear: item => { item.textContent = ''; return item; },
     component: name => element(name === 'ui-number' ? 'input' : 'button'),
@@ -201,6 +210,21 @@ function fixture() {
         }
         return clone(seaSaved.get(account));
       }
+      if (request.route === '/api/guild-ship/settings') {
+        if (request.method === 'POST') {
+          const previous = shipSaved.get(account), payload = request.body;
+          assert.equal(payload.revision, previous.revision);
+          assert.equal(payload.baseRevision, previous.baseRevision);
+          assert.equal(payload.confirm, true);
+          assert(guildShipActivityFields.some(field => field.key === payload.key));
+          const next = clone(previous);
+          next.settings.guildShip[payload.key.slice('guildShip.'.length)] = payload.value;
+          next.revision++;
+          next.baseRevision = 'base-' + next.revision;
+          shipSaved.set(account, next);
+        }
+        return clone(shipSaved.get(account));
+      }
       if (request.route === '/api/activities/settings') {
         if (request.method === 'POST') {
           const previous = automationSaved.get(account), payload = request.body;
@@ -223,7 +247,8 @@ function fixture() {
     },
   };
   vm.createContext(context);
-  const api = vm.runInContext(script + `\n({
+  const multiselect = configScript.slice(configScript.indexOf('function configMultiselect('), configScript.indexOf('function configPriorityEditor('));
+  const api = vm.runInContext(multiselect + '\n' + script + `\n({
     refresh: refreshActivities, readSettings: refreshMerchantSettings, save: saveMerchantSetting,
     render: renderActivityTabs, rows: activityRows, select: selectActivity, lifecycle: activityLifecycle,
     get settings() { return merchantSettingsData; },
@@ -237,6 +262,10 @@ function fixture() {
     get seaOwner() { return seaMerchantSettingsOwner; },
     selectSea() { selectActivity(activityRows().find(isSeaMerchantActivity)?.id); },
     readSeaSettings: refreshSeaMerchantSettings, saveSea: saveSeaMerchantSetting,
+    get shipSettings() { return guildShipSettingsData; },
+    get shipOwner() { return guildShipSettingsOwner; },
+    selectShip() { selectActivity(activityRows().find(isGuildShipActivity)?.id); },
+    readShipSettings: refreshGuildShipSettings, saveShip: saveGuildShipSetting,
     get automationSettings() { return activityAutomationData; },
     get automationOwner() { return activityAutomationOwner; },
     readAutomationSettings: refreshActivityAutomation, saveAutomation: saveActivityAutomation,
@@ -244,8 +273,11 @@ function fixture() {
   const controls = () => node('activities-list').querySelectorAll('[data-merchant-setting]');
   const heroControls = () => node('activities-list').querySelectorAll('[data-hero-raid-setting]');
   const seaControls = () => node('activities-list').querySelectorAll('[data-sea-merchant-setting]');
+  const shipControls = () => node('activities-list').querySelectorAll('[data-guild-ship-setting]');
   const automationControls = () => node('activities-list').querySelectorAll('[data-activity-automation]');
   return { api, context, state, node, saved, settings, activities, catalog, controls, heroSaved, heroSettings, heroControls,
+    shipSaved, shipSettings, shipControls,
+    shipInput: key => shipControls().find(input => input.dataset.guildShipSetting === key),
     seaSaved, seaSettings, seaControls, automationSaved, automationSettings, automationControls,
     input: key => controls().find(input => input.dataset.merchantSetting === key),
     heroInput: key => heroControls().find(input => input.dataset.heroRaidSetting === key),
@@ -316,7 +348,7 @@ await test('暂停、断开及首次未连接时可配置商人，游戏读取�
     assert.equal(f.node('activities-order').querySelectorAll('button').length, 0);
     await f.click('autoSubmit');
     assert.equal(f.saved.get('merchant-a').settings.autoSubmit, true);
-    assert(f.state.calls.every(call => ['/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/activities/settings', '/api/activities/catalog'].includes(call.route)));
+    assert(f.state.calls.every(call => ['/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/activities/catalog'].includes(call.route)));
   }
 });
 
@@ -1135,6 +1167,101 @@ await test('活动元数据可定位无任务列表的已接入开关，纯展�
     ['activityAutomation.pirates', 'activityAutomation.openRank']);
   assert(f.automationInput('activityAutomation.pirates').getAttribute('aria-label').includes('海盗战报奖励'));
   assert(f.automationInput('activityAutomation.openRank').getAttribute('aria-label').includes('开服冲榜'));
+});
+
+await test('联盟商船在活动页独立配置，离线及暂停可编辑且不出现挂机开关跳转', async () => {
+  for (const state of ['connected', 'paused', 'offline']) {
+    const f = fixture();
+    if (state === 'paused') f.context.snapshot.paused = true;
+    if (state === 'offline') f.context.snapshot.connected = false;
+    await f.api.refresh(); f.api.selectShip();
+    const row = f.api.rows().find(row => row.id === 'guildShip');
+    assert.equal(row.kind, 'limited');
+    assert.equal(f.api.lifecycle(row), 'upcoming');
+    assert.equal(f.node('activity-kind').textContent, '限时');
+    assert.doesNotMatch(f.node('activities-list').textContent, /联盟自动化总开关|前往开启联盟自动化/);
+    assert.doesNotMatch(f.node('activities-list').textContent, /当前活动暂未接入/);
+    assert.match(f.node('activities-list').textContent, /红船缺料备料需开启工厂生产/);
+    await f.shipInput('guildShip.crew').onclick();
+    await f.api.saveShip('guildShip.enabled', true);
+    await f.api.saveShip('guildShip.enabled', false);
+    assert.equal(f.shipSaved.get('merchant-a').settings.guildShip.crew, true);
+    assert.equal(f.shipSaved.get('merchant-b').settings.guildShip.crew, false);
+    assert(f.shipControls().every(control => !control.disabled));
+    assert(!f.state.calls.some(call => call.route === '/api/activities/run'));
+  }
+});
+
+await test('商船策略、条件参数和材料多选沿用原字段，未知旧材料仍可查看清除', async () => {
+  const f = fixture();
+  f.shipSaved.get('merchant-a').settings.guildShip.disabledMaterials = ['旧物料'];
+  await f.api.refresh(); f.api.selectShip();
+  const mode = f.shipInput('guildShip.mode');
+  mode.value = 'full'; await mode.onchange();
+  await f.shipInput('guildShip.rewardFilter').onclick();
+  await f.shipInput('guildShip.redStartEnabled').onclick();
+  assert(f.shipInput('guildShip.rewardItems'));
+  const time = f.shipInput('guildShip.redStartTime');
+  time.value = '23:25'; await time.onchange();
+  const coins = f.shipInput('guildShip.minCoinsSmall');
+  coins.value = '-1'; await coins.onchange();
+  assert(f.state.errors.some(error => error.message.includes('整数')));
+  const materials = f.shipInput('guildShip.disabledMaterials');
+  assert.match(materials.textContent, /旧物料/);
+  materials.open = true; materials.ontoggle();
+  const option = materials.querySelectorAll('.config-option').find(row => row.textContent === '木板');
+  const pending = deferred();
+  f.state.respond = request => {
+    if (request.route === '/api/guild-ship/settings' && request.method === 'POST') return pending.promise;
+  };
+  const checkbox = option.querySelector('input'); checkbox.checked = true; checkbox.onchange();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.state.calls.filter(call => call.method === 'POST').at(-1).body.value, ['旧物料', '木板']);
+  assert(f.shipControls().every(control => control.disabled));
+  const locked = f.shipInput('guildShip.disabledMaterials'); locked.open = true; locked.ontoggle();
+  assert(locked.querySelectorAll('input').filter(input => input.type === 'checkbox').every(input => input.disabled));
+  pending.resolve(undefined); f.state.respond = null;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.shipSaved.get('merchant-a').settings.guildShip.disabledMaterials, ['旧物料', '木板']);
+  const saved = f.shipSaved.get('merchant-a').settings.guildShip;
+  assert.equal(saved.mode, 'full'); assert.equal(saved.redStartTime, '23:25');
+  assert.equal(saved.minCoinsSmall, defaultSettings().guildShip.minCoinsSmall);
+});
+
+await test('商船当前期次替换预配置入口，结束及历史期次继续可编辑且保持限时分类', async () => {
+  const f = fixture(), now = f.activities.serverNow;
+  f.activities.activities.push({ id: 'guildShip', name: '联盟商船', kind: 'limited',
+    startTime: now - 30, endTime: now + 30, taskKeys: [] });
+  await f.api.refresh(); f.api.selectShip();
+  assert.equal(f.api.rows().filter(row => row.id === 'guildShip').length, 1);
+  assert.equal(f.api.lifecycle(f.api.rows().find(row => row.id === 'guildShip')), 'active');
+  assert(f.shipInput('guildShip.enabled'));
+  f.state.now += 30000; f.api.render(); f.api.selectShip();
+  assert.equal(f.api.lifecycle(f.api.rows().find(row => row.id === 'guildShip')), 'ended');
+  assert.match(f.node('activities-list').textContent, /本期活动已结束/);
+  f.context.snapshot.connected = false;
+  f.catalog.activities = [{ ...f.activities.activities.at(-1), sourceId: 'guildShip', id: 'archive:ship', observed: false }];
+  await f.api.refresh(); f.api.selectShip();
+  assert.equal(f.node('activity-kind').textContent, '限时');
+  await f.shipInput('guildShip.captain').onclick();
+  assert.equal(f.shipSaved.get('merchant-a').settings.guildShip.captain, true);
+});
+
+await test('联盟商船配置读取晚到或保存前切号，不覆盖或误写另一账号', async () => {
+  const f = fixture(); await f.api.refresh(); f.api.selectShip();
+  const late = deferred();
+  f.state.respond = request => request.route === '/api/guild-ship/settings' && request.account === 'merchant-a' ? late.promise : undefined;
+  const read = f.api.readShipSettings('merchant-a');
+  f.context.current = 'merchant-b'; await f.api.refresh(); f.api.selectShip();
+  late.resolve(f.shipSettings({ mode: 'full' })); await read;
+  assert.equal(f.api.shipOwner, 'merchant-b');
+  assert.equal(f.api.shipSettings.settings.guildShip.mode, 'small');
+  f.state.respond = null;
+  const flush = deferred(); f.context.configFlush = () => flush.promise;
+  const save = f.api.saveShip('guildShip.captain', true);
+  f.context.current = 'merchant-a'; await f.api.refresh();
+  flush.resolve(true); await save;
+  assert(!f.state.calls.some(call => call.method === 'POST'));
 });
 
 console.log('活动分组与集中配置专项 ' + passed + '/' + passed + ' 通过');

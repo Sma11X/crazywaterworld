@@ -40,7 +40,7 @@ export async function previewExtended(category, client, protocol, config, player
       for (const row of current) result.notes.push('活动 ' + row.raidId + '：订单 ' + (row.order?.orderId ?? '未同步') + '，累计抽取 ' + (row.drawTimesInfo?.times ?? '未同步') + ' 次');
     }
   }
-  if (['guildShip','guildFort'].includes(category) && !settings.alliance.enabled) result.notes.push('联盟自动化总开关未开启');
+  if (category === 'guildFort' && !settings.alliance.enabled) result.notes.push('联盟自动化总开关未开启');
   if (!settings[category]?.enabled) result.notes.push('本模块自动化开关未开启');
   return result;
 }

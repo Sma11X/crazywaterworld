@@ -296,7 +296,8 @@ try {
     assert.equal(typeof view.baseRevision, 'string');
     assert.equal(Object.keys(view.settings).length, activityAutomationFields.length);
     assert.equal(view.settings['heroRaid.enabled'], false);
-    for (const { key } of activityAutomationFields.filter(control => control.key !== 'heroRaid.enabled')) {
+    assert.equal(view.settings['guildShip.enabled'], false);
+    for (const { key } of activityAutomationFields.filter(control => !['heroRaid.enabled', 'guildShip.enabled'].includes(control.key))) {
       assert.equal(view.settings[key], true, key);
     }
     const legacy = ok(await api('activities/settings', null, 'activity-legacy'));

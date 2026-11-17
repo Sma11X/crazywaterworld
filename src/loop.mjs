@@ -127,7 +127,7 @@ export async function runLoop(client, protocol, {
   let siliconAt = 0, siliconPreference = null, extendedAt = 0, extendedPreference = null;
   const siliconNext = () => getSettings()?.silicon?.enabled ?
     (siliconPreference === getSettings().silicon ? siliconAt : 0) : Infinity;
-  const extendedEnabled = () => getSettings()?.alliance?.enabled || getSettings()?.heroRaid?.enabled;
+  const extendedEnabled = () => getSettings()?.alliance?.enabled || getSettings()?.guildShip?.enabled || getSettings()?.heroRaid?.enabled;
   const extendedNext = () => extendedEnabled() ? (extendedPreference === getSettings() ? extendedAt : 0) : Infinity;
   let appointmentAt = 0, appointmentPreference = null;
   const appointmentSettings = () => JSON.stringify(getSettings()?.appointments);
@@ -417,13 +417,18 @@ export async function runLoop(client, protocol, {
           await runAllianceAutomation(client, protocol, config, player, { getSettings, ledger: usageLedger, enabled: active, report: report('alliance.enabled') });
           const options = { player, getSettings, ledger: usageLedger, scheduler: rewards,
             enabled: () => active() && getSettings()?.alliance?.enabled };
-          if (getSettings()?.guildShip?.enabled) await serviceGuildShips(client, protocol, config, { ...options, report: report('guildShip.enabled') });
           if (getSettings()?.guildFort?.enabled) await serviceGuildForts(client, protocol, config, { ...options, report: report('guildFort.enabled') });
         }
+        if (getSettings()?.guildShip?.enabled) await serviceGuildShips(client, protocol, config,
+          { player, getSettings, ledger: usageLedger, scheduler: rewards, enabled: active, report: report('guildShip.enabled') });
         if (getSettings()?.heroRaid?.enabled) await runHeroRaidAutomation(client, protocol, config, player,
           { getSettings, ledger: usageLedger, enabled: active, report: report('heroRaid.enabled') });
       } catch (error) { phaseFailure('world', '联盟与活动自动化', error); }
-      finally { extendedAt = Date.now() + 60000; }
+      finally {
+        const startsAt = getSettings()?.guildShip?.enabled
+          ? watchGuildShipPushes(client).period?.startTime * 1000 - (client.serverClockOffsetMs || 0) : 0;
+        extendedAt = startsAt > Date.now() ? Math.min(Date.now() + 60000, startsAt) : Date.now() + 60000;
+      }
     }
     async function checkAppointments() {
       if (!scheduler.active() || appointmentNext() > Date.now()) return;
@@ -904,7 +909,7 @@ export async function runLoop(client, protocol, {
           includeCargo: needsCargoDemand(settings) || (!!isEnabled && enabled('cargo') && (allowWorld('startProduce') || usesOrders)),
           includeWeekOrder: needsCargoDemand(settings) || usesOrders || allowWorld('startProduce') || allowWorld('farm') || allowWorld('upgrade') });
         if (settings && ((allowWorld('startProduce') && (settings.factory.demandFirst || settings.alliance?.enabled &&
-          (settings.alliance.recruit && settings.alliance.recruitProduction || settings.guildShip?.enabled && settings.guildShip.produceMissing))) || settings.factory.speedUpSources.length > 0)) {
+          settings.alliance.recruit && settings.alliance.recruitProduction || settings.guildShip?.enabled && settings.guildShip.produceMissing)) || settings.factory.speedUpSources.length > 0)) {
           const extra = await surveyBaseAutomation(client, protocol, config, player, settings, survey, { ledger: usageLedger, enabled: () => !stop.aborted && client.connected !== false });
           extraDemand = baseDemands(extra, config, settings);
         }

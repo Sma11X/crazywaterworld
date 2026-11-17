@@ -747,6 +747,17 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     return { settings: current.settings.heroRaid, revision: current.revision, baseRevision: current.baseRevision };
   }
 
+  function guildShipSettingsView(session) {
+    const current = settingsView(session);
+    return {
+      settings: { guildShip: current.settings.guildShip },
+      catalog: { materials: current.catalog.materials },
+      rules: { numbers: Object.fromEntries(Object.entries(current.rules.numbers).filter(([key]) => key.startsWith('guildShip.'))) },
+      revision: current.revision,
+      baseRevision: current.baseRevision,
+    };
+  }
+
   function appointmentSettingsView(session) {
     const current = settingsView(session);
     return {
@@ -1690,7 +1701,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       scoped = found.session;
       if (req.method === 'POST' && found.session.syncingProduction
         && !['/api/accounts/pause', '/api/disconnect', '/api/loop/stop', '/api/stages/stop', '/api/pirates/advance/stop',
-          '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/activities/settings', '/api/appointments/settings', '/api/logs/clear',
+          '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/appointments/settings', '/api/logs/clear',
           '/api/lineup-presets/save', '/api/lineup-presets/delete', '/api/lineup-presets/bind'].includes(parsed.pathname)) {
         throw new Error('正在自动同步手动操作后的生产状态，请等待同步完成后操作');
       }
@@ -1868,6 +1879,34 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: current.revision }));
         emit(session, 'info', '超凡英雄活动设置已保存');
         json(heroRaidSettingsView(session));
+        return;
+      }
+      if (route === 'GET /api/guild-ship/settings') {
+        const { session } = scoped_(parsed);
+        json(guildShipSettingsView(session));
+        return;
+      }
+      if (route === 'POST /api/guild-ship/settings') {
+        const payload = jsonBody();
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+          || typeof payload.key !== 'string'
+          || Object.keys(payload).some(key => !['key', 'value', 'revision', 'baseRevision', 'confirm'].includes(key))) {
+          throw new SettingsError({ settings: '请选择有效的联盟商船活动设置' });
+        }
+        needConfirm(payload);
+        const { session } = scoped_(parsed);
+        const current = settingsView(session);
+        const fields = new Set(Object.keys(current.settings.guildShip).map(key => 'guildShip.' + key));
+        if (!fields.has(payload.key)) throw new SettingsError({ settings: '请选择有效的联盟商船活动设置' });
+        if (!Number.isSafeInteger(payload.revision) || payload.revision !== current.revision
+          || !current.revision && payload.baseRevision !== current.baseRevision) {
+          throw new SettingsError({ revision: '联盟商船活动设置已变化，请重新读取后再保存' });
+        }
+        const next = structuredClone(current.settings);
+        next.guildShip[payload.key.slice('guildShip.'.length)] = payload.value;
+        adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: current.revision }));
+        emit(session, 'info', '联盟商船活动设置已保存');
+        json(guildShipSettingsView(session));
         return;
       }
       if (route === 'GET /api/merchant/settings') {

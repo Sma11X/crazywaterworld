@@ -37,7 +37,7 @@ add('appointments.enabled','自动英雄委任','英雄',{help:'在资源与玩�
 add('trials.paid','试炼钻石扫荡','世界与挑战');
 add('trials.ads','试炼免广告扫荡','世界与挑战');
 for (const [key,label,group,gates] of [
- ['alliance.enabled','联盟自动化','世界与挑战',[]],['guildShip.enabled','联盟商船','世界与挑战',['alliance.enabled']],
+ ['alliance.enabled','联盟自动化','世界与挑战',[]],['guildShip.enabled','联盟商船','活动',[]],
  ['guildFort.enabled','联盟工事捐赠','世界与挑战',['alliance.enabled']],['silicon.enabled','硅矿自动化','世界与挑战',[]],
  ['heroRaid.enabled','超凡英雄活动','活动',[]],
 ]) add(key,label,group,{gates});
@@ -53,7 +53,7 @@ for (const task of automationTasks) {
 }
 // 挂机页仅展示现有模块入口；其余细项仍使用原字段，在游戏配置编辑。
 const idleModules = {
- 'alliance.enabled':['世界','alliance','联盟募兵与互助'], 'guildShip.enabled':['世界','guildShip','联盟商船'],
+ 'alliance.enabled':['世界','alliance','联盟募兵与互助'],
  'guildFort.enabled':['世界','guildFort','联盟工事'], 'silicon.enabled':['世界','silicon','硅矿'],
  'loop.world':['基地','building','基地运行'],
  'building.enabled':['基地','building','建筑'], 'factory.enabled':['基地','factory','工厂'],

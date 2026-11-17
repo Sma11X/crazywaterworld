@@ -96,7 +96,7 @@ export async function surveyBaseAutomation(client, protocol, config, player, set
   }
   let guildShipDemand = [];
   // 红船补料有独立开关，不依赖工厂“优先需求”或需求来源排序；仍由工厂总开关决定是否生产。
-  if (member && settings.alliance?.enabled && settings.guildShip?.enabled && settings.guildShip.produceMissing) {
+  if (member && settings.guildShip?.enabled && settings.guildShip.produceMissing) {
     try { guildShipDemand = guildShipDemands(await readGuildShips(client, protocol, config, { player, getSettings: () => settings, enabled }), settings, ledger); }
     catch (error) { notes.push('联盟商船补产：' + error.message); }
   }

@@ -3,6 +3,7 @@ export const activityAutomationFields = [
   { key: 'merchant.enabled', label: '海商王', taskKeys: ['merchantTrade', 'merchantRewards', 'tradeTasks'] },
   { key: 'weekOrder.enabled', label: '不差钱商人', taskKeys: ['weekOrderSubmit', 'weekOrderFinal'] },
   { key: 'heroRaid.enabled', label: '超凡英雄活动', taskKeys: ['heroRaid.enabled'] },
+  { key: 'guildShip.enabled', label: '联盟商船', taskKeys: ['guildShip.enabled'] },
   { key: 'activityAutomation.weekPass', label: '勇士战令', taskKeys: ['weekPass'] },
   { key: 'activityAutomation.weekCharge', label: '累计充值', taskKeys: ['weekCharge'] },
   { key: 'activityAutomation.weekHeroStar', label: '英雄升星', taskKeys: ['weekHeroStar'] },
@@ -43,6 +44,7 @@ export function activityAutomationControl(row) {
   const source = row.sourceId ?? row.id;
   const id = typeof source === 'string' ? source : '';
   if (id === 'merchant') return controls.get('merchant.enabled');
+  if (id === 'guildShip') return controls.get('guildShip.enabled');
   if (id === 'hero-raid' || id.startsWith('hero-raid:') || row.type === 'heroRaid') return controls.get('heroRaid.enabled');
   if (row.weekType != null) return controls.get(weeklyControls[row.weekType]) ?? null;
   if (id === 'rich-merchant') return controls.get('weekOrder.enabled');
@@ -57,7 +59,7 @@ export function activityAutomationControl(row) {
 function controlEnabled(settings, key) {
   const [group, field] = key.split('.');
   const value = settings?.[group]?.[field];
-  return key === 'heroRaid.enabled' ? value === true : value !== false;
+  return ['heroRaid.enabled', 'guildShip.enabled'].includes(key) ? value === true : value !== false;
 }
 
 export function weeklyActivityEnabled(settings, type) {

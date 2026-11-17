@@ -75,11 +75,11 @@ try {
       const s=defaultSettings();s[group][key]=['不存在的配置项'];assert.throws(()=>validateSettings(s,{catalog}),group+'.'+key);
     }
   });
-  await test('全部新增参数具有界面入口，超凡英雄归属活动页并保留子项',()=>{
+  await test('全部新增参数具有界面入口，超凡英雄与联盟商船归属活动页并保留子项',()=>{
     const src=fs.readFileSync(new URL('../src/settings-ui.js',import.meta.url),'utf8');
     const { groups, activityFields }=new Function(src.slice(0,src.indexOf('function configGet('))+'\nreturn {groups:configGroups,activityFields:activityOwnedSettings};')();
     const fields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
-    const s=defaultSettings();for(const group of ['alliance','guildShip','guildFort','silicon'])for(const key of Object.keys(s[group])){
+    const s=defaultSettings();for(const group of ['alliance','guildFort','silicon'])for(const key of Object.keys(s[group])){
       if(key==='fleets')for(let i=0;i<3;i++)for(const name of Object.keys(s.silicon.fleets[i])){
         // 直接编辑已建成的实际舰队，不再用三个可重分配的编号槽位冒充已解锁队伍。
         if(name==='id')assert(!fields.has('silicon.fleets.'+i+'.id'));
@@ -87,16 +87,18 @@ try {
       }
       else assert(fields.has(group+'.'+key),group+'.'+key);
     }
-    for(const key of Object.keys(s.heroRaid)){
-      assert(activityFields.has('heroRaid.'+key),'heroRaid.'+key);
-      assert(!fields.has('heroRaid.'+key),'超凡英雄移出游戏配置');
+    for(const group of ['heroRaid','guildShip'])for(const key of Object.keys(s[group])){
+      assert(activityFields.has(group+'.'+key),group+'.'+key);
+      assert(!fields.has(group+'.'+key),'活动移出游戏配置');
     }
     const heroControl=automationControls.find(c=>c.key==='heroRaid.enabled');
     assert(heroControl);assert(!heroControl.idleGroup);assert(!heroControl.configTarget);
     Object.assign(s.heroRaid,{enabled:true,challenge:true,orders:true,lottery:true,retryTimes:23});
     assert.deepEqual(setAutomationControl(s,'heroRaid.enabled',false).heroRaid,{...s.heroRaid,enabled:false});
     s.alliance.recruit=true;const off=setAutomationControl(s,'alliance.enabled',false);assert(off.alliance.recruit);
-    for(const key of ['alliance','guildShip','guildFort','silicon'])assert(automationControls.some(c=>c.key===key+'.enabled'&&c.configTarget));
+    for(const key of ['alliance','guildFort','silicon'])assert(automationControls.some(c=>c.key===key+'.enabled'&&c.configTarget));
+    const shipControl=automationControls.find(c=>c.key==='guildShip.enabled');
+    assert(shipControl);assert(!shipControl.idleGroup);assert(!shipControl.configTarget);assert.deepEqual(shipControl.gates,[]);
   });
   await test('刷新模式只在真实刷新窗口加速，每日用量与每程上限共同生效',()=>{
     const f=fixture(),radar={radar:[{cityId:20,specGoodsId:1002}]},stock=new Map([['海商王加速',10]]);

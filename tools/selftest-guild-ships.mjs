@@ -5,7 +5,7 @@ import path from 'node:path';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cw-guild-ships-'));process.env.CW_DATA_DIR=dir;
 const {loadProtocol}=await import('../src/proto.mjs');
 const {readGuildShips,serviceGuildShips,guildShipBatch,guildShipDemands,watchGuildShipPushes}=await import('../src/guild-ships.mjs');
-const {createUsageLedger}=await import('../src/automation-settings.mjs');
+const {createUsageLedger,hasExtraWork}=await import('../src/automation-settings.mjs');
 const {guildShipFixture,config}=await import('./fixtures/guild-ships.mjs');
 const {pendingOrderMaterialSpends}=await import('../src/order-reservations.mjs');
 const protocol=loadProtocol();let passed=0;
@@ -29,6 +29,58 @@ try{
  await check('未知结果重建账本/客户端、跨日仍不重试，确定未发送释放',async()=>{const f=fixture();f.state.writeHook=async()=>{throw new Error('超时');};assert((await run(f)).pending);assert.equal(f.ledger.snapshot().uncertain,1);f.options.ledger=createUsageLedger('qa',{file:f.file,now:()=>f.state.now*1000});f.advance(86400);assert((await run(f)).pending);assert.equal(f.state.writes.length,1);const g=fixture();g.state.writeHook=async()=>{throw Object.assign(new Error('未发送'),{notSent:true});};assert.equal((await run(g)).pending,false);assert.equal(g.ledger.snapshot().uncertain,0);assert.equal(pendingOrderMaterialSpends(g.player).length,0);});
  await check('未知但实际成功可由本人船位核销，不能用其他船员占位替代',async()=>{const f=fixture();f.state.writeHook=async(name,body)=>{f.state.ships[0].cabin[body.crewId-1].player={playerId:f.player.playerId};f.state.stock.橡胶圈-=5;throw new Error('响应丢失');};assert((await run(f)).pending);f.state.writeHook=async()=>{};await run(f);assert.equal(f.ledger.snapshot().uncertain,0);assert.equal(f.state.writes.length,1);assert.equal(pendingOrderMaterialSpends(f.player).length,0);const g=fixture();g.state.writeHook=async()=>{g.state.ships[0].cabin[0].player={playerId:'999'};throw new Error('响应丢失');};await run(g);assert((await run(g)).pending);});
  await check('回读未发送错误不取消已上船的持久预占',async()=>{const f=fixture();f.state.hook=async name=>{if(name==='GuildShipRequest'&&f.state.writes.length)throw Object.assign(new Error('读取未发送'),{notSent:true});};assert((await run(f)).pending);assert.equal(f.ledger.snapshot().uncertain,1);f.state.hook=async()=>{};await run(f);assert.equal(f.ledger.snapshot().uncertain,0);assert.equal(f.state.writes.length,1);});
- await check('基础生产调查独立读取红船缺料，关闭补料不保留旧本人船舱需求',async()=>{const {surveyBaseAutomation,baseDemands}=await import('../src/base-automation.mjs');const f=fixture();Object.assign(f.settings.factory,{demandFirst:false,demandPriority:[],speedUpSources:[],keepStock:0});f.settings.guildShip.produceMissing=true;f.state.stock.橡胶圈=0;const world={now:f.state.now,buildings:[],factories:[],stockCap:100};const snapshot=await surveyBaseAutomation(f.client,protocol,config,f.player,f.settings,world,{ledger:f.ledger,enabled:f.options.enabled});assert(baseDemands(snapshot,config,f.settings).some(row=>row.source==='guildShip'));f.settings.guildShip.produceMissing=false;const before=f.state.calls.length;const off=await surveyBaseAutomation(f.client,protocol,config,f.player,f.settings,world,{ledger:f.ledger,enabled:f.options.enabled});assert(!baseDemands(off,config,f.settings).some(row=>row.source==='guildShip'));assert(!f.state.calls.slice(before).some(row=>row.name==='GuildShipRequest'));});
+ await check('基础生产调查独立读取红船缺料，关闭补料不保留旧本人船舱需求',async()=>{const {surveyBaseAutomation,baseDemands}=await import('../src/base-automation.mjs');const f=fixture();Object.assign(f.settings.factory,{demandFirst:false,demandPriority:[],speedUpSources:[],keepStock:0});f.settings.alliance.enabled=false;f.settings.guildShip.produceMissing=true;f.state.stock.橡胶圈=0;const world={now:f.state.now,buildings:[],factories:[],stockCap:100};const snapshot=await surveyBaseAutomation(f.client,protocol,config,f.player,f.settings,world,{ledger:f.ledger,enabled:f.options.enabled});assert(baseDemands(snapshot,config,f.settings).some(row=>row.source==='guildShip'));f.settings.guildShip.produceMissing=false;const before=f.state.calls.length;const off=await surveyBaseAutomation(f.client,protocol,config,f.player,f.settings,world,{ledger:f.ledger,enabled:f.options.enabled});assert(!baseDemands(off,config,f.settings).some(row=>row.source==='guildShip'));assert(!f.state.calls.slice(before).some(row=>row.name==='GuildShipRequest'));});
+ await check('仅开启商船活动即为有效自动任务，不依赖挂机联盟总开关',async()=>{
+  const {automationControlView,idleAutomationControls}=await import('../src/automation-controls.mjs');
+  const f=fixture();
+  Object.assign(f.settings.loop,{world:false,dailies:false,tasks:false,heroes:false});
+  f.settings.alliance.enabled=false;f.settings.guildFort.enabled=false;f.settings.heroRaid.enabled=false;
+  f.settings.silicon.enabled=false;f.settings.progression.enabled=false;
+  assert(hasExtraWork(f.settings));
+  assert.deepEqual(automationControlView(f.settings).find(row=>row.key==='guildShip.enabled').blockedBy,[]);
+  assert(!idleAutomationControls.some(row=>row.key==='guildShip.enabled'));
+  assert.equal((await run(f)).ok,true);
+  f.settings.guildShip.enabled=false;assert.equal(hasExtraWork(f.settings),false);
+ });
+ await check('商船按服务端开始和结束时间门控，未开放不读写，到期自动参与',async()=>{
+  const f=fixture();f.settings.alliance.enabled=false;
+  const start=f.state.now+30,end=f.state.now+90;
+  watchGuildShipPushes(f.client);
+  f.client.emit('message',{name:'SCGuildShipActivity',body:{period:{period:3,startTime:start,endTime:end}}});
+  assert.match((await run(f)).reason,/未开放/);assert.equal(f.state.calls.length,0);
+  f.advance(30);assert.equal((await run(f)).ok,true);
+  f.advance(60);f.state.ships=[f.ship({id:2})];
+  assert.match((await run(f)).reason,/活动结束/);assert.equal(f.state.writes.length,1);
+ });
+ await check('完整挂机循环独立调度商船，精确到开放边界唤醒，关闭后不参与',async()=>{
+  const {runLoop}=await import('../src/loop.mjs');
+  for(const disable of [false,true]){
+   const f=fixture(),originalNow=Date.now;let wall=f.state.now*1000;
+   Date.now=()=>wall;f.advance(0);
+   try{
+    Object.assign(f.settings.loop,{world:false,tasks:false,dailies:false,heroes:false});
+    for(const key of Object.keys(f.settings.schedule))f.settings.schedule[key]=false;
+    f.settings.alliance.enabled=false;f.settings.guildFort.enabled=false;f.settings.heroRaid.enabled=false;
+    f.settings.silicon.enabled=false;f.settings.progression.enabled=false;f.settings.dailies.enabled=false;
+    const stop={aborted:false},sleeps=[],reports=[];
+    watchGuildShipPushes(f.client);
+    f.client.emit('message',{name:'SCGuildShipActivity',body:{period:{period:3,startTime:f.state.now+30,endTime:f.state.now+300}}});
+    await runLoop(f.client,protocol,{config,player:f.player,getSettings:()=>f.settings,usageLedger:f.ledger,
+     rounds:2,everyMs:3600000,allowMutate:true,isEnabled:()=>false,stop,
+     sleep:async ms=>{
+      sleeps.push(ms);assert(sleeps.length<3,'不能忙轮询');
+      if(sleeps.length===1){
+       assert.equal(ms,30000,'在活动开始时唤醒，无需等待主轮或旧重试时间');
+       assert.equal(f.state.writes.length,0);
+       wall+=ms;f.advance(ms/1000);
+       if(disable){f.settings.guildShip.enabled=false;f.client.emit('automationSettingsChanged');}
+      }else stop.aborted=true;
+     },onStep:row=>{reports.push(row);if(f.state.writes.length)stop.aborted=true;}});
+    assert.equal(f.state.writes.length,disable?0:1);
+    assert(!reports.some(row=>row.error&&!row.skipped),JSON.stringify(reports.filter(row=>row.error)));
+    assert.equal(f.client.listenerCount('automationSettingsChanged'),0);
+   }finally{Date.now=originalNow;}
+  }
+ });
  console.log(`联盟商船 ${passed} 项测试通过。`);
 }finally{fs.rmSync(dir,{recursive:true,force:true});}

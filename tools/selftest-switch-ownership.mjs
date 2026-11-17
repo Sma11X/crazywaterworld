@@ -17,8 +17,8 @@ const { activityAutomationFields } = await import('../src/activity-automation.mj
 const { idlePanel } = await import('../src/ui/dist/console.mjs');
 const script = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
 const definitions = script.slice(0, script.indexOf('function configGet('));
-const { staticGroups, merchantFields } = new Function(definitions + '\nreturn { staticGroups: configGroups, merchantFields: merchantActivityFields };')();
-const activityKeys = new Set([...merchantFields.map(field => field.key), ...activityAutomationFields.map(field => field.key),
+const { staticGroups, merchantFields, guildShipFields } = new Function(definitions + '\nreturn { staticGroups: configGroups, merchantFields: merchantActivityFields, guildShipFields: guildShipActivityFields };')();
+const activityKeys = new Set([...merchantFields.map(field => field.key), ...guildShipFields.map(field => field.key), ...activityAutomationFields.map(field => field.key),
   'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const renderStart = script.indexOf('function configRender()');
@@ -35,10 +35,10 @@ let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 
 try {
-  await check('挂机显示33个自动执行入口，全部字段在挂机、游戏配置或活动页有唯一编辑位置', () => {
+  await check('挂机显示32个自动执行入口，全部字段在挂机、游戏配置或活动页有唯一编辑位置', () => {
     const html = idlePanel(automationControls), rendered = [...html.matchAll(/data-auto-task="([^"]+)"/g)].map(match => match[1]);
     const idleKeys = idleAutomationControls.map(control => control.key), movedFields = idleAutomationControls.flatMap(control => control.fields);
-    assert.equal(idleKeys.length, 33, '超凡英雄统一在活动页编辑，其余紧凑模块和独立任务入口保留');
+    assert.equal(idleKeys.length, 32, '超凡英雄和联盟商船统一在活动页编辑，其余紧凑模块和独立任务入口保留');
     assert.equal(rendered.length, new Set(rendered).size, '每个入口只显示一次');
     assert.deepEqual(new Set(rendered), new Set(idleKeys));
     assert.deepEqual(new Set(settingsUiRules().controlFields), new Set(movedFields));

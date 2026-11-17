@@ -20,9 +20,16 @@ const savingHeroRaidSettings = new Set();
 let seaMerchantSettingsData = null, seaMerchantSettingsOwner = null, seaMerchantSettingsVersion = 0;
 let seaMerchantSettingsStatus = '';
 const savingSeaMerchantSettings = new Set();
+let guildShipSettingsData = null, guildShipSettingsOwner = null, guildShipSettingsVersion = 0;
+let guildShipSettingsStatus = '';
+const savingGuildShipSettings = new Set();
 let activityAutomationData = null, activityAutomationOwner = null, activityAutomationVersion = 0;
 let activityAutomationStatus = '';
 const savingActivityAutomation = new Set();
+
+function isGuildShipActivity(row) {
+  return (row.sourceId ?? row.id) === 'guildShip';
+}
 
 function isSeaMerchantActivity(row) {
   return (row.sourceId ?? row.id) === 'merchant';
@@ -85,6 +92,9 @@ function activityRows() {
   }
   if (current && !rows.some(isSeaMerchantActivity)) {
     rows.push({ id: 'merchant', name: '海商王', kind: 'weekly', settingsOnly: true, taskKeys: [] });
+  }
+  if (current && !rows.some(isGuildShipActivity)) {
+    rows.push({ id: 'guildShip', name: '联盟商船', kind: 'limited', settingsOnly: true, taskKeys: [] });
   }
   if (activitiesData && !activitiesData.catalogOnly) rows.push({ id: 'fish', name: '钓鱼图鉴', kind: 'permanent', taskKeys: ['fishBook'] });
   if (activitiesData?.vipLevel > 0) rows.push({ id: 'vip', name: 'VIP 每日奖励', kind: 'permanent', taskKeys: ['vipDaily'] });
@@ -226,13 +236,14 @@ function renderActivityDetail() {
   if (row.weekType === 5) renderMerchantSettings(box);
   if (isHeroRaidActivity(row)) renderHeroRaidSettings(box);
   if (isSeaMerchantActivity(row)) renderSeaMerchantSettings(box);
-  if (row.weekType !== 5 && !isHeroRaidActivity(row) && !isSeaMerchantActivity(row)) renderActivityAutomation(box, row);
+  if (isGuildShipActivity(row)) renderGuildShipSettings(box);
+  if (row.weekType !== 5 && !isHeroRaidActivity(row) && !isSeaMerchantActivity(row) && !isGuildShipActivity(row)) renderActivityAutomation(box, row);
   if (row.settingsOnly) return;
   if (!activitiesData) return;
   const active = activityLifecycle(row) === 'active' && !activitiesData.catalogOnly;
   if (!active) {
-    const messages = { upcoming: '活动尚未开放，已开启的自动任务将在开放后随挂机执行。',
-      ended: '本期活动已结束，自动任务已暂停。保存的开关用于后续开放期次。',
+    const messages = { upcoming: '活动尚未开放。',
+      ended: '本期活动已结束。',
       unknown: '活动开放状态待同步，连接后刷新可核对最新时间。' };
     box.appendChild(el('p', 'dim', messages[activityLifecycle(row)] || '连接后刷新活动状态。'));
     for (const task of (row.taskKeys || []).map(key => activitiesData.eventTasks.find(task => task.key === key)).filter(Boolean)) {
@@ -260,8 +271,7 @@ function renderActivityDetail() {
     if (row.weekType === 5 && task.key === 'weekOrderSubmit') continue;
     renderActivityTask(box, row, task);
   }
-  if (tasks.length && row.weekType !== 5 && !isSeaMerchantActivity(row)) box.appendChild(el('p', 'dim', '已开启的自动任务随挂机执行，并按活动开放时间自动启停。'));
-  else if (row.weekType !== 5 && row.id !== 'pirates' && !isHeroRaidActivity(row) && !isSeaMerchantActivity(row) && !row.automation) box.appendChild(el('p', 'dim', '当前活动暂未接入单次操作，可在游戏内参与。'));
+  if (!tasks.length && row.weekType !== 5 && row.id !== 'pirates' && !isHeroRaidActivity(row) && !isSeaMerchantActivity(row) && !isGuildShipActivity(row) && !row.automation) box.appendChild(el('p', 'dim', '当前活动暂未接入单次操作，可在游戏内参与。'));
   if (row.weekType === 5) renderActivityOrder();
 }
 
@@ -295,7 +305,7 @@ function renderActivityTask(box, row, task) {
     weekOrderFinal: '全部档位完成后领取最终奖励。',
     weekOrderSubmit: '材料备齐后提交一次商人订单。',
     vipDaily: '领取已达到 VIP 等级的每日免费奖励。',
-    campaignReports: '海盗战斗等奖励留在战报里，这里一键领取。账号挂机运行且本活动自动挂机与战报领取均开启时，收到新战报会自动领取。',
+    campaignReports: '领取海盗战斗等战报奖励。',
     openRankRewards: '领取各个开服冲榜已达标的积分奖励。排名奖励由游戏在活动结束后发放。',
   };
   if (descriptions[task.key]) item.appendChild(el('p', 'dim', descriptions[task.key]));
@@ -411,9 +421,6 @@ function renderActivityAutomation(box, row) {
     field.append(toggle, el('span', null, label));
     section.appendChild(field);
   }
-  section.appendChild(el('p', 'dim', row.kind === 'permanent'
-    ? '开启后随账号挂机执行已选项目。关闭后保留各项配置。'
-    : '开启后在账号挂机运行且活动开放时执行已选项目。关闭后保留各项配置，后续期次沿用保存的开关。'));
   const status = el('p', 'dim', savingActivityAutomation.has(account) ? '正在保存…' : activityAutomationStatus);
   status.setAttribute('role', 'status');
   section.appendChild(status);
@@ -495,7 +502,7 @@ function renderMerchantSettings(box) {
     row.append(toggle, el('span', null, label));
     section.appendChild(row);
   }
-  section.appendChild(el('p', 'dim', '开启自动挂机后，在账号挂机运行且活动开放时执行已选项目。关闭后保留各项配置。钻石补料受全局钻石开关、每日预算和保留量限制。'));
+  section.appendChild(el('p', 'dim', '钻石补料受全局钻石开关、每日预算和保留量限制。'));
   const status = el('p', 'dim', savingMerchantSettings.has(account) ? '正在保存…' : merchantSettingsStatus);
   status.setAttribute('role', 'status');
   section.appendChild(status);
@@ -560,7 +567,7 @@ function renderHeroRaidSettings(box) {
   const settings = heroRaidSettingsData.settings;
   const section = el('div', 'activity-settings');
   const fields = [
-    ['enabled', '开启自动挂机', '账号挂机运行、活动处于服务端开放时间内时，执行下方已开启的项目。关闭后暂停本活动，保留各项选择。'],
+    ['enabled', '开启自动挂机'],
     ['challenge', '自动挑战', '每轮挑战一个已解锁关卡或重试一次，连续战败次数跨轮累计。'],
     ['retryTimes', '战败重试次数', '本期同一关卡首次战败后的重试上限，0 表示战败即停止。'],
     ['orders', '自动完成订单', '材料足够时提交当前已解锁订单，缺料由工厂生产配置处理。'],
@@ -572,7 +579,7 @@ function renderHeroRaidSettings(box) {
     const control = component(key === 'retryTimes' ? 'ui-number' : 'ui-event-switch');
     control.dataset.heroRaidSetting = key;
     control.setAttribute('aria-label', label);
-    control.setAttribute('aria-describedby', 'hero-raid-help-' + key);
+    if (help) control.setAttribute('aria-describedby', 'hero-raid-help-' + key);
     control.disabled = savingHeroRaidSettings.has(account);
     if (key === 'retryTimes') {
       control.min = 0;
@@ -598,11 +605,13 @@ function renderHeroRaidSettings(box) {
       };
       row.append(control, el('span', null, label));
     }
-    const description = el('p', 'dim', help);
-    description.id = 'hero-raid-help-' + key;
-    section.append(row, description);
+    section.appendChild(row);
+    if (help) {
+      const description = el('p', 'dim', help);
+      description.id = 'hero-raid-help-' + key;
+      section.appendChild(description);
+    }
   }
-  section.appendChild(el('p', 'dim', '配置按账号自动保存，活动开放后随挂机执行。'));
   const status = el('p', 'dim', savingHeroRaidSettings.has(account) ? '正在保存…' : heroRaidSettingsStatus);
   status.setAttribute('role', 'status');
   section.appendChild(status);
@@ -664,10 +673,30 @@ function renderSeaMerchantSettings(box) {
     box.appendChild(el('p', 'dim', seaMerchantSettingsStatus || '正在读取海商王配置…'));
     return;
   }
-  const settings = seaMerchantSettingsData.settings;
+  renderActivitySettingsFields(box, { data: seaMerchantSettingsData, fields: merchantActivityFields,
+    saving: savingSeaMerchantSettings.has(account), statusText: seaMerchantSettingsStatus,
+    prefix: 'sea-merchant', dataset: 'seaMerchantSetting', save: saveSeaMerchantSetting, title: '海商王',
+    note: '购买指针和升级商船受全局钻石开关、每日预算和保留量限制。' });
+}
+
+function renderGuildShipSettings(box) {
+  const account = current;
+  if (guildShipSettingsOwner !== account || !guildShipSettingsData) {
+    box.appendChild(el('p', 'dim', guildShipSettingsStatus || '正在读取联盟商船配置…'));
+    return;
+  }
+  renderActivitySettingsFields(box, { data: guildShipSettingsData, fields: guildShipActivityFields,
+    saving: savingGuildShipSettings.has(account), statusText: guildShipSettingsStatus,
+    prefix: 'guild-ship', dataset: 'guildShipSetting', save: saveGuildShipSetting, title: '联盟商船',
+    note: '红船缺料备料需开启工厂生产，不购买材料。' });
+}
+
+function renderActivitySettingsFields(box, { data, fields, saving, statusText, prefix, dataset, save, title, note }) {
+  const account = current;
+  const settings = data.settings;
   const section = el('div', 'activity-settings');
   const activeFields = new Map();
-  for (const field of merchantActivityFields) {
+  for (const field of fields) {
     const [group, key] = field.key.split('.');
     const value = settings[group][key];
     const visible = (!field.parent || activeFields.get(field.parent)) && (!field.when || field.when(settings));
@@ -675,24 +704,27 @@ function renderSeaMerchantSettings(box) {
     if (!visible) continue;
     const row = el('div', 'config-row');
     row.dataset.kind = field.kind;
-    const id = 'sea-merchant-' + field.key.replaceAll('.', '-');
+    const id = prefix + '-' + field.key.replaceAll('.', '-');
     const name = el('div', 'config-label-line');
     const label = el('label', 'config-label', field.label);
     label.htmlFor = id;
     name.appendChild(label);
     if (field.help) name.appendChild(makeHelpTip(field.label, field.help));
     const controlBox = el('div', 'config-control');
-    const control = field.kind === 'switch' ? component('ui-event-switch') : el(field.kind === 'choice' ? 'select' : 'input');
+    const control = field.kind === 'multi' ? configMultiselect(field, id, {
+      catalog: data.catalog, read: () => settings[group][key], disabled: saving,
+      write: next => { if (current === account && !saving) return save(field.key, next); },
+    }) : field.kind === 'switch' ? component('ui-event-switch') : el(field.kind === 'choice' ? 'select' : 'input');
     control.id = id;
-    control.dataset.seaMerchantSetting = field.key;
+    control.dataset[dataset] = field.key;
     control.setAttribute('aria-label', field.label);
-    control.disabled = savingSeaMerchantSettings.has(account);
+    control.disabled = saving;
     if (field.kind === 'switch') {
       setTaskSwitch(control, value);
       control.onclick = () => {
-        if (current === account && !control.disabled) return saveSeaMerchantSetting(field.key, !value);
+        if (current === account && !control.disabled) return save(field.key, !value);
       };
-    } else {
+    } else if (field.kind !== 'multi') {
       if (field.kind === 'choice') {
         control.className = 'config-select';
         for (const [optionValue, text] of field.options) {
@@ -704,7 +736,7 @@ function renderSeaMerchantSettings(box) {
         control.type = field.kind;
         control.required = true;
       }
-      const rule = seaMerchantSettingsData.rules.numbers[field.key];
+      const rule = data.rules.numbers[field.key];
       if (field.kind === 'number') {
         control.min = rule.min;
         control.max = rule.max;
@@ -722,10 +754,10 @@ function renderSeaMerchantSettings(box) {
         if (field.kind === 'choice' && !field.options.some(([optionValue]) => optionValue === next)) error = field.label + '选项无效';
         if (error) {
           control.value = value;
-          reportError(new Error(error), '设置海商王');
+          reportError(new Error(error), '设置' + title);
           return;
         }
-        if (next !== value) return saveSeaMerchantSetting(field.key, next);
+        if (next !== value) return save(field.key, next);
       };
     }
     if (field.unit) {
@@ -736,8 +768,8 @@ function renderSeaMerchantSettings(box) {
     row.append(name, controlBox);
     section.appendChild(row);
   }
-  section.appendChild(el('p', 'dim', '配置按账号自动保存，随挂机按服务端开放时间自动启停。购买指针和升级商船受全局钻石开关、每日预算和保留量限制。'));
-  const status = el('p', 'dim', savingSeaMerchantSettings.has(account) ? '正在保存…' : seaMerchantSettingsStatus);
+  section.appendChild(el('p', 'dim', note));
+  const status = el('p', 'dim', saving ? '正在保存…' : statusText);
   status.setAttribute('role', 'status');
   section.appendChild(status);
   box.appendChild(section);
@@ -786,6 +818,55 @@ async function saveSeaMerchantSetting(key, value) {
       await refreshSeaMerchantSettings(account);
       if (account === current && seaMerchantSettingsOwner === account) {
         if (failure) seaMerchantSettingsStatus = failure.message;
+        renderActivityTabs();
+      }
+    }
+  }
+}
+
+async function refreshGuildShipSettings(account) {
+  if (!account || savingGuildShipSettings.has(account)) return;
+  const version = ++guildShipSettingsVersion;
+  try {
+    const data = await call('/api/guild-ship/settings?account=' + encodeURIComponent(account));
+    if (account !== current || guildShipSettingsOwner !== account || version !== guildShipSettingsVersion) return;
+    guildShipSettingsData = data;
+    guildShipSettingsStatus = '';
+  } catch {
+    if (account !== current || guildShipSettingsOwner !== account || version !== guildShipSettingsVersion) return;
+    guildShipSettingsStatus = '联盟商船配置读取失败，请刷新重试。';
+  }
+}
+
+async function saveGuildShipSetting(key, value) {
+  const account = current;
+  if (!account || guildShipSettingsOwner !== account || !guildShipSettingsData || savingGuildShipSettings.has(account)) return;
+  const version = ++guildShipSettingsVersion;
+  savingGuildShipSettings.add(account);
+  guildShipSettingsStatus = '';
+  renderActivityDetail();
+  let failure = null;
+  try {
+    if (!await configFlush()) throw new Error('配置尚未保存，请先处理配置页的提示');
+    if (account !== current || guildShipSettingsOwner !== account || version !== guildShipSettingsVersion) return;
+    const latest = await call('/api/guild-ship/settings?account=' + encodeURIComponent(account));
+    if (account !== current || guildShipSettingsOwner !== account || version !== guildShipSettingsVersion) return;
+    const saved = await call('/api/guild-ship/settings?account=' + encodeURIComponent(account), {
+      method: 'POST', body: JSON.stringify({ key, value, revision: latest.revision, baseRevision: latest.baseRevision, confirm: true }),
+    });
+    if (account === current && guildShipSettingsOwner === account && version === guildShipSettingsVersion) {
+      guildShipSettingsData = saved;
+      loopSettingsRevision = saved.revision;
+    }
+  } catch (error) {
+    failure = error;
+    if (account === current && guildShipSettingsOwner === account) reportError(error, '保存联盟商船配置');
+  } finally {
+    savingGuildShipSettings.delete(account);
+    if (account === current && guildShipSettingsOwner === account) {
+      await refreshGuildShipSettings(account);
+      if (account === current && guildShipSettingsOwner === account) {
+        if (failure) guildShipSettingsStatus = failure.message;
         renderActivityTabs();
       }
     }
@@ -862,6 +943,10 @@ async function refreshActivities() {
     seaMerchantSettingsData = null;
     seaMerchantSettingsStatus = '';
     ++seaMerchantSettingsVersion;
+    guildShipSettingsOwner = account;
+    guildShipSettingsData = null;
+    guildShipSettingsStatus = '';
+    ++guildShipSettingsVersion;
     activityAutomationOwner = account;
     activityAutomationData = null;
     activityAutomationStatus = '';
@@ -869,7 +954,7 @@ async function refreshActivities() {
   }
   if ($('tab-activities').classList.contains('hidden')) return;
   const status = $('activities-status');
-  await Promise.all([refreshMerchantSettings(account), refreshHeroRaidSettings(account), refreshSeaMerchantSettings(account), refreshActivityAutomation(account)]);
+  await Promise.all([refreshMerchantSettings(account), refreshHeroRaidSettings(account), refreshSeaMerchantSettings(account), refreshGuildShipSettings(account), refreshActivityAutomation(account)]);
   if (version !== activitiesVersion || account !== current) return;
   const unavailable = !account || snapshot.connected !== true || snapshot.paused || disconnected.has(account);
   if (unavailable) {

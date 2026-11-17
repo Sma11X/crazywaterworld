@@ -216,7 +216,7 @@ export function nativeTaskValues(settings, current) {
 }
 
 export function hasExtraWork(settings) {
-  if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
+  if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
   return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && (settings.museum.enabled || settings.museum.upgrade) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
     || (settings.progression?.enabled && (settings.progression.mainline || settings.progression.trials)) || settings.pirateHunt?.enabled);
 }

@@ -30,7 +30,7 @@ const configZeroHints={
  'trials.maxSingleCost':'0 表示禁止付费扫荡。','trials.dailyDiamondBudget':'0 表示禁止付费扫荡。'
 };
 const merchantActivityFields = [
-    configField('merchant.enabled','开启自动挂机','switch',{help:'账号挂机运行、活动处于服务端开放时间内时，执行下方已开启的项目。关闭后暂停本活动，保留各项配置。'}),
+    configField('merchant.enabled','开启自动挂机'),
     configField('schedule.merchantTrade','按整船收益自动走商','switch',{help:'周期活动。按批次成本、资金、舱位和本港库存规划多商品组合，比较整船预期收益选港；没有成员共享紧缺货也可选择已知普通港口，本港盈利出售不依赖商情。远端价格可能是估算，到港重新核价；临近结束停止无法及时卖出的采购。'}),
     configField('merchant.autoShareIntel','到港自动共享情报','switch',{help:'默认开启，仅随已开启的走商及所属分组执行。确认到港后共享本港尚未共享的紧缺情报，已有共享直接跳过；每日紧缺更新后重新检查，不按每次价格刷新重复发送。回读确认后才记为已共享，未知结果保留防重记录，失败不阻塞买卖；达到利润上限仍可共享当前港口。'}),
     configField('schedule.tradeTasks','领取海商王联盟任务奖励','switch',{help:'保留原联盟任务领奖开关，按本期联盟任务达成进度自动领取。'}),
@@ -62,6 +62,21 @@ const merchantActivityFields = [
     configField('merchant.upgradeDailyDiamondLimit','商船升级每日钻石上限','number',{ parent: 'merchant.autoUpgrade',unit:'钻石',when:d=>d.merchant?.autoUpgrade,help:'默认300，0禁止。与全局钻石预算和钻石保留量同时生效；未知结果保留占用，重连也不重复扣款。'}),
 ];
 for (const field of merchantActivityFields) activityOwnedSettings.add(field.key);
+const guildShipActivityFields = [
+    configField('guildShip.enabled','开启自动挂机'),configField('guildShip.crew','自动成为船员'),configField('guildShip.captain','自动成为船长'),
+    configField('guildShip.mode','上船策略','choice',{options:[['redFirst','红船优先'],['mediumLarge','中船和大船，优先红船'],['full','尽量满船（20分钟后补位）'],['small','仅小船'],['mediumSmall','中船和小船']],help:'按游戏当前赛季批次和实际航程预留名额。满船补位可临时尝试两种角色；禁用物料、库存预留和服务器名额始终有效。'}),
+    configField('guildShip.coinFilter','按水姆币奖励筛选'),
+    configField('guildShip.minCoinsSmall','小船最低水姆币','number',{ parent: 'guildShip.coinFilter',when:d=>d.guildShip.coinFilter}),
+    configField('guildShip.minCoinsMedium','中船最低水姆币','number',{ parent: 'guildShip.coinFilter',when:d=>d.guildShip.coinFilter}),
+    configField('guildShip.minCoinsLarge','红船最低水姆币','number',{ parent: 'guildShip.coinFilter',when:d=>d.guildShip.coinFilter,help:'0 表示不限制；这是船只奖励的最低数量，不是支付价格。'}),
+    configField('guildShip.rewardFilter','按奖励物品筛选'),
+    configField('guildShip.rewardItems','期望奖励物品','multi',{ parent: 'guildShip.rewardFilter',catalog:'materials',when:d=>d.guildShip.rewardFilter}),
+    configField('guildShip.disabledMaterials','禁止消耗物料','multi',{catalog:'materials'}),
+    configField('guildShip.produceMissing','红船缺料自动备料','switch',{help:'与工厂开关联动；只为符合当前策略的红船备料，不购买材料。'}),
+    configField('guildShip.redStartEnabled','指定红船申请船长时间'),
+    configField('guildShip.redStartTime','红船申请船长时间','time',{ parent: 'guildShip.redStartEnabled',when:d=>d.guildShip.redStartEnabled,help:'北京时间。只控制申请船长的最早时间，满员或准备结束后由游戏服务器开船。'}),
+];
+for (const field of guildShipActivityFields) activityOwnedSettings.add(field.key);
 const configGroups = [
   {id:'alliance',title:'联盟 · 募兵与互助',category:'world',fields:[
     configField('alliance.enabled','联盟自动化总开关','switch',{help:'开启后接管联盟募兵、互助和福利任务；关闭保留本组细项。原有独立任务开关仍可在原入口管理。'}),
@@ -82,20 +97,6 @@ const configGroups = [
     configField('alliance.autoTech','自动升级联盟科技'),
     configField('alliance.techIds','允许升级科技','multi',{ parent: 'alliance.autoTech',catalog:'guildTech',empty:'未选择，按可升级科技顺序检查',when:d=>d.alliance.autoTech}),
     configField('alliance.techDailyLimit','每日科技升级上限','number',{ parent: 'alliance.autoTech',when:d=>d.alliance.autoTech}),
-  ]},
-  {id:'guildShip',title:'联盟 · 商船',category:'world',fields:[
-    configField('guildShip.enabled','联盟商船总开关'),configField('guildShip.crew','自动成为船员'),configField('guildShip.captain','自动成为船长'),
-    configField('guildShip.mode','上船策略','choice',{options:[['redFirst','红船优先'],['mediumLarge','中船和大船，优先红船'],['full','尽量满船（20分钟后补位）'],['small','仅小船'],['mediumSmall','中船和小船']],help:'按游戏当前赛季批次和实际航程预留名额。满船补位可临时尝试两种角色；禁用物料、库存预留和服务器名额始终有效。'}),
-    configField('guildShip.coinFilter','按水姆币奖励筛选'),
-    configField('guildShip.minCoinsSmall','小船最低水姆币','number',{ parent: 'guildShip.coinFilter',when:d=>d.guildShip.coinFilter}),
-    configField('guildShip.minCoinsMedium','中船最低水姆币','number',{ parent: 'guildShip.coinFilter',when:d=>d.guildShip.coinFilter}),
-    configField('guildShip.minCoinsLarge','红船最低水姆币','number',{ parent: 'guildShip.coinFilter',when:d=>d.guildShip.coinFilter,help:'0 表示不限制；这是船只奖励的最低数量，不是支付价格。'}),
-    configField('guildShip.rewardFilter','按奖励物品筛选'),
-    configField('guildShip.rewardItems','期望奖励物品','multi',{ parent: 'guildShip.rewardFilter',catalog:'materials',when:d=>d.guildShip.rewardFilter}),
-    configField('guildShip.disabledMaterials','禁止消耗物料','multi',{catalog:'materials'}),
-    configField('guildShip.produceMissing','红船缺料自动备料','switch',{help:'与工厂开关联动；只为符合当前策略的红船备料，不购买材料。'}),
-    configField('guildShip.redStartEnabled','指定红船申请船长时间'),
-    configField('guildShip.redStartTime','红船申请船长时间','time',{ parent: 'guildShip.redStartEnabled',when:d=>d.guildShip.redStartEnabled,help:'北京时间。只控制申请船长的最早时间，满员或准备结束后由游戏服务器开船。'}),
   ]},
   {id:'guildFort',title:'联盟 · 工事捐赠',category:'world',fields:[
     configField('guildFort.enabled','自动捐赠工事','switch',{gates:['alliance.enabled'],help:'同时需要联盟自动化总开关。只捐现有库存；不购买、不兑换，不创建或拆除工事。'}),
@@ -1156,7 +1157,11 @@ function configCityWarRoles(spec, id) {
   root.refresh(); return root;
 }
 
-function configMultiselect(spec, id) {
+function configMultiselect(spec, id, options = {}) {
+  const read = options.read ?? (() => configGet(spec.key));
+  const write = options.write ?? (value => configSet(spec.key, value));
+  const catalog = options.catalog ?? configEditor.data.catalog;
+  const disabled = options.disabled === true;
   const root = el('details', 'config-multi'); root.id = id; root.setAttribute('aria-label', spec.label); root.tabIndex = -1;
   const summary = el('summary'); summary.setAttribute('aria-label', spec.label); root.append(summary);
   const panel = el('div', 'config-multi-panel');
@@ -1165,12 +1170,12 @@ function configMultiselect(spec, id) {
   const count = el('span'); let limit = 120;
   const more = configButton('显示更多选项', () => { limit += 120; paintList(); });
   const all = () => {
-    const options = [...(configEditor.data.catalog[spec.catalog] ?? [])];
-    if (spec.catalog!=='expeditionFleets') for (const value of configGet(spec.key)) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
+    const options = [...(catalog[spec.catalog] ?? [])];
+    if (spec.catalog!=='expeditionFleets') for (const value of read()) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
     return options;
   };
   function paintSummary() {
-    const options = all(), values = configGet(spec.key).filter(value=>spec.catalog!=='expeditionFleets'||options.some(item=>item.value===value));
+    const options = all(), values = read().filter(value=>spec.catalog!=='expeditionFleets'||options.some(item=>item.value===value));
     const names = values.map(value => options.find(item => item.value === value)?.label || value);
     summary.textContent = names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 项' : '') : spec.empty || '请选择';
   }
@@ -1178,13 +1183,14 @@ function configMultiselect(spec, id) {
     const oldScroll = list.scrollTop; clear(list);
     const query = search.value.trim().toLocaleLowerCase();
     const matches = all().filter(item => (item.label + ' ' + item.value).toLocaleLowerCase().includes(query));
-    const selected = new Set(configGet(spec.key).filter(value=>spec.catalog!=='expeditionFleets'||all().some(item=>item.value===value)));
+    const selected = new Set(read().filter(value=>spec.catalog!=='expeditionFleets'||all().some(item=>item.value===value)));
     for (const item of matches.slice(0, limit)) {
-      const label = el('label', 'config-option'); const input = el('input'); input.type = 'checkbox'; input.checked = selected.has(item.value);
+      const label = el('label', 'config-option'); const input = el('input'); input.type = 'checkbox'; input.checked = selected.has(item.value); input.disabled = disabled;
       input.onchange = () => {
-        const values = configGet(spec.key);
-        configSet(spec.key, input.checked ? [...values, item.value] : values.filter(value => value !== item.value));
-        paintSummary(); count.textContent = '已选 ' + configGet(spec.key).filter(value=>all().some(item=>item.value===value)).length + ' 项 · 匹配 ' + matches.length + ' 项';
+        if (disabled) return;
+        const values = read();
+        write(input.checked ? [...values, item.value] : values.filter(value => value !== item.value));
+        paintSummary(); count.textContent = '已选 ' + read().filter(value=>all().some(item=>item.value===value)).length + ' 项 · 匹配 ' + matches.length + ' 项';
       };
       label.append(input, el('span', '', item.label)); list.append(label);
     }
@@ -1198,7 +1204,8 @@ function configMultiselect(spec, id) {
     else root.classList.remove('open-up');
   };
   root.onkeydown = event => { if (event.key === 'Escape') { root.open = false; summary.focus(); event.stopPropagation(); } };
-  foot.append(count, configButton('清空选择', () => { configSet(spec.key, []); paintSummary(); paintList(); }));
+  const reset = configButton('清空选择', () => { if (!disabled) { write([]); paintSummary(); paintList(); } });
+  reset.disabled = disabled; foot.append(count, reset);
   panel.append(search, list, more, foot); root.append(panel); paintSummary(); return root;
 }
 
