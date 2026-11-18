@@ -45,9 +45,9 @@ const cases = [
   ['selftest-activity-automation.mjs'],
   ['selftest-weekly-activity-settings.mjs'],
   ['selftest-weekly-activity.mjs'],
-  ['selftest-weekly-activity-runner.mjs'],
   ['selftest-weekly-activity-loop.mjs'],
-  ['selftest-weekly-activity-ranking-http.mjs'],
+  // Weekly runner and ranking HTTP codec tests require the game protocol;
+  // they remain in test:weekly-activity, which is included by test:core.
   ['selftest-activity-config-http.mjs'],
   ['selftest-activity-catalog.mjs'],
   ['selftest-activity-availability.mjs'],
