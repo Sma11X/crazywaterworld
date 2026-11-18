@@ -689,6 +689,9 @@ test('服务端校验错误展开关闭及手动收起的祖先并定位输入',
   assert.equal(f.editor.draft.sample.enabled, false); assert.equal(f.editor.draft.sample.purchase, false);
   assert.equal(f.env.saves, 0);
   f.set('sample.budget', 1);
+  assert(visible(budget.node)); assert.equal(budget.error.hidden, false);
+  assert.equal(f.env.focused, budget.control, '重新校验前保留提示和当前焦点');
+  f.errors({ fields: {} }, { focus: false });
   assert(!visible(budget.node)); assert.equal(budget.error.hidden, true);
   assert.equal(f.env.focused, f.widget('sample.enabled').control);
   assert(visible(f.env.focused));

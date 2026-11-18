@@ -523,10 +523,12 @@ function configSet(key, value) {
   if (key === 'farm.autoPlant' && value) draft.farm.customPlant = false;
   if (key === 'farm.customPlant' && value) draft.farm.autoPlant = false;
   configEditor.draft = draft;
-  // 校验结果属于提交时的整份草稿；修改任意依赖后不能继续展示旧结果。
-  // 改回已保存值不会再次提交，也必须立即清理字段与提示条；版本冲突仍保留。
+  // 编辑后允许重新校验，但保留上次提示直到新结果返回，避免无关输入使错误区反复显隐。
+  // 改回已保存值不会再次提交，应立即清理；版本冲突仍保留。
   if (!configEditor.saveError?.fields?.revision) {
-    configClearErrors(); configEditor.saveError = null; configMessage('');
+    configEditor.saveError = null;
+    if (!configIsDirty()) configClearErrors();
+    if (!Object.keys(configEditor.errors).length) configMessage('');
   }
   configRenderUsage();
   if ($('config-preview-result').childNodes.length) clear($('config-preview-result')).append(el('p', 'config-help', '草稿已更改，请重新预览计划。'));
@@ -617,7 +619,7 @@ function configMessage(text, kind = 'info') {
   }
 }
 function configCompatibilityMessage(data) {
-  if (!configEditor.saveError || data.recovery?.required || configEditor.recoveryBlocked) configMessage(configEditor.saveError?.message || data.compatibility?.error || '', data.compatibility ? 'error' : 'info');
+  if ((!configEditor.saveError && !Object.keys(configEditor.errors).length) || data.recovery?.required || configEditor.recoveryBlocked) configMessage(configEditor.saveError?.message || data.compatibility?.error || '', data.compatibility ? 'error' : 'info');
 }
 function configBusy(value) {
   configEditor.busy = value;
@@ -1337,7 +1339,9 @@ async function configLoad(force = false) {
   if (!current) { configMessage('请先添加或选择账号。'); return; }
   const account = current, version = ++configEditor.serial, original = JSON.stringify(configEditor.draft);
   if (force) configCancelSaveTimer();
-  configEditor.loading = true; configBusy(true); configMessage(''); configUpdateState();
+  configEditor.loading = true; configBusy(true);
+  if (!Object.keys(configEditor.errors).length) configMessage('');
+  configUpdateState();
   try {
     const [data,runtime]=await Promise.all([call('/api/settings?fleets=1'),call('/api/loop').catch(()=>null)]);
     if (configPageStale() || account !== current || version !== configEditor.serial) return;
@@ -1793,7 +1797,9 @@ function configSave(event, { automatic = false } = {}) {
   const account = current, serial = configEditor.serial, text = JSON.stringify(configEditor.draft);
   const active = () => account === current && account === configEditor.owner && serial === configEditor.serial;
   configEditor.saving = true; configEditor.saveError = null;
-  configBusy(true); configMessage(''); configUpdateState();
+  configBusy(true);
+  if (!Object.keys(configEditor.errors).length) configMessage('');
+  configUpdateState();
   const job = (async () => { try {
     const data = await call('/api/settings', { method: 'POST', body: JSON.stringify({ settings: JSON.parse(text), revision: configEditor.data.revision, baseRevision: configEditor.data.baseRevision, recoveryToken: configEditor.data.recoveryToken }) });
     if (!active() || configPageStale()) return false;
@@ -1802,7 +1808,8 @@ function configSave(event, { automatic = false } = {}) {
     const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
     configEditor.data = data; configEditor.baseline = structuredClone(data.settings);
     configEditor.saveRetries = 0; loopSettingsRevision = data.revision;
-    configClearErrors();
+    // 在途请求成功只确认它提交的草稿；后续编辑仍需等自己的校验结果。
+    if (!edited || !configIsDirty()) configClearErrors();
     if (!edited) {
       configEditor.draft=structuredClone(data.settings);configEditor.errors={};
       if (!normalized) configUpdateVisibility();

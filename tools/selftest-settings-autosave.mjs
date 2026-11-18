@@ -102,6 +102,7 @@ function fixture({ catalog = {} } = {}) {
       revision: () => loopSettingsRevision,
       setLoopRevision(revision) { loopSettingsRevision = revision; },
       intervalSaved: configIntervalSaved,
+      compatibilityMessage: configCompatibilityMessage,
       intervalSaves: loopIntervalSaves,
       change(next) { current = next; configAccountChanged(); },
     };
@@ -538,6 +539,104 @@ await test('跨字段校验失败不会循环提交，修正后自动重试', as
   assert.equal(f.posts().length, 2); assert.equal(f.view('a').settings.treasure.enabled, true); assert(!f.dirty());
 });
 
+function followValidationView(f) {
+  const key = 'treasure.followNames', attributes = new Map(), error = { hidden: true };
+  let scrolls = 0;
+  const control = { setAttribute: (name, value) => attributes.set(name, value), removeAttribute: name => attributes.delete(name),
+    focus() { f.env.focuses++; } };
+  f.editor.widgets.set(key, { row: { querySelectorAll: () => [], scrollIntoView() { scrolls++; } }, control, error,
+    clearError() { error.hidden = true; control.removeAttribute('aria-invalid'); } });
+  f.node('config-message').scrollIntoView = () => { scrolls++; };
+  return {
+    visible(label) {
+      assert(f.editor.errors[key], label + '：跟随名单错误仍保留');
+      assert.equal(error.hidden, false, label + '：字段提示持续显示');
+      assert.equal(attributes.get('aria-invalid'), 'true', label);
+      assert.equal(f.node('config-message').hidden, false, label + '：顶部错误提示持续显示');
+      assert.equal(f.node('config-message').dataset.kind, 'error', label);
+      assert.equal(f.env.focuses, 0, label + '：不抢焦点');
+      assert.equal(scrolls, 0, label + '：不滚动页面');
+    },
+    cleared() {
+      assert.deepEqual(f.editor.errors, {});
+      assert.equal(error.hidden, true);
+      assert.equal(attributes.has('aria-invalid'), false);
+      assert.equal(f.node('config-message').hidden, true);
+      assert.equal(f.env.focuses, 0);
+      assert.equal(scrolls, 0);
+    },
+  };
+}
+
+await test('跟随名单仍为空时，连续修改其他配置及等待失败响应都不闪烁错误提示', async () => {
+  const f = fixture(); await f.load(); const ui = followValidationView(f), renders = f.env.renders;
+  f.set('treasure.follow', true); await f.tick(600); ui.visible('首次校验失败');
+  const message = f.node('config-message').textContent;
+  for (const [key, value] of [['treasure.repeatAttack', true], ['treasure.followMode', 'eachTime'],
+    ['factory.keepStock', 61], ['treasure.onlyTenThousand', true]]) {
+    const gate = deferred(); f.env.beforePost = () => gate.promise;
+    const priorPosts = f.posts().length;
+    f.set(key, value); ui.visible(key + ' 编辑后');
+    f.compatibilityMessage(f.editor.data); ui.visible(key + ' 后台状态刷新后');
+    if (key === 'treasure.repeatAttack') {
+      const poll = deferred(); f.env.onGet = () => poll.promise;
+      const loading = f.load(); ui.visible('保留草稿的后台配置读取中');
+      f.env.onGet = null; poll.resolve(); await loading; ui.visible('后台配置读取完成');
+    }
+    await f.tick(599); ui.visible(key + ' 等待自动保存');
+    assert.equal(f.posts().length, priorPosts);
+    await f.tick(1); assert(f.editor.saving); ui.visible(key + ' 请求进行中');
+    assert.equal(f.posts().length, priorPosts + 1);
+    assert.equal(f.node('config-message').textContent, message);
+    f.env.beforePost = null; gate.resolve(); await settle(); ui.visible(key + ' 再次校验失败');
+  }
+  assert.equal(f.env.renders, renders);
+  assert.equal(f.view('a').settings.treasure.follow, false, '无效草稿不落盘');
+  await f.tick(10000); assert.equal(f.posts().length, 5, '失败后等待输入，不循环请求');
+});
+
+await test('在失败请求中补齐昵称、角色ID或关闭跟随后，旧错误保留至新校验成功且不阻塞保存', async () => {
+  for (const [key, value] of [['treasure.followNames', ['海上的风']], ['treasure.followPlayerIds', ['9007199254740999']], ['treasure.follow', false]]) {
+    const f = fixture(); await f.load(); const ui = followValidationView(f);
+    f.set('treasure.follow', true); await f.tick(600); ui.visible('首次校验失败');
+    const failed = deferred(); f.env.beforePost = () => failed.promise;
+    f.set('factory.keepStock', 62); await f.tick(600); assert(f.editor.saving); ui.visible('旧草稿校验进行中');
+    f.set(key, value); assert(f.dirty(), '保留其他修改，不能通过还原基线绕过验证');
+    ui.visible('修正后等待响应');
+    const corrected = deferred(); f.env.beforePost = () => corrected.promise;
+    failed.resolve(); await settle();
+    assert.equal(f.editor.saveError, null, '迟到的旧草稿失败不能阻止新草稿自动保存');
+    ui.visible('忽略旧失败结果');
+    await f.tick(600); assert(f.editor.saving); ui.visible('新草稿校验进行中');
+    assert.equal(f.posts().length, 3);
+    f.env.beforePost = null; corrected.resolve(); await settle();
+    assert(!f.dirty()); ui.cleared();
+    assert.equal(f.editor.saveError, null);
+    assert.deepEqual(f.view('a').settings, validateSettings(f.editor.draft));
+    await f.tick(10000); assert.equal(f.posts().length, 3);
+  }
+});
+
+await test('旧有效草稿保存成功时，仍有错误的新草稿保持提示直至重新校验或还原已保存值', async () => {
+  const f = fixture(); await f.load(); const ui = followValidationView(f);
+  f.set('treasure.follow', true); await f.tick(600); ui.visible('首次校验失败');
+  const valid = deferred(); f.env.onPost = () => valid.promise;
+  f.set('treasure.followNames', ['海上的风']); await f.tick(600);
+  assert(f.editor.saving); assert.deepEqual(f.view('a').settings.treasure.followNames, ['海上的风']);
+  ui.visible('有效草稿等待保存响应');
+  f.set('treasure.followNames', []); ui.visible('等待期间再次清空名单');
+  const invalid = deferred(); f.env.beforePost = () => invalid.promise;
+  f.env.onPost = null; valid.resolve(); await settle();
+  assert(f.dirty()); ui.visible('较早的成功响应不能清除当前错误');
+  f.compatibilityMessage(f.editor.data); ui.visible('成功响应后的后台状态刷新');
+  await f.tick(600); assert(f.editor.saving); ui.visible('最新无效草稿等待校验');
+  assert.equal(f.posts().length, 3);
+  f.env.beforePost = null; invalid.resolve(); await settle(); ui.visible('最新草稿校验失败');
+  f.set('treasure.followNames', ['海上的风']);
+  assert(!f.dirty(), '恢复为服务器最新保存的基线'); ui.cleared();
+  await f.tick(10000); assert.equal(f.posts().length, 3, '恢复基线无需另发请求');
+});
+
 const conditionalCases = [
   ['进攻目标来源', {'cityWar.fleetIds':['1远征船'],'cityWar.enabled':true}, 'cityWar.targetMode', 'selected', 'cityWar.cityRefs'],
   ['防守目标来源', {'cityWar.fleetIds':['1远征船'],'cityWar.defenceFleetIds':['1远征船'],'cityWar.enabled':true}, 'cityWar.defenceTargetMode', 'selected', 'cityWar.defenceCityRefs'],
@@ -812,8 +911,9 @@ await test('攻守目标控件独立显示、校验和自动保存，刷新及�
   assert.equal(widget('defenceCityRefs').error.hidden, false);
   assert.deepEqual(f.view('a').settings.cityWar.cityRefs, []);
   checkCity('defenceCityRefs', '城市乙');
-  assert.equal(widget('defenceCityRefs').error.hidden, true);
+  assert.equal(widget('defenceCityRefs').error.hidden, false, '继续显示校验错误，等待修改后的草稿通过校验');
   await f.tick(600);
+  assert.equal(widget('defenceCityRefs').error.hidden, true);
   const saved = f.view('a').settings.cityWar;
   assert.equal(saved.targetMode, 'selected'); assert.equal(saved.defenceTargetMode, 'selected');
   assert.equal(saved.targetPriority, 'original'); assert.equal(saved.defenceTargetPriority, 'fewestAllied');
