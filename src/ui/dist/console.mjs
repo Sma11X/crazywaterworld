@@ -163,7 +163,7 @@ function HelpTip({ title, children }) {
 // src/ui/layout.tsx
 import * as React9 from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Boxes, Building2, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react";
+import { Boxes, Building2, CalendarDays, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react";
 
 // src/ui/badge.tsx
 import * as React5 from "react";
@@ -337,7 +337,8 @@ var tabs = [
   ["manual", "\u5EFA\u7B51\u4E00\u89C8", "\u5EFA\u7B51", Building2],
   ["stages", "\u6311\u6218", "\u6311\u6218", Swords],
   ["lineups", "\u9635\u5BB9", "\u9635\u5BB9", UsersRound],
-  ["resources", "\u8D44\u6E90\u4E0E\u73A9\u6CD5", "\u8D44\u6E90", Boxes],
+  ["activities", "\u6D3B\u52A8", "\u6D3B\u52A8", CalendarDays],
+  ["resources", "\u6742\u9879", "\u6742\u9879", Boxes],
   ["account", "\u8D26\u53F7", "\u8D26\u53F7", CircleUserRound],
   ["login-settings", "\u767B\u5F55\u8BBE\u7F6E", "\u767B\u5F55", LogIn]
 ];

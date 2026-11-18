@@ -633,7 +633,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 
 ### 13.4 网页控制台
 
-- 控制台主导航包括总览、挂机配置、建筑一览、挑战、阵容、资源与玩法、账号和登录设置。阵容页提供“我的阵容”和“推荐阵容”。资源与玩法下分联盟、仓库、英雄与装备、活动、礼包兑换，默认打开联盟。活动按限时、周期、常驻分类。运行日志显示操作结果和跳过原因，可筛选警告与错误。
+- 控制台主导航包括总览、挂机配置、建筑一览、挑战、阵容、活动、杂项、账号和登录设置。阵容页提供“我的阵容”和“推荐阵容”。杂项下分联盟、仓库、英雄与装备、礼包兑换，默认打开联盟。活动按限时、周期、常驻分类。运行日志显示操作结果和跳过原因，可筛选警告与错误。
 - 账号页支持从电脑微信或抖音添加账号，以及导出账号。开始采集前有勾选和倒计时确认。页头分别提供挂机与托管控制，**暂停挂机** 停止自动循环并保留连接，控制台手动操作继续可用。**暂停托管** 停止任务并断开连接，退出游戏后可点击 **恢复托管** 按已保存的轮数和间隔运行。
 - 手动交居民订单、装备强化、试炼挑战和海盗出征等操作按账号排队，点击后可在主日志查看结果。
 - 挂机页展示模块开关，旁边的“配置”跳到游戏配置对应项目；挂机配置分为基地、世界、英雄、藏品、装备、日常与活动六类。保存只更新当前账号设置，不会启动挂机；已在运行的挂机在后续检查时使用新设置。首杀连续推进、主线自动挑战和联盟互助仍需单独启动。
@@ -677,7 +677,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 | 走江踏浪 | `SnowballDetailRequest` 读积分和档位，`SnowballClaimGiftRequest` 领免费礼包，`SnowballClaimRewardRequest` 领达标档位。不开局，不买体力。 |
 | 抽奖 | `SpinCompassWheelRequest{num:1}` 只在 `CompassWheelInfoResponse.cost` 是抽奖券时发送，`WeekLotteryPrizeRequest{times:1}` 只在持有周转盘币时发送。各开关默认关闭。罗盘张数按账号设置，默认 10 张，周抽奖每轮最多 10 次。 |
 | 周活动奖励 | 累充 `WeekChargeGotRewardRequest`、升星 `WeekHeroStarGotRewardRequest`、芯片 `WeekChipGotFreeRequest`、翻牌 `GotUniqueLotteryFreeRequest`。 |
-| 不差钱商人 | 客户端通过 `ACTIVITY_EXCHANGE` 独立入口打开 `ActivityExchangePop`，活动名来自 `WeekOrderPeriodCfg.activeName`，订单使用内部 `WeekOrder` 协议。资源与玩法 → 活动 → 不差钱商人统一展示状态、手动操作与三项自动配置，修改后按账号自动保存，未开放或未连接时也可编辑。原字段 `schedule.weekOrderSubmit` 控制自动完成，`weekOrder.allowDiamonds` 控制缺料钻石补齐，两项默认关闭；`schedule.weekOrderFinal` 控制最终奖励。已有账号选择继续使用。补料按 `ItemPriceCfg.rubyPrice` 报价，通过 `CommonBuyGoodsRequest` 购买当前缺口，确认库存后调用 `FinishWeekOrderRequest`，最终奖励使用 `WeekOrderGotFinalRequest`。消费共用全局钻石预算、保留量及手动订单持久防重记录。 |
+| 不差钱商人 | 客户端通过 `ACTIVITY_EXCHANGE` 独立入口打开 `ActivityExchangePop`，活动名来自 `WeekOrderPeriodCfg.activeName`，订单使用内部 `WeekOrder` 协议。活动 → 不差钱商人统一展示状态、手动操作与三项自动配置，修改后按账号自动保存，未开放或未连接时也可编辑。原字段 `schedule.weekOrderSubmit` 控制自动完成，`weekOrder.allowDiamonds` 控制缺料钻石补齐，两项默认关闭；`schedule.weekOrderFinal` 控制最终奖励。已有账号选择继续使用。补料按 `ItemPriceCfg.rubyPrice` 报价，通过 `CommonBuyGoodsRequest` 购买当前缺口，确认库存后调用 `FinishWeekOrderRequest`，最终奖励使用 `WeekOrderGotFinalRequest`。消费共用全局钻石预算、保留量及手动订单持久防重记录。 |
 | VIP 每日奖励 | `GotVipDailyRewardRequest{vipLevel}`，只领不高于当前等级且未领的档位。 |
 | 战报奖励 | 奖励留在 `CampaignReport`（`rewards`、`received`）里，不会自动到账。从 `CampaignReportsRequest{pageNo:0}` 开始完整分页，列表不完整时不发领取。对确有奖励且 `received:false` 的战报发送 `QuickGotCampaignReportRequest{all:true}`，必须收到含实际奖励的通用 `GotRewardResponse`，并完整重读确认本批每个精确 UID 均为 `received:true`，才记录成功。`SCNewCampaignReport` 推送新战报。 |
 | 开服冲榜 | `OpenRankType`：1 订单、2 闯关、3 剿匪、4 战力。`OpenRankInfoRequest{type}` 返回 `progress`、`gotRewardId`、`leaderBoard`，`GotOpenRankRewardRequest{type, id: 配置 score}` 领积分奖励。排名奖励含联盟礼包，由服务端结算。协议里没有海盗组队或集结，"多人"体现在共享地图目标和全服排名。 |

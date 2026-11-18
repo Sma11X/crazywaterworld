@@ -44,8 +44,8 @@ export const PAGE = `<!doctype html>
 <body>
 ${chrome()}
 <div class="deck"><main>
-  <nav id="resource-tabs" class="resource-tabs" aria-label="资源与玩法分类" hidden>
-    <button type="button" data-resource-tab="guild">联盟</button><button type="button" data-resource-tab="inventory">仓库</button><button type="button" data-resource-tab="heroes">英雄与装备</button><button type="button" data-resource-tab="activities">活动</button><button type="button" data-resource-tab="giftcodes">礼包兑换</button>
+  <nav id="resource-tabs" class="resource-tabs" aria-label="杂项分类" hidden>
+    <button type="button" data-resource-tab="guild">联盟</button><button type="button" data-resource-tab="inventory">仓库</button><button type="button" data-resource-tab="heroes">英雄与装备</button><button type="button" data-resource-tab="giftcodes">礼包兑换</button>
   </nav>
   <section id="tab-overview">
     ${overviewPage()}
@@ -2157,7 +2157,8 @@ async function boot() {
   // 显式链接优先，否则恢复当前历史记录的页面；配置分组由 configApplyHash 恢复。
   const savedView = history.state?.consoleView;
   const initialTab = location.hash.startsWith('#config-group-') ? 'settings'
-    : location.hash === '#pirate-first-kill' ? 'stages' : location.hash === '#journal' ? 'overview' : savedView?.tab;
+    : location.hash === '#pirate-first-kill' ? 'stages' : location.hash === '#journal' ? 'overview'
+    : savedView?.tab === 'resources' && savedView.resource === 'activities' ? 'activities' : savedView?.tab;
   const button = [...document.querySelectorAll('#tabs button')].find(tab => tab.dataset.tab === initialTab)
     || document.querySelector('#tabs [data-tab="overview"]');
   const resource = [...document.querySelectorAll('[data-resource-tab]')].some(tab => tab.dataset.resourceTab === savedView?.resource)

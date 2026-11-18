@@ -38,7 +38,7 @@ add('antique.enabled','藏品自动养成','藏品',{
  configLabel:'藏品养成总开关', configuredFields:['antique.activate','antique.star','antique.master','antique.suit'],
  help:'开启后，挂机按下方已选动作培养藏品。关闭会暂停藏品养成，仍可编辑各项设置。养成只使用已有资源。',
 });
-add('appointments.enabled','自动英雄委任','英雄',{help:'在资源与玩法 → 英雄与装备中设置开关和委任优先级，挂机按保存顺序调用游戏一键委任。'});
+add('appointments.enabled','自动英雄委任','英雄',{help:'在杂项 → 英雄与装备中设置开关和委任优先级，挂机按保存顺序调用游戏一键委任。'});
 add('trials.paid','试炼钻石扫荡','世界与挑战');
 add('trials.ads','试炼免广告扫荡','世界与挑战');
 for (const [key,label,group,gates] of [
