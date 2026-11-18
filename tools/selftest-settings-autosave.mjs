@@ -839,31 +839,4 @@ await test('配置曾打开后经真实管理保存流程新增、改名和删�
   assert.equal(f.editor.saveError, null);
 });
 
-await test('管理自定义阵容入口等候全部在途草稿保存后再打开阵容页', async () => {
-  const f = fixture(); await f.load();
-  const gate = deferred(), actions = [], host = { append(button) { this.button = button; } };
-  const createLink = newStateFunction('env', `
-    const current = 'a', group = { id: 'progression' }, section = env.host;
-    const el = () => ({}), configFlush = env.flush;
-    const tab = { dataset: { tab: 'lineups' }, focus() {} };
-    const document = { querySelector: selector => selector === '#tabs [data-tab="lineups"]' ? tab : null };
-    const window = { scrollTo() {} };
-    const activateConsolePage = button => env.actions.push({ tab: button.dataset.tab, revision: env.revision() });
-    ${section("if (group.id === 'progression') {", 'groupHost.append(section);')}
-    return section.button;
-  `);
-  const button = createLink({ host, actions, flush: f.flush, revision: () => f.view('a').revision });
-  f.env.onPost = () => gate.promise;
-  f.set('factory.keepStock', 127);
-  const opening = button.onclick(); await settle();
-  assert.deepEqual(actions, []);
-  f.set('factory.keepStock', 128);
-  f.env.onPost = null; gate.resolve();
-  await opening;
-  assert.deepEqual(actions, [{ tab: 'lineups', revision: f.view('a').revision }]);
-  assert.equal(f.posts().length, 2);
-  assert.equal(f.view('a').settings.factory.keepStock, 128);
-  assert.equal(f.dirty(), false);
-});
-
 console.log('配置自动保存专项 ' + passed + '/' + passed + ' 通过');

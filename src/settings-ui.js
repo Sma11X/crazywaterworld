@@ -998,18 +998,6 @@ function configRender() {
       }
       const fields = group.fields.map(spec => ({ ...spec, category, groupId: group.id }));
       configRenderFields(fields, section);
-      if (group.id === 'progression') {
-        const lineups = el('button', 'config-small-button', '管理自定义阵容'); lineups.type = 'button';
-        lineups.onclick = async () => {
-          const account = current;
-          if (!await configFlush() || account !== current) return;
-          const page = document.querySelector('#tabs [data-tab="lineups"]');
-          activateConsolePage(page);
-          page.focus({ preventScroll: true });
-          window.scrollTo(0, 0);
-        };
-        section.append(lineups);
-      }
       groupHost.append(section);
     }
     root.append(panel);

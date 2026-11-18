@@ -420,7 +420,7 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   assert.equal(f.env.saves,0,'展开收起不保存配置');
 });
 
-test('自动挑战阵容位于推关与试炼对应开关下，挂机迁移后仍可配置并保留管理入口', () => {
+test('自动挑战阵容位于推关与试炼对应开关下，仍可配置且不显示管理入口', () => {
   const f = fixture({ navigation: true });
   const fields = f.groups.find(group => group.id === 'progression').fields;
   const mainline = fields.findIndex(field => field.key === 'progression.mainline');
@@ -438,7 +438,7 @@ test('自动挑战阵容位于推关与试炼对应开关下，挂机迁移后�
     assert(section.contains(f.widget(key).node));
     assert(visible(f.widget(key).node));
   }
-  assert(section.querySelectorAll('button').some(button => button.textContent === '管理自定义阵容'));
+  assert(!section.querySelectorAll('button').some(button => button.textContent === '管理自定义阵容'));
   assert.equal(f.env.saves, 0);
 });
 
