@@ -1,7 +1,8 @@
 import { displayMaterial } from './config.mjs';
 import { normalize } from './worlds.mjs';
 
-export async function claimHeroShowRewards(client, config, report) {
+export async function claimHeroShowRewards(client, config, report, heroIds, enabled = () => true) {
+  if (!heroIds?.length || !enabled()) return;
   const catalog = config?.tables?.HeroAbilityShowCfg?.data;
   if (!catalog) throw new Error('缺少英雄技能展示奖励配置');
 
@@ -12,7 +13,7 @@ export async function claimHeroShowRewards(client, config, report) {
   const names = new Map((config.tables.HeroCfg?.data ?? []).map(row => [row.id, row.name]));
   const owned = new Map((roster.heroes ?? []).map(hero => [hero.heroId, hero.showName || names.get(hero.heroId) || hero.heroId]));
   for (const [id, name] of owned) {
-    if (!eligible.has(id) || claimed.has(id)) continue;
+    if (!heroIds.includes(id) || !eligible.has(id) || claimed.has(id) || !enabled()) continue;
     const label = name + ' · 技能展示奖励';
     let reply, failure;
     try {

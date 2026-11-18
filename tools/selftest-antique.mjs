@@ -20,14 +20,20 @@ const check = async (name, work) => {
   catch (error) { checks.push({ name, passed: false, error: error.stack }); console.error('失败：' + name + '\n' + error.stack); }
 };
 
-await check('设置默认关闭、导入兼容和动作/品质校验', () => {
+await check('设置默认关闭、导入兼容、总开关独立保存和品质校验', async () => {
   const old = validateSettings(antiqueSettings());
   delete old.antique;
   const imported = importAutomationSettings({ format: 'crazywaterword-automation', version: 1, settings: old });
   assert.equal(imported.antique.enabled, false);
   assert.equal(imported.antique.dailyGoldLimit, 20000);
   const idle = antiqueSettings(); idle.antique.enabled = true; idle.antique.activate = false; idle.antique.star = false; idle.antique.master = false; idle.antique.suit = false;
-  assert.throws(() => validateSettings(idle), /至少开启/);
+  const saved = validateSettings(idle), f = antiqueFixture();
+  assert.equal(saved.antique.enabled, true);
+  assert.deepEqual((await run(f, saved)).results, []);
+  const paused = antiqueSettings(); paused.antique.enabled = false;
+  assert.deepEqual((await run(f, paused)).results, []);
+  assert.deepEqual(f.client.reads, []);
+  assert.deepEqual(f.client.writes, []);
   const bad = antiqueSettings(); bad.antique.activateQualities = [];
   assert.throws(() => validateSettings(bad), /激活/);
   const ok = antiqueSettings(); assert.doesNotThrow(() => validateSettings(ok));

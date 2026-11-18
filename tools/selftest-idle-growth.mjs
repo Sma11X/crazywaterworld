@@ -1,9 +1,9 @@
-// Spending automation: guild aid, hero growth, stage pushing and treasure dispatch.
+// Spending automation: guild aid, stage pushing and treasure dispatch.
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { loadProtocol } from '../src/proto.mjs';
 import { planGuildAid, serviceGuildAid } from '../src/guild-aid.mjs';
-import { limitHeroSteps, serviceHeroGrowth, serviceStageAuto, stageRetryWait } from '../src/progress-automation.mjs';
+import { serviceStageAuto, stageRetryWait } from '../src/progress-automation.mjs';
 import { pickTreasure, serviceTreasureLoot } from '../src/treasure-loot.mjs';
 import { isFleetReserved, registerFleetReservations } from '../src/fleet-reservations.mjs';
 import { runStages } from '../src/stages.mjs';
@@ -125,51 +125,6 @@ const ask = (reqId, item = '木材') => ({ reqId: { low: reqId, high: 0 }, reqIt
   await serviceGuildAid(client, protocol, reservationConfig, { player: { ...aidPlayer(), guildId: 0 }, enabled: () => true, report });
   assert.match(entries[0].reason, /未加入联盟/);
   assert.equal(client.calls.length, 0);
-}
-
-// ---- 英雄养成 ----
-assert.deepEqual(limitHeroSteps([{ kind: 'level', from: 1, to: 9, count: 8 }]), [{ kind: 'level', from: 1, to: 6, count: 5 }], '升级步骤按次数拆开');
-assert.equal(limitHeroSteps([{ kind: 'level', from: 1, to: 3, count: 2 }, { kind: 'star', to: 1 }, { kind: 'skill', to: 2 }, { kind: 'star', to: 2 }, { kind: 'star', to: 3 }]).length, 4);
-{
-  const { planHeroes } = await import('../src/heroes.mjs');
-  const { getConfig } = await import('../src/config.mjs');
-  let real = null;
-  try { real = getConfig(); } catch { /* 没有配置表时跳过真实规划 */ }
-  assert(real, '测试依赖本机配置表');
-  const hero = real.tables.HeroCfg.data[0];
-  const other = real.tables.HeroCfg.data[1];
-  const heroes = [{ heroId: hero.id, level: 1, star: 0, skillLevels: [1, 0, 0, 0] }, { heroId: other.id, level: 1, star: 0, skillLevels: [1, 0, 0, 0] }];
-  const items = [{ itemId: '英雄经验', num: 100000000 }, { itemId: hero.universalItemId, num: 100000 }];
-  const client = fakeClient({
-    GetFormationRequest: { formation: { heroPositions: [{ heroId: hero.id, pos: { x: 1, y: 1 } }] } },
-    AllHeroRequest: { heroes },
-    AllItemRequest: { items },
-    HeroLevelUpRequest: () => ({}),
-  });
-  const { entries, report } = collect();
-  await serviceHeroGrowth(client, protocol, real, { player: { level: 60 }, enabled: () => true, report });
-  assert.equal(entries[0].ok, true, JSON.stringify(entries));
-  const ups = client.sent('HeroLevelUpRequest');
-  assert.equal(ups.length, 5, '每轮最多 5 步');
-  assert(ups.every(([, body]) => body.heroId === hero.id), '只养成主线阵容');
-  assert.equal(client.sent('HeroStarUpRequest').length, 0, '不能使用万能碎片升星');
-  assert.equal(planHeroes({ config: real, heroes, itemNum: id => (id === hero.universalItemId ? 100000 : 0), playerLevel: 60, allowUniversal: false, heroIds: [hero.id] })
-    .steps.filter(step => step.kind === 'star').length, 0);
-
-  const empty = fakeClient({ GetFormationRequest: { formation: { heroPositions: [] } } });
-  const none = collect();
-  await serviceHeroGrowth(empty, protocol, real, { player: { level: 60 }, enabled: () => true, report: none.report });
-  assert.match(none.entries[0].reason, /无法确认主线阵容/);
-  assert.equal(empty.calls.length, 1);
-
-  const refused = fakeClient({
-    GetFormationRequest: { formation: { heroPositions: [{ heroId: hero.id }] } }, AllHeroRequest: { heroes }, AllItemRequest: { items },
-    HeroLevelUpRequest: () => { throw prompt('HeroLevelUpRequest'); },
-  });
-  const rejected = collect();
-  await serviceHeroGrowth(refused, protocol, real, { player: { level: 60 }, enabled: () => true, report: rejected.report });
-  assert.equal(rejected.entries.at(-1).ok, false);
-  assert.equal(refused.sent('HeroLevelUpRequest').length, 1, '被拒后本轮不再重试同类操作');
 }
 
 // ---- 主线推图 ----
@@ -312,4 +267,4 @@ try {
 } finally {
   Date.now = realNow;
 }
-console.log('idle growth ok: reserved aid materials, formation-only heroes, stage backoff, treasure fleet reservation and fuel floor');
+console.log('idle growth ok: reserved aid materials, stage backoff, treasure fleet reservation and fuel floor');

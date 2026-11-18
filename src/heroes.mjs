@@ -9,7 +9,15 @@
 //         且 HeroSkillUpCfg[品质_目标等级].costArr[槽位] 的道具够
 // 服务端是否接受仍以实际回包为准，这里只保证"发出去的一定是客户端也会发的"。
 
+import { farmInventory } from './farm-planting.mjs';
+import { normalize } from './worlds.mjs';
+import { planAdvancedHeroGrowth, readAdvancedHeroContext, runAdvancedHeroStep, verifyAdvancedHeroStep } from './hero-advanced-growth.mjs';
+import { planHeroGearSteps, readHeroGearContext, executeHeroGearStep, verifyHeroGearStep } from './hero-gear-growth.mjs';
+import { claimHeroShowRewards } from './hero-show-rewards.mjs';
+
 export const HERO_EXP_ITEM = '英雄经验';
+const advancedKinds = new Set(['skillAdvance', 'exclusiveLevel', 'exclusiveStar']);
+const gearKinds = new Set(['equipment', 'badge']);
 
 const QUALITY_CONSUME = {
   BLUE: 'consumeBlue',
@@ -62,13 +70,15 @@ export function skillLevelMinStar(config, slot, targetLevel) {
 export function planHeroes({ config, heroes, itemNum, playerLevel, allowUniversal = true, heroIds = null, settings = null }) {
   const { byLevel, starByStar, heroById, skillUp } = buildIndex(config);
   const pref = settings?.heroes;
-  if (pref) { allowUniversal = pref.universal; heroIds = pref.heroIds.length ? pref.heroIds : null; }
+  if (pref) { allowUniversal = pref.universal; heroIds = pref.heroIds; }
   const maxLevel = Math.min(maxHeroLevelFor(playerLevel, config), pref?.targetLevel || Infinity);
   const maxStar = maxHeroStar(config);
   const steps = [];
   const notes = [];
   let expLeft = Math.max(0, itemNum(HERO_EXP_ITEM) - (pref?.keepExp ?? 0));
   if (pref && !pref.enabled) return { steps, notes: ['英雄养成总开关已关闭'], maxLevel, maxStar };
+  if (pref && !heroIds?.length) return { steps, notes: [pref.needsSelection
+    ? '旧配置曾允许培养全部英雄，请先重新选择要培养的英雄。' : '请先在英雄养成设置中选择要培养的英雄。'], maxLevel, maxStar };
 
   const picked = heroes.filter((hero) => !heroIds || heroIds.includes(hero.heroId));
   // 升星优先给战力最高的英雄，万能碎片有限时这个顺序更划算。
@@ -211,8 +221,59 @@ export function planHeroes({ config, heroes, itemNum, playerLevel, allowUniversa
   return { steps, notes, maxLevel, maxStar };
 }
 
+// Keep the original protobuf hero records: equipment and badge UIDs are int64.
+export async function readHeroGrowthPlan(client, config, player, settings) {
+  if (!config) throw new Error('没有配置表，无法计算英雄养成计划');
+  if (!settings?.heroes) throw new Error('缺少英雄养成设置');
+  const roster = await client.request('AllHeroRequest', {}, 'AllHeroResponse');
+  const heroes = roster.heroes ?? [], pref = settings.heroes, playerLevel = player?.level ?? 1;
+  const selected = heroes.filter(hero => pref.heroIds.includes(hero.heroId));
+  const stock = pref.enabled && selected.length
+    ? farmInventory(normalize(await client.request('AllItemRequest', {}, 'AllItemResponse'))) : new Map();
+  const plan = planHeroes({ config, heroes, playerLevel, settings, itemNum: id => stock.get(id) ?? 0 });
+  if (!pref.enabled || !selected.length) return { plan, heroes, stock };
+
+  const remaining = new Map(stock);
+  const itemNum = id => remaining.get(id) ?? 0;
+  const deduct = costs => { for (const { id, num } of costs) remaining.set(id, itemNum(id) - num); };
+  for (const step of plan.steps) deduct(step.costs);
+  const ctx = { config, player, playerLevel, heroes, settings, itemNum };
+  if (pref.skillAdvance || pref.exclusiveLevel || pref.exclusiveStar) Object.assign(ctx, await readAdvancedHeroContext(client, ctx));
+  if (pref.equipment || pref.badge) {
+    ctx.gear = await readHeroGearContext(client, config, playerLevel, pref);
+    if (Number.isSafeInteger(ctx.gear.gold)) {
+      stock.set('GOLD', ctx.gear.gold);
+      remaining.set('GOLD', ctx.gear.gold);
+    }
+  }
+  const rewardIds = new Set((config.tables.HeroAbilityShowCfg?.data ?? []).filter(row => row.reward?.length).map(row => row.id));
+  const claimed = new Set(roster.showSkillHeroes ?? []);
+  for (const hero of selected) {
+    const candidates = [];
+    if (pref.skillAdvance || pref.exclusiveLevel || pref.exclusiveStar) candidates.push(...planAdvancedHeroGrowth(ctx, hero));
+    if (ctx.gear) candidates.push(...planHeroGearSteps(ctx, hero));
+    if (pref.showSkillReward && rewardIds.has(hero.heroId) && !claimed.has(hero.heroId)) candidates.push({
+      kind: 'showSkillReward', heroId: hero.heroId, label: hero.heroId + ' · 领取技能展示奖励',
+      request: 'GotHeroShowSkillRequest', body: { heroId: hero.heroId }, costs: [],
+    });
+    for (const step of candidates) {
+      if (step.costs.some(cost => itemNum(cost.id) < cost.num)) continue;
+      deduct(step.costs);
+      plan.steps.push(step);
+    }
+  }
+  return { plan, heroes, stock };
+}
+
+export function heroStepLabel(step, targetLevel) {
+  if (step.label) return step.label;
+  if (step.kind === 'level') return `${step.heroId} 升至 ${targetLevel ?? step.to} 级`;
+  if (step.kind === 'star') return `${step.heroId} 升至 ${step.to} 星`;
+  return `${step.heroId} 技能 ${step.slot + 1} 升至 ${step.to} 级`;
+}
+
 // 逐条执行。HeroLevelUpRequest 一次只升一级，服务端没有批量接口，所以英雄升级会被展开成多次请求。
-export async function runHeroPlan(client, protocol, plan, { allowMutate = false, timeout = 15000, onStep, enabled = () => true, getSettings, beforeAction, afterAction, cancelAction } = {}) {
+export async function runHeroPlan(client, protocol, plan, { allowMutate = false, timeout = 15000, onStep, enabled = () => true, getSettings, beforeAction, afterAction, cancelAction, config, player } = {}) {
   if (!allowMutate) throw new Error('英雄养成会改变账号状态，需要 --yes');
   const results = [];
   // 同一英雄的同一类操作一旦被服务端拒了，后面的同类步骤必然同样被拒，直接跳过不再骚扰服务端。
@@ -230,26 +291,41 @@ export async function runHeroPlan(client, protocol, plan, { allowMutate = false,
     const calls = step.kind === 'level' ? step.count : 1;
     for (let i = 0; i < calls; i += 1) {
       if (!enabled()) break;
-      const pref = getSettings?.()?.heroes;
-      if (pref && (!pref.enabled || !pref[step.kind] || (pref.heroIds.length && !pref.heroIds.includes(step.heroId)) ||
-        (step.kind === 'level' && pref.targetLevel > 0 && step.from + i + 1 > pref.targetLevel) ||
-        (step.kind === 'star' && ((pref.targetStar > 0 && step.to > pref.targetStar) || (step.universal && !pref.universal))))) break;
-      const body = buildHeroBody(step);
       const targetLevel = step.kind === 'level' ? step.from + i + 1 : undefined;
-      const request = step.kind === 'level' ? 'HeroLevelUpRequest' : step.kind === 'star' ? 'HeroStarUpRequest' : 'HeroSkillLevelUpRequest';
-      const budgetStep = { ...step, request, body, targetLevel, scope: 'hero', setting: `heroes.${step.kind}`, label: `${step.heroId}养成`,
+      const allowed = () => {
+        if (!enabled()) return false;
+        if (!getSettings) return true;
+        const pref = getSettings()?.heroes;
+        if (!pref?.enabled || !pref[step.kind] || !pref.heroIds.includes(step.heroId)) return false;
+        if (step.kind === 'level' && pref.targetLevel && targetLevel > pref.targetLevel) return false;
+        return step.kind !== 'star' || ((!pref.targetStar || step.to <= pref.targetStar) && (!step.universal || pref.universal));
+      };
+      if (!allowed()) break;
+      const body = step.body ?? buildHeroBody(step);
+      const request = step.request ?? (step.kind === 'level' ? 'HeroLevelUpRequest' : step.kind === 'star' ? 'HeroStarUpRequest' : 'HeroSkillLevelUpRequest');
+      const budgetStep = { ...step, request, body, targetLevel, scope: 'hero', setting: `heroes.${step.kind}`, label: heroStepLabel(step, targetLevel),
         costs: step.kind === 'level' ? [{ id: HERO_EXP_ITEM, num: step.levelCosts?.[i] }] : step.costs };
+      if (advancedKinds.has(step.kind)) budgetStep.verifyGrowth = next => verifyAdvancedHeroStep(next, step);
+      if (gearKinds.has(step.kind)) budgetStep.verifyGrowth = next => verifyHeroGearStep(next, step);
       let ticket = null, prepared = false, sent = false, writePending = false;
       try {
         ticket = await beforeAction?.(budgetStep); prepared = true;
-        if (!enabled()) { await cancelAction?.(budgetStep, ticket, { notSent: true }); break; }
+        if (!allowed()) { await cancelAction?.(budgetStep, ticket, { notSent: true }); break; }
         sent = writePending = true;
-        const outcome = await sendHero(client, protocol, step, body, timeout);
+        let outcome;
+        if (advancedKinds.has(step.kind)) outcome = await runAdvancedHeroStep(client, step, { config, player, enabled: allowed });
+        else if (gearKinds.has(step.kind)) outcome = await executeHeroGearStep(client, step, { config, playerLevel: player?.level ?? 1, enabled: allowed });
+        else if (step.kind === 'showSkillReward') {
+          let confirmed = false;
+          await claimHeroShowRewards(client, config, (label, ok, error) => { if (!ok) throw new Error(error); confirmed = true; }, [step.heroId], allowed);
+          if (!confirmed) throw Object.assign(new Error('该英雄暂无可领取的技能展示奖励或设置已变更'), { notSent: true, code: 'AUTOMATION_SKIP' });
+          outcome = { response: 'AllHeroResponse' };
+        } else outcome = await sendHero(client, protocol, step, body, timeout);
         writePending = false;
         const entry = { step, targetLevel, ok: true, ...outcome };
+        await afterAction?.(budgetStep, ticket, outcome.response ? entry : { ...entry, sent: true });
         results.push(entry);
         onStep?.(entry);
-        await afterAction?.(budgetStep, ticket, outcome.response ? entry : { ...entry, sent: true });
       } catch (error) {
         const notSent = !sent || (writePending && error.notSent === true);
         if (prepared) await cancelAction?.(budgetStep, ticket, { notSent, error });
@@ -295,7 +371,8 @@ export function formatHeroPlan(plan) {
   for (const step of plan.steps) {
     if (step.kind === 'level') lines.push(`升级 ${step.heroId} lv${step.from} -> lv${step.to} (${step.count} 级, ${step.exp} 经验)`);
     else if (step.kind === 'star') lines.push(`升星 ${step.heroId} ${step.from} -> ${step.to} 星 (${step.fragments} 碎片${step.universal ? '，含万能' : ''})`);
-    else lines.push(`技能 ${step.heroId} 第${step.slot + 1}技能 ${step.from} -> ${step.to} (${step.item} x${step.num})`);
+    else if (step.kind === 'skill') lines.push(`技能 ${step.heroId} 第${step.slot + 1}技能 ${step.from} -> ${step.to} (${step.item} x${step.num})`);
+    else lines.push(heroStepLabel(step) + (step.costs.length ? '（' + step.costs.map(c => c.id + ' ×' + c.num).join('、') + '）' : ''));
   }
-  return lines.length ? lines.join('\n') : '当前没有可升级、升星或提升技能的英雄。';
+  return lines.length ? lines.join('\n') : plan.notes?.length ? plan.notes.join('\n') : '当前没有符合条件的英雄养成动作。';
 }

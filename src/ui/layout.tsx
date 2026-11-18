@@ -1,6 +1,6 @@
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Boxes, Building2, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, X } from "lucide-react"
+import { Boxes, Building2, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react"
 import { Button } from "./button"
 import { Badge } from "./badge"
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "./card"
@@ -10,11 +10,11 @@ import { Input } from "./input"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "./table"
 import { LOG_GROUPS, LOG_GROUP_TONES } from "../log-categories.mjs"
 
-// 手机底栏只有约 55px 宽，所以另备短名。
+// 手机底栏使用短名。
 const tabs = [
   ["overview", "总览", "总览", LayoutDashboard],
   ["settings", "挂机配置", "配置", Settings2], ["manual", "建筑一览", "建筑", Building2],
-  ["stages", "挑战", "挑战", Swords], ["resources", "资源与玩法", "资源", Boxes],
+  ["stages", "挑战", "挑战", Swords], ["lineups", "阵容", "阵容", UsersRound], ["resources", "资源与玩法", "资源", Boxes],
   ["account", "账号", "账号", CircleUserRound], ["login-settings", "登录设置", "登录", LogIn],
 ] as const
 
@@ -61,7 +61,7 @@ export function chrome() {
       </div>
     </div>
     <nav id="tabs" aria-label="功能导航">{tabs.map(([key, title, short, Icon]) =>
-      <button type="button" key={key} className="nav-tab" data-tab={key} aria-current={key === "overview" ? "page" : undefined}><Icon aria-hidden="true" /><span className="nav-full">{title}</span><span className="nav-short" aria-hidden="true">{short}</span></button>
+      <button type="button" key={key} className="nav-tab" data-tab={key} aria-label={title} aria-current={key === "overview" ? "page" : undefined}><Icon aria-hidden="true" /><span className="nav-full">{title}</span><span className="nav-short" aria-hidden="true">{short}</span></button>
     )}</nav>
     <div id="page-progress" aria-hidden="true" />
   </header>)

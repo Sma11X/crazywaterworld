@@ -453,8 +453,8 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
   #loop-every::-webkit-inner-spin-button,#loop-every::-webkit-outer-spin-button { appearance:none; margin:0 }
   #log-top-count { min-width:0; overflow:hidden; text-overflow:ellipsis }
   #hint { grid-column:1 / -1; grid-row:5; white-space:normal }
-  /* 导航固定到底部，七个入口一屏放下。 */
-  #tabs { position:fixed; inset:auto 0 0; z-index:40; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:0; width:100%; margin:0; padding:4px calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left)); overflow:visible; background:var(--background); border-top:1px solid var(--border) }
+  /* 底部导航按实际入口数量均分一行。 */
+  #tabs { position:fixed; inset:auto 0 0; z-index:40; display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:0; width:100%; margin:0; padding:4px calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left)); overflow:visible; background:var(--background); border-top:1px solid var(--border) }
   .nav-tab { flex-direction:column; justify-content:center; gap:2px; height:48px; padding:0; font-size:11px; min-width:0 }
   .nav-tab svg { width:20px; height:20px }
   .nav-full { display:none }

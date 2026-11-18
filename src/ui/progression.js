@@ -4,7 +4,7 @@ const progressionViews = [
   { id: 'trial', tab: 'stages', path: '/api/trials', render: renderTrialProgress },
   { id: 'equipment', tab: 'heroes', path: '/api/equipment', render: renderEquipment },
   { id: 'crafting', tab: 'heroes', path: '/api/equipment/crafting', render: renderCrafting },
-  { id: 'lineup', tab: 'heroes', path: '/api/lineups', render: renderLineups },
+  { id: 'lineup', tab: 'lineups', path: '/api/lineups', render: renderLineups },
   { id: 'pirate-board', tab: 'activities', path: '/api/pirates/board', render: renderPirateBoard },
   { id: 'guild', tab: 'guild', path: '/api/guild', render: renderGuild },
   { id: 'formation', tab: 'heroes', path: '/api/fleets/formation', render: renderFormations },

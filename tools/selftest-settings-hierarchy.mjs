@@ -139,6 +139,32 @@ const keys = widgets => widgets.map(widget => widget.spec.key);
 let passed = 0;
 function test(name, run) { run(); passed++; console.log('通过：' + name); }
 
+test('英雄、藏品、装备各有唯一设置入口，原有分组书签指向新分类', () => {
+  const f = fixture({ navigation: true }); f.renderPage();
+  const categories = {
+    heroes: ['heroes', 'hero-recruit'],
+    antique: ['antique', 'antique-recruit'],
+    equipment: ['equipment-growth', 'forge', 'equipment-legacy'],
+  };
+  for (const [category, groupIds] of Object.entries(categories)) {
+    assert.deepEqual([...f.editor.groups.values()].filter(g => g.category === category).map(g => g.id), groupIds);
+    for (const group of groupIds) {
+      f.env.hash = '#config-group-' + group; f.applyHash();
+      assert(visible(f.env.node('config-group-' + group)));
+      assert.equal(f.editor.category, category);
+      assert.equal(f.env.node('config-preview-scope').value, 'module:' + group);
+    }
+  }
+  for (const [id, keys] of Object.entries({
+    'hero-recruit': ['schedule.freeRecruit', 'schedule.ticketRecruit', 'schedule.heroAdRecruit', 'schedule.heroRecruitRewards'],
+    'antique-recruit': ['schedule.freeAntiqueRecruit', 'schedule.antiqueAdRecruit', 'schedule.antiqueRecruitRewards'],
+    'equipment-growth': ['heroes.equipment', 'heroes.badge'],
+  })) assert.deepEqual(new Set(f.editor.groups.get(id).fields.map(field => field.key)), new Set(keys));
+  f.env.hash = '#config-group-daily-collections'; f.applyHash();
+  assert(visible(f.env.node('config-group-hero-recruit')));
+  assert.equal(f.env.saves, 0);
+});
+
 test('建筑分类直接展示设置，移除单一子标签和重复标题', () => {
   const f = fixture({ navigation: true }); f.renderPage();
   const panel = f.env.node('config-panel-base'), building = f.env.node('config-group-building');
@@ -408,10 +434,19 @@ test('所有模块主控与参数在同组，英雄组合主控保留细项，�
   assert.equal(f.editor.draft.loop.heroes, true);
   assert.deepEqual(f.editor.draft.heroes, { ...details, enabled: true });
   f.set('antique.enabled', false);
-  f.activate('heroes'); f.activateGroup('antique');
-  assert(visible(f.widget('antique.activate').node), '暂停藏品模块仍可调整执行动作');
+  f.activate('antique'); f.activateGroup('antique');
+  const master = f.widget('antique.enabled'), section = f.env.node('config-group-antique');
+  const options = section.querySelector('fieldset');
+  assert.equal(master.node.parentElement, section);
+  assert.equal(master.disclosure, undefined);
+  for (const action of ['activate', 'star', 'master', 'suit']) {
+    const row = f.widget('antique.' + action);
+    assert.equal(row.node.parentElement, options);
+    assert(visible(row.node), '暂停时仍可编辑 ' + action);
+  }
+  assert.equal(f.widget('antique.targetStar').parentKey, 'antique.star');
   f.env.hash = '#config-group-runtime'; f.applyHash();
-  assert.equal(f.editor.category, 'heroes', '旧运行安排链接不切到空白页');
+  assert.equal(f.editor.category, 'antique', '旧运行安排链接不切到空白页');
   assert.equal(f.editor.groups.has('runtime'), false);
   assert.equal(f.editor.widgets.has('loop.rounds'), false);
 });

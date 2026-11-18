@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { operationLabels } from './operation-labels.mjs';
 import { LOG_CATEGORIES, LOG_GROUPS, LOG_GROUP_TONES } from './log-categories.mjs';
 import { createLogAccountLabels } from './log-accounts.mjs';
-import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, guildPage, activitiesPage, accountPage, loginSettingsPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
+import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, lineupsPage, guildPage, activitiesPage, accountPage, loginSettingsPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
 const progressionScript = readFileSync(new URL('./ui/progression.js', import.meta.url), 'utf8');
@@ -61,6 +61,10 @@ ${chrome()}
 
   <section id="tab-stages" class="hidden">
     ${stagePanel()}
+  </section>
+
+  <section id="tab-lineups" class="hidden" aria-label="阵容">
+    ${lineupsPage()}
   </section>
 
   <section id="tab-inventory" class="hidden">
@@ -1562,38 +1566,60 @@ function skillText(levels) {
 function renderHeroes(data) {
   $('hero-view').textContent = data.text;
   const box = clear($('hero-table'));
-  const planned = new Set(data.steps.map(step => step.heroId));
-  if (!planned.size) return;
-  box.appendChild(table(['英雄', '等级', '星级', { label: '战力', num: true }, '技能'], data.heroes.filter(hero => planned.has(hero.heroId)).map((hero) => [
-    { cell: hero.head || hero.icon, text: hero.heroId },
+  const actionNames = { level: '升级', star: '升星', skill: '技能升级', skillAdvance: '技能进阶',
+    exclusiveLevel: '专武升级', exclusiveStar: '专武升星', equipment: '装备强化', badge: '徽章强化', showSkillReward: '领取技能展示奖励' };
+  const actions = new Map();
+  for (const step of data.steps) {
+    if (!actions.has(step.heroId)) actions.set(step.heroId, new Set());
+    actions.get(step.heroId).add(actionNames[step.kind] || step.label || step.kind);
+  }
+  if (!actions.size) return;
+  box.appendChild(table(['英雄', '等级', '星级', { label: '战力', num: true }, '技能', '计划动作'], data.heroes.filter(hero => actions.has(hero.heroId)).map((hero) => [
+    { cell: hero.head || hero.icon, text: hero.showName || hero.name || hero.heroId },
     'lv' + hero.level,
     hero.star + ' 星',
     { num: true, text: fmt(hero.power) },
     skillText(hero.skillLevels),
+    [...actions.get(hero.heroId)].join('、'),
   ])));
 }
 
-$('hero-plan').onclick = async () => {
-  $('hero-hint').textContent = '计算中 ...';
-  try {
-    renderHeroes(await call('/api/heroes'));
-    $('hero-hint').textContent = '';
-  } catch (error) {
-    $('hero-hint').textContent = '';
-    reportError(error);
-  }
-};
-bindGameAction('hero-run', async () => {
-  $('hero-hint').textContent = '执行中 ...';
-  try {
-    const data = await call('/api/heroes/run', { method: 'POST', body: JSON.stringify({ confirm: true }) });
-    $('hero-hint').textContent = '发出 ' + data.sent + ' 个请求，失败 ' + data.failed + '，跳过 ' + data.skipped + '，耗时 ' + Math.round(data.ms / 1000) + 's';
-    $('hero-plan').onclick();
-  } catch (error) {
-    $('hero-hint').textContent = '';
-    reportError(error);
-  }
+let heroPlanVersion = 0;
+consoleStore.subscribe((state, previous) => {
+  if (state.currentAccountId === previous.currentAccountId) return;
+  heroPlanVersion++;
+  $('hero-view').textContent = '尚未计算';
+  clear($('hero-table')); clear($('hero-hint'));
+  $('hero-plan').disabled = $('hero-run').disabled = !state.currentAccountId;
 });
+async function updateHeroPlan(run) {
+  if (!current) return;
+  const version = ++heroPlanVersion;
+  const hint = $('hero-hint');
+  $('hero-plan').disabled = $('hero-run').disabled = true;
+  hint.textContent = run ? '正在执行养成…' : '正在计算计划…';
+  try {
+    const saved = await configFlush();
+    if (version !== heroPlanVersion) return;
+    if (!saved) { hint.textContent = '请先在养成设置中保存更改。'; return; }
+    let result = '';
+    if (run) {
+      const data = await call('/api/heroes/run', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      if (version !== heroPlanVersion) return;
+      result = '已发送 ' + data.sent + ' 项，失败 ' + data.failed + ' 项，跳过 ' + data.skipped + ' 项';
+      hint.textContent = result;
+    }
+    const plan = await call('/api/heroes');
+    if (version !== heroPlanVersion) return;
+    renderHeroes(plan); hint.textContent = result;
+  } catch (error) {
+    if (version === heroPlanVersion) hint.textContent = error.message;
+  } finally {
+    if (version === heroPlanVersion) $('hero-plan').disabled = $('hero-run').disabled = false;
+  }
+}
+$('hero-plan').onclick = () => updateHeroPlan(false);
+$('hero-run').onclick = () => updateHeroPlan(true);
 
 // ---- 表格 ------------------------------------------------------------------
 // 单元格可以是字符串、{num}、{chip}、{cell: 图标项}、{cells: [图标项]}
@@ -2148,7 +2174,8 @@ function activateConsolePage(button, resource = selectedResource) {
     refreshProgression();
     if (button.dataset.tab === 'overview') {refreshOverview();refreshLoop();}
     if(isResource&&resource==='inventory')refreshManualWorld();
-    if(isResource&&resource==='heroes'){void appointmentsLoad(true);void refreshSavedLineups();}
+    if (target === 'heroes') void appointmentsLoad(true);
+    if (target === 'lineups') void refreshSavedLineups();
     if (button.dataset.tab === 'account') {
       renderAccounts();
       pollCapture();

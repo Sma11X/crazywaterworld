@@ -9,7 +9,8 @@ const active = new WeakSet();
 const rejected = new WeakMap();
 const COLOR_FIELD = { BLUE: 'consumeBlue', PURPLE: 'consumePur', ORANGE: 'consumeOra', RED: 'consumeRed' };
 const idKey = value => createHash('sha256').update(String(value)).digest('hex').slice(0, 24);
-export const antiqueEnabled = settings => settings?.antique?.enabled === true;
+const hasAntiqueActions = pref => pref.activate || pref.star || pref.master || pref.suit;
+export const antiqueEnabled = settings => settings?.antique?.enabled === true && !!hasAntiqueActions(settings.antique);
 
 function quantity(value) {
   if (integer(value)) return value;
@@ -122,7 +123,7 @@ export function planAntiqueUpgrade(snapshot, config, settings, { usage = { count
   if (!p.enabled) plan.notes.push('藏品养成未开启');
   if (snapshot.reason) plan.notes.push(snapshot.reason);
   if (!p.enabled || snapshot.reason) return plan;
-  if (!p.activate && !p.star && !p.master && !p.suit) { plan.notes.push('未开启任何藏品养成动作'); return plan; }
+  if (!hasAntiqueActions(p)) { plan.notes.push('未开启任何藏品养成动作'); return plan; }
   const balances = new Map(snapshot.items);
   let gold = snapshot.gold;
   let spent = usage.counters.antiqueGold ?? 0;

@@ -52,7 +52,7 @@ import {watchFleetSpeed,fleetSpeedEnabled,runFleetSpeed} from './fleet-speed.mjs
 import { cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations, runCityWar } from './city-war.mjs';
 import { forgeEnabled, runEquipmentForge } from './equipment-forge.mjs';
 import { antiqueEnabled, runAntiqueUpgrade } from './antique-upgrade.mjs';
-import { planHeroes, runHeroPlan } from './heroes.mjs';
+import { readHeroGrowthPlan, heroStepLabel, runHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
 import { serviceGuildOrders } from './guild-orders.mjs';
 import { serviceRadar } from './radar.mjs';
@@ -60,7 +60,7 @@ import { serviceEquipmentCrafting } from './equipment-automation.mjs';
 import { serviceMuseum } from './museum.mjs';
 import { servicePetBreeding } from './pet-breeding.mjs';
 import { serviceGuildAid } from './guild-aid.mjs';
-import { serviceHeroGrowth, serviceStageAuto } from './progress-automation.mjs';
+import { serviceStageAuto } from './progress-automation.mjs';
 import { createChallengeRun, runChallengeRound } from './challenge-automation.mjs';
 import { serviceTreasureLoot } from './treasure-loot.mjs';
 import { claimFestivalRewards, claimWeeklyRewards, claimVipDaily as claimLegacyVipDaily, festivalRewardKeys, weeklyRewardKeys } from './free-rewards.mjs';
@@ -100,8 +100,8 @@ export async function runLoop(client, protocol, {
   isStageBusy = () => false,
   isTrialBusy = () => false, isPirateBusy = () => false,
   challengeRun = createChallengeRun(),
-  getSettings = () => null, onFishBookComplete,
-  usageLedger = null,
+  getSettings = () => null, getHeroSettings = getSettings, onFishBookComplete,
+  usageLedger = null, heroUsageLedger = usageLedger,
   getEveryMs = () => everyMs,
   schedule = work => work(),
   executeBattle = work => work(),
@@ -261,7 +261,7 @@ export async function runLoop(client, protocol, {
       if (s?.loop?.world && s.museum?.runEnabled !== false && s.museum?.enabled && ['museumCollect','museumExplore','museumAchievements'].includes(key)) return '博物馆';
       if (s?.loop?.world && s.pet?.enabled && ['petCollect','petBreed'].includes(key)) return '海兽';
       if (s?.treasure?.enabled && key === 'treasureLoot') return '巨轮';
-      if (s?.loop?.heroes && s.heroes?.enabled && key === 'heroGrowth') return '英雄成长';
+      if (key === 'heroGrowth') return '指定英雄养成';
       return null;
     };
     const legacyActive = key => active(key) && !takeoverReason(key);
@@ -806,10 +806,6 @@ export async function runLoop(client, protocol, {
         try { await servicePetBreeding(client, protocol, config, { player, enabled: legacyActive, scheduler: rewards, report: serviceReport('world', '海兽培育') }); }
         catch (error) { phaseFailure('world', '海兽培育检查', error); }
       }
-      if (isEnabled && legacyEnabled('heroGrowth')) {
-        try { await serviceHeroGrowth(client, protocol, config, { player, enabled: () => legacyActive('heroGrowth'), scheduler: rewards, report: serviceReport('dailies', '成长') }); }
-        catch (error) { phaseFailure('dailies', '英雄成长检查', error); }
-      }
       await checkFactoryDue({ checkpoint: true });
       await runChallengeRound(client, config, { ...challengeOptions, mode: 'progression', report: serviceReport('dailies', '推关与试炼') });
       await checkFactoryDue({ checkpoint: true });
@@ -1047,16 +1043,16 @@ export async function runLoop(client, protocol, {
         } catch (error) { phaseFailure('world', '基地设置执行', error); }
       }
       await checkFactoryDue({ checkpoint: true });
-      if (getSettings()?.loop.heroes && getSettings().heroes.enabled && !stop.aborted) {
+      const heroSettings = getHeroSettings();
+      if (heroSettings?.loop.heroes && heroSettings.heroes.enabled && heroSettings.heroes.heroIds.length && !stop.aborted) {
         try {
-          const list = normalize(await client.request('AllHeroRequest', {}, 'AllHeroResponse'));
-          const bag = normalize(await client.request('AllItemRequest', {}, 'AllItemResponse'));
-          const inventory = new Map((bag.items ?? []).map(item => [item.itemId, Number(item.num)]));
-          rewards?.observe('loop.heroes','已读取英雄与库存，检查养成条件');rewards?.expect('loop.heroes',rewards.now()+Math.ceil(getEveryMs()/1000));
-          const plan = planHeroes({ config, heroes: list.heroes ?? [], itemNum: id => inventory.get(id) ?? 0, playerLevel: player?.level ?? 1, settings: getSettings() });
-          const results = await runHeroPlan(client, protocol, plan, { allowMutate, getSettings, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
-            enabled: () => !stop.aborted && client.connected && getSettings()?.loop.heroes,
-            onStep: entry => stepLog('tasks')({ ...entry, category: '英雄', title: `${entry.step.heroId} ${entry.step.kind === 'level' ? '升级' : entry.step.kind === 'star' ? '升星' : '技能升级'}` }) });
+          const { plan } = await readHeroGrowthPlan(client, config, player, heroSettings);
+          const enabled = () => !stop.aborted && client.connected && getHeroSettings()?.loop.heroes;
+          const heroGuard = getHeroSettings === getSettings ? guard : createActionGuard(client, getHeroSettings, heroUsageLedger, { player, enabled });
+          rewards?.observe('loop.heroes','已读取指定英雄与库存，检查养成条件');rewards?.expect('loop.heroes',rewards.now()+Math.ceil(getEveryMs()/1000));
+          const results = await runHeroPlan(client, protocol, plan, { allowMutate, config, player, enabled, getSettings: getHeroSettings,
+            beforeAction: heroGuard.before, afterAction: heroGuard.after, cancelAction: heroGuard.cancel,
+            onStep: entry => stepLog('tasks')({ ...entry, category: '英雄', title: heroStepLabel(entry.step, entry.targetLevel) }) });
           summary.tasks.planned += results.length;
           summary.tasks.results.push(...results);
         } catch (error) { phaseFailure('tasks', '自动英雄养成', error); }

@@ -53,7 +53,9 @@ export const DEFAULT_SETTINGS = {
   // noPrivilege 仅保留旧配置/导出的兼容字段；无权益账号统一走等待领取。
   ads: { noPrivilege: true, waitSeconds: 15 },
   gold: { enabled: false, times: 3 },
-  heroes: { enabled: true, level: true, star: true, skill: true, heroIds: [], universal: true, keepExp: 0, targetLevel: 0, targetStar: 0 },
+  heroes: { enabled: true, level: true, star: true, skill: true, heroIds: [], needsSelection: false,
+    skillAdvance: false, exclusiveLevel: false, exclusiveStar: false, equipment: false, badge: false, showSkillReward: false,
+    universal: true, keepExp: 0, targetLevel: 0, targetStar: 0 },
   appointments: { enabled: false, priorities: [...DEFAULT_APPOINTMENT_PRIORITIES] },
   dailies: { enabled: true, claimTasks: true, claimDailyChest: true, claimWeeklyChest: true, claimGift: true },
   tasks: { main: true, branch: true, achievements: true },
@@ -176,6 +178,7 @@ export function defaultSettings() { return copy(DEFAULT_SETTINGS); }
 
 // 兼容上游已有的快捷开关。未保存细化配置时，执行仍沿用上游行为。
 const nativeFields = {
+  heroGrowth: ['loop.heroes'],
   stageAuto: ['progression.mainline'],
   trialPaidSweep: ['trials.paid'], trialAdSweep: ['trials.ads'],
   diveEnhance: ['gather.upgradeDiving'], autoDive: ['gather.diving'], salvageEnhance: ['gather.upgradeSalvage'],
@@ -201,6 +204,7 @@ export function applyNativeTask(settings, key, enabled) {
 export function settingsFromNative(tasks, { rounds = 0, everySeconds = 60, fishingGoldReserve = 10000 } = {}) {
   let result = defaultSettings();
   for (const [key, value] of Object.entries(taskSettings(tasks))) result = applyNativeTask(result, key, value);
+  if (tasks?.heroGrowth) result.heroes.needsSelection = true;
   result.loop.rounds = rounds;
   result.loop.everySeconds = Math.max(1, Number.isSafeInteger(everySeconds) ? everySeconds : 60);
   result.gather.fishingGoldReserve = fishingGoldReserve;
@@ -210,6 +214,7 @@ export function nativeTaskValues(settings, current) {
   const result = { ...current, ...settings.schedule };
   delete result.weekFactory;
   for (const [key, fields] of Object.entries(nativeFields)) result[key] = fields.some(field => { const [group, name] = field.split('.'); return settings[group][name]; });
+  result.heroGrowth = false; // The old mainline-only job has been retired.
   result.startProduce = settings.factory.produce || settings.factory.cooperateNative;
   result.speedUp = settings.building.speedUp || settings.factory.speedUp || settings.farm.speedUp || settings.factory.speedUpSources.length > 0;
   return result;
@@ -285,11 +290,11 @@ export function validateSettings(input, { partial = false, catalog = null } = {}
     }
   }
   output.appointments.priorities = normalizeAppointmentPriorities(output.appointments.priorities);
+  if (output.heroes.heroIds.length) output.heroes.needsSelection = false;
   if (output.progression.trials && !output.progression.raidIds.length) errors['progression.raidIds'] = '请选择自动推关的试炼副本';
   if (output.pirateHunt.enabled && !output.pirateHunt.fleetIds.length) errors['pirateHunt.fleetIds'] = '请选择自动讨伐海盗的舰队';
   if(output.forge.decompose && !output.forge.decomposeQualities.length)errors['forge.decomposeQualities']='请选择可自动分解的装备品质';
   if(output.pet.release && !output.pet.releaseQualities.length)errors['pet.releaseQualities']='请选择可自动放生的海兽品质';
-  if (output.antique.enabled && ![output.antique.activate, output.antique.star, output.antique.master, output.antique.suit].some(Boolean)) errors['antique.enabled'] = '请至少开启一项藏品养成动作';
   if (output.antique.activate && !output.antique.activateQualities.length) errors['antique.activateQualities'] = '请选择自动激活的藏品品质';
   if (output.antique.star && !output.antique.starQualities.length) errors['antique.starQualities'] = '请选择自动升星的藏品品质';
   if (output.antique.suit && !output.antique.suitQualities.length) errors['antique.suitQualities'] = '请选择自动升级的藏品套装品质';
@@ -369,7 +374,9 @@ export function settingsCatalog(config) {
     materials, treasureRewards: treasureRewardOptions(config, materials),
     crops: rows('FarmlandPlantCfg').map(r => option(r.id)),
     maps: rows('MuseumExpeditionStageCfg').map(r => option(r.stageId, r.name)),
-    heroes: rows('HeroCfg').filter(r => r.universalItemId || r.quality).map(r => option(r.id, r.showName || r.id)),
+    heroes: rows('HeroCfg').filter(r => r.universalItemId || r.quality).map(r => ({
+      ...option(r.id, r.showName || r.name || r.id), ...(r.type && r.type !== '英雄' ? { hidden: true } : {}),
+    })),
     petSpecies: unique(rows('PetBreedCfg').map(r => option(r.spId, rows('PetSpeciesCfg').find(s => s.id === r.spId || s.spId === r.spId)?.name || `海兽种类 ${r.spId}`))),
     radarTypes: [['pirate','击退海盗'],['collect','收集资源'],['refugee','解救难民'],['spy','城战试探'],['fixed','固定情报']].map(([value,label])=>option(value,label)),
     pirateTypes: unique(rows('WorldPirateCfg').map(r=>option(r.type,r.showName))),
@@ -421,6 +428,10 @@ export function migrateSettingsVersion(settings, version, { source = 'import' } 
   if (!['import', 'stored'].includes(source)) throw new TypeError('未知设置迁移来源');
   if (!plain(settings)) return settings;
   const input = { ...settings };
+  if (plain(input.heroes) && !Object.hasOwn(input.heroes, 'needsSelection')) {
+    input.heroes = { ...input.heroes, needsSelection: !input.heroes.heroIds?.length };
+    if (input.schedule?.heroGrowth && input.heroes.needsSelection && plain(input.loop)) input.loop = { ...input.loop, heroes: true };
+  }
   if (plain(input.schedule) && Object.hasOwn(input.schedule, 'weekFactory')) {
     // Factory construction now follows the existing building switches. Retiring
     // the separate priority task must not enable or disable either action.
@@ -449,6 +460,7 @@ export function migrateSettingsVersion(settings, version, { source = 'import' } 
     if (plain(input[group])) input[group] = { ...copy(DEFAULT_SETTINGS[group]), ...input[group] };
   }
   const addedFields = {
+    heroes: ['skillAdvance','exclusiveLevel','exclusiveStar','equipment','badge','showSkillReward'],
     treasure: ['onlyTenThousand', 'avoidPlayerIds', 'participationMode', 'repeatAttack', 'autoRepair',
       'maxRepairCost', 'dailyRepairPetrolLimit', 'marchSpeedUp', 'marchTargetSeconds', 'dailyDiamondLimit',
       'personalProgressLimit', 'fallbackEnabled', 'fallbackAfter',

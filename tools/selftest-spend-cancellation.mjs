@@ -26,6 +26,7 @@ const asset = (id, num) => ({ type: 0, id, num });
 function fixture(mode, route) {
   const player = { playerId: ++serial, worldId: 1000001, level: 40, guildId: 1 };
   const settings = defaultSettings();
+  settings.heroes.heroIds = ['A'];
   settings.pet.enabled = settings.pet.advance = settings.cargo.enabled = true;
   settings.museum.enabled = settings.museum.useGuide = true;
   settings.museum.dailyGuideLimit = 10;

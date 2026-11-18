@@ -108,6 +108,7 @@ export function confirmPetSpend(before, after, request, body) {
 // Keep immutable pre-action evidence, never a connection or settings closure.
 // A replacement connection can therefore finish the same read-only check.
 export async function captureSpendOperation(client, step, { waterSnapshot } = {}) {
+  if (typeof step.verifyGrowth === 'function') return { confirmed: false, verify: step.verifyGrowth };
   if (step.request === 'StartFactoryProduceRequest' && step.factoryBatch?.operation) return step.factoryBatch.operation;
   const body = structuredClone(step.body ?? {}), verify = structuredClone(step.verify ?? {});
   const request = step.request;

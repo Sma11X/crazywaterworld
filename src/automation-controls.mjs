@@ -13,13 +13,14 @@ for (const [key,label] of [
  ['building.enabled','建筑总开关'],['building.collect','收取建筑产出'],['building.build','自动建造'],['building.upgrade','自动升级建筑'],['building.finish','自动完工'],['building.supply','缺料时为建筑备料'],['building.speedUp','建筑自动加速'],
  ['factory.enabled','工厂总开关'],['factory.gain','领取工厂产品'],['factory.produce','工厂自动生产'],['factory.cooperateNative','按需调整原生自动生产'],['factory.speedUp','工厂自动加速'],
  ['farm.enabled','农田总开关'],['resident.enabled','自动交居民订单'],['resident.reroll','刷新不符合条件的订单'],['resident.rewards','领取居民订单进度奖励'],['cargo.enabled','贸易港自动交货与收货'],['events.enabled','处理已支持的随机事件'],
- ['pet.enabled','海兽培育总开关'],['museum.runEnabled','博物馆探宝总开关'],['museum.enabled','自动探宝'],['museum.upgrade','升级博物馆技能与展区'],['gold.enabled','每日钻石点金'],['forge.enabled','装备自动锻造'],
+ ['pet.enabled','海兽培育总开关'],['museum.runEnabled','博物馆探宝总开关'],['museum.enabled','自动探宝'],['museum.upgrade','升级博物馆技能与展区'],['gold.enabled','每日钻石点金'],
 ]) {
- const base = key.split('.')[0], gates = key === 'gold.enabled' ? ['loop.dailies'] : ['forge.enabled','museum.runEnabled'].includes(key) ? [] : ['loop.world'];
+ const base = key.split('.')[0], gates = key === 'gold.enabled' ? ['loop.dailies'] : key === 'museum.runEnabled' ? [] : ['loop.world'];
  if (['building','factory'].includes(base) && !key.endsWith('.enabled')) gates.push(base+'.enabled');
  if (base === 'museum' && key !== 'museum.runEnabled') gates.push('museum.runEnabled');
  add(key,label,'基地',{gates});
 }
+add('forge.enabled','装备自动锻造','装备');
 add('gather.enabled','采集总开关','采集',{gates:['loop.world'],help:'在游戏配置 → 采集选择钓鱼、潜水、拾荒、漂浮物和工具养成。关闭总开关会暂停这些项目，保留已选细项。'});
 for (const [key,label] of [['fishing','自动钓鱼'],['floaters','拾取海面原料漂浮物'],['antiqueFloaters','打捞海面藏品宝箱'],['diving','潜水打捞原料'],['salvage','拾荒船自动拾荒'],['upgradeFishing','钓具强化与升级'],['upgradeDiving','潜水船坞强化与升级'],['upgradeSalvage','拾荒船强化与升级']]) add('gather.'+key,label,'采集',{gates:['loop.world','gather.enabled']});
 for (const [key,label] of [['claimTasks','领取每日任务奖励'],['claimDailyChest','领取每日活跃宝箱'],['claimWeeklyChest','领取每周活跃宝箱'],['claimGift','每日免费赠礼']]) add('dailies.'+key,label,'任务与领奖',{gates:['dailies.enabled']});
@@ -32,7 +33,10 @@ add('progression.enabled','推关与试炼总开关','世界与挑战',{help:'�
 add('progression.mainline','主线 / 闯关自动挑战','世界与挑战',{gates:['progression.enabled']});
 add('progression.trials','试炼自动推关','世界与挑战',{gates:['progression.enabled']});
 add('pirateHunt.enabled','海盗讨伐自动推进','世界与挑战',{help:'每轮核对本人首杀和舰队状态，自动挑战下一等级。消耗汽油，达到失败停止次数或本次预算后停止派遣；先在配置中选择舰队。'});
-add('antique.enabled','藏品自动养成','英雄',{help:'按游戏配置 → 英雄 → 藏品养成执行激活、升星、大师等级和套装升级；只使用现有资源，不购买或消耗钻石。'});
+add('antique.enabled','藏品自动养成','藏品',{
+ configLabel:'藏品养成总开关', configuredFields:['antique.activate','antique.star','antique.master','antique.suit'],
+ help:'开启后，挂机按下方已选动作培养藏品。关闭会暂停藏品养成，仍可编辑各项设置。养成只使用已有资源。',
+});
 add('appointments.enabled','自动英雄委任','英雄',{help:'在资源与玩法 → 英雄与装备中设置开关和委任优先级，挂机按保存顺序调用游戏一键委任。'});
 add('trials.paid','试炼钻石扫荡','世界与挑战');
 add('trials.ads','试炼免广告扫荡','世界与挑战');
@@ -43,9 +47,9 @@ for (const [key,label,group,gates] of [
 ]) add(key,label,group,{gates});
 const nativeKeys = new Set(['trialPaidSweep','trialAdSweep','diveEnhance','autoDive','salvageEnhance','autoSalvage','autoFish','fishEnhance','floaters','antiqueFloaters','cargo','farm','collect','finishUpgrade','build','buildSupply','upgrade','finishOrder','startProduce','speedUp','denyOrder','paidGold','dailyRewards','chests','gift','tasks']);
 for (const task of automationTasks) {
- if (task.key === 'stageAuto') continue;
+ if (task.key === 'stageAuto' || task.key === 'heroGrowth') continue;
  if (nativeKeys.has(task.key)) continue;
- const group = ['freeRecruit','ticketRecruit','freeAntiqueRecruit','antiqueRecruitRewards','heroRecruitRewards','heroAdRecruit','antiqueAdRecruit'].includes(task.key) ? '日常招募' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
+ const group = ['freeRecruit','ticketRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['equipmentCollect','equipmentCraft'].includes(task.key) ? '装备' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
  const gates = task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
  if (['museumCollect','museumExplore'].includes(task.key)) gates.push('museum.runEnabled');
  if (['radarAuto','radarRepair'].includes(task.key)) gates.push('radar.runEnabled');
@@ -61,20 +65,20 @@ const idleModules = {
  'gather.enabled':['基地','gather','采集'],
  'cargo.enabled':['基地','cargo','贸易港口'], 'events.enabled':['基地','events','随机事件'],
  'pet.enabled':['基地','pet','海兽培育室'], 'museum.runEnabled':['基地','museum','博物馆探宝'],
- 'forge.enabled':['基地','forge','装备锻造'], 'gold.enabled':['基地','gold','每日付费点金'],
+ 'forge.enabled':['装备','forge','装备锻造'], 'gold.enabled':['基地','gold','每日付费点金'],
  'worldBoss.enabled':['世界','worldBoss','世界Boss首战'], 'radar.runEnabled':['世界','radar','联盟情报'],
  'treasure.enabled':['世界','treasure','万吨巨轮'], 'cityWar.enabled':['世界','cityWar','联盟城战'],
  'schedule.pirate':['世界','pirate-sweep','海盗日常扫荡'],
  'progression.enabled':['世界','progression','推关与试炼'],
  'pirateHunt.enabled':['世界','pirate-hunt','海盗讨伐'],
  'heroes.enabled':['英雄','heroes','英雄养成'],
- 'antique.enabled':['英雄','antique','藏品养成'],
+ 'antique.enabled':['藏品','antique','藏品养成'],
  'dailies.enabled':['日常与活动','rewards','每日任务与奖励'],
  'loop.tasks':['日常与活动','rewards','主线、支线与成就'],
  'loop.dailies':['日常与活动','daily-actions','日常行动'],
  'schedule.guildOrders':['世界','guild-orders','联盟订单'],
- 'schedule.equipmentCollect':['英雄','equipment-legacy','装备制造领取'],
- 'schedule.equipmentCraft':['英雄','equipment-legacy','装备制造续产'],
+ 'schedule.equipmentCollect':['装备','equipment-legacy','装备制造领取'],
+ 'schedule.equipmentCraft':['装备','equipment-legacy','装备制造续产'],
  'schedule.petCollect':['基地','pet','海兽成熟领取'],
  'schedule.petBreed':['基地','pet','海兽培育'],
 };

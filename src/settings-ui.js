@@ -1,12 +1,12 @@
 // 游戏配置编辑器：按账号合并连续输入，校验后自动保存，预览仍使用独立只读接口。
 const configEditor = { owner: null, data: null, draft: null, baseline: null, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
 bindConsoleObject('configuration', configEditor, ['owner', 'data', 'draft', 'baseline', 'category', 'busy', 'loading', 'saving', 'saveError', 'saveRetries', 'selectedGroups', 'errors', 'playerData', 'playerError', 'previewSummary']);
-const configCategories = { base: '基地', world: '世界', heroes: '英雄', daily: '日常与活动' };
+const configCategories = { base: '基地', world: '世界', heroes: '英雄', antique: '藏品', equipment: '装备', daily: '日常与活动' };
 const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const baseFamilies = [
   { id: 'construction', title: '建筑', groups: ['building'] },
-  { id: 'production', title: '生产', groups: ['factory', 'farm', 'gather', 'forge'] },
+  { id: 'production', title: '生产', groups: ['factory', 'farm', 'gather'] },
   { id: 'events', title: '事件', groups: ['resident', 'cargo', 'events'] },
   { id: 'foundation', title: '基础', groups: ['pet', 'museum', 'resources', 'gold'] },
 ];
@@ -159,8 +159,6 @@ const configGroups = [
     configField('ads.waitSeconds','广告申请后等待','number',{unit:'秒',help:'无免广告权益时默认申请并等待后领取；有权益时立即领取。默认15秒，是挂机收益、英雄招募、工厂加速、藏品招募、广告商店、节庆礼包和雪球礼包都实测成功过的时长。5秒只在藏品招募上测通，广告商店3秒被拒。等待会占用账号操作队列，挂机每轮最多处理1次；服务器返回未完成时跳过该入口并冷却5分钟。'}),
     configField('schedule.afkAd','闯关挂机广告收益','switch',{help:'每天1次。游戏只在普通领取后的60秒内提供此入口，因此需同时开启“闯关挂机收益”，普通领取后立即执行。无免广告权益时按设置的等待时间领取。'}),
     configField('schedule.adShop','广告商店资源','switch',{help:'按商品每日次数领取。无免广告权益时按设置的等待时间领取。'}),
-    configField('schedule.heroAdRecruit','英雄广告招募','switch',{help:'每天3次，不消耗招募券或钻石。无免广告权益时按设置的等待时间领取。'}),
-    configField('schedule.antiqueAdRecruit','藏品广告招募','switch',{help:'每天3次，不消耗招募券或钻石。无免广告权益时按设置的等待时间领取。'}),
     configField('schedule.compassAdGift','龙王罗盘每日广告礼包','switch',{help:'每天1次，活动开放时可领。无免广告权益时按设置的等待时间领取。'}),
     configField('schedule.adSpeedUpProduce','工厂生产广告加速','switch',{help:'每天3次，每次30分钟，优先剩余时间最长的生产队列，只加速已开工的目标，不使用加速器。遵守工厂禁用名单。无免广告权益时按设置的等待时间领取。'}),
     configField('schedule.adSpeedUpBuilding','建筑升级广告加速','switch',{help:'每天3次，与博物馆展柜共用次数，每次30分钟，只加速施工中的建筑。遵守建筑禁用名单。尚未经真实账号验证，回读确认不到次数变化时不重复提交。无免广告权益时按设置的等待时间领取。'}),
@@ -258,7 +256,11 @@ const configGroups = [
     configField('pet.feed', '自动喂养', 'switch', { help: '消耗服务器列出的喂养材料，加快当前培育。' }),
     configField('pet.advance', '自动进阶', 'switch', { help: '对已入驻的海兽投喂进阶材料；达到喂养和等级要求后进阶。' }),
   ] },
-  { id: 'forge', title: '装备自动锻造', category: 'base', fields: [
+  { id: 'equipment-growth', title: '装备强化', category: 'equipment', fields: [
+    configField('heroes.equipment', '装备强化', 'switch', { help: '逐件强化指定英雄已穿戴的装备。' }),
+    configField('heroes.badge', '徽章强化', 'switch', { help: '提升指定英雄已佩戴徽章的等级，使用徽章经验材料和所需金币。' }),
+  ] },
+  { id: 'forge', title: '装备自动锻造', category: 'equipment', fields: [
     configField('forge.enabled', '自动锻造总开关', 'switch', { help: '开始挂机后生效，自动领取所选工厂已完成的装备，再安排下一件。下方选择“装备锻造”预览；不会开启游戏原生自动锻造。' }),
     configField('forge.buildingIds', '锻造工厂', 'multi', { catalog: 'forgeBuildings', empty: '请选择装备工厂' }),
     configField('forge.decompose','自动分解','switch',{help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
@@ -408,34 +410,42 @@ const configGroups = [
   { id: 'guild-orders', title: '联盟订单', category: 'world', fields: [
     configField('schedule.guildOrders', '自动提交联盟订单', 'switch', { help: '每轮最多提交一单，仅使用现有材料并预留其他订单用料。默认关闭。' }),
   ] },
-  { id: 'equipment-legacy', title: '装备制造原有规则', category: 'heroes', fields: [
+  { id: 'equipment-legacy', title: '装备制造原有规则', category: 'equipment', fields: [
     configField('schedule.equipmentCollect', '领取完工装备', 'switch', { help: '保留原挂机设置。开启装备自动锻造后，由锻造模块统一领取。' }),
     configField('schedule.equipmentCraft', '空闲装备厂续产', 'switch', { help: '每轮一件，保留一万金币。开启装备自动锻造后，改用所选工厂、配方与每日预算。' }),
   ] },
   { id: 'heroes', title: '英雄养成', category: 'heroes', fields: [
-    configField('heroes.enabled', '养成总开关'), configField('loop.heroes', '加入自动挂机', 'switch', { help: '关闭时仍可在“英雄”页手动按本配置执行养成。' }),
-    configField('heroes.level', '允许升级'), configField('heroes.star', '允许升星'), configField('heroes.skill', '允许提升技能'),
-    configField('heroes.heroIds', '培养英雄', 'multi', { catalog: 'heroes', empty: '未选择，允许全部已拥有英雄' }),
-    configField('heroes.universal', '允许使用万能碎片', 'switch', { parent: 'heroes.star' }),
-    configField('heroes.keepExp', '保留英雄经验', 'number', { parent: 'heroes.level' }), configField('heroes.targetLevel', '目标等级', 'number', { parent: 'heroes.level', unit: '级', help: '0 表示采用游戏当前允许的上限。' }),
-    configField('heroes.targetStar', '目标星级', 'number', { parent: 'heroes.star', unit: '星', help: '0 表示采用游戏上限。' }),
+    configField('heroes.enabled', '养成总开关'), configField('loop.heroes', '加入自动挂机'),
+    configField('heroes.heroIds', '指定英雄', 'multi', { catalog: 'heroes', empty: '留空则不处理任何英雄', help: '可搜索并选择多个英雄。手动执行和挂机都只处理名单中已拥有的英雄。' }),
+    configField('heroes.level', '自动升级'), configField('heroes.star', '自动升星'),
+    configField('heroes.skill', '技能升级'), configField('heroes.skillAdvance', '技能进阶'),
+    configField('heroes.exclusiveLevel', '专武升级'), configField('heroes.exclusiveStar', '专武升星'),
+    configField('heroes.showSkillReward', '领取技能展示奖励', 'switch', { help: '领取指定英雄的技能展示奖励，已领取的英雄自动跳过。' }),
+    configField('heroes.universal', '英雄升星允许使用万能碎片', 'switch', { section: '高级设置', startCollapsed: true }),
+    configField('heroes.keepExp', '保留英雄经验', 'number', { section: '高级设置' }),
+    configField('heroes.targetLevel', '目标等级', 'number', { section: '高级设置', unit: '级', help: '0 表示采用游戏当前允许的上限。' }),
+    configField('heroes.targetStar', '目标星级', 'number', { section: '高级设置', unit: '星', help: '0 表示采用游戏上限。' }),
   ] },
-  { id: 'antique', title: '藏品养成', category: 'heroes', fields: [
-    configField('antique.enabled', '藏品养成总开关', 'switch', { help: '只在已有碎片、经验或金币足够时操作，不购买、不消耗钻石。结果未知时保留记录，不重复发送。' }),
-    configField('antique.activate', '自动激活藏品', 'switch', { parent: 'antique.enabled', help: '使用对应藏品碎片激活，稀有/史诗/传说/超凡分别需要 10/10/10/50 个碎片。万能碎片不会自动兑换。' }),
+  { id: 'antique', title: '藏品养成', category: 'antique', settingsLegend: '养成设置', fields: [
+    configField('antique.enabled', '藏品养成总开关', 'switch', { moduleControl: true, help: '只在已有碎片、经验或金币足够时操作，不购买、不消耗钻石。结果未知时保留记录，不重复发送。' }),
+    configField('antique.activate', '自动激活藏品', 'switch', { help: '使用对应藏品碎片激活，稀有/史诗/传说/超凡分别需要 10/10/10/50 个碎片。万能碎片不会自动兑换。' }),
     configField('antique.activateQualities', '激活品质', 'multi', { parent: 'antique.activate', catalog: 'antiqueQualities', empty: '未选择，不激活', when: d => d.antique.activate }),
-    configField('antique.star', '自动升星', 'switch', { parent: 'antique.enabled', help: '按当前星级消耗对应颜色碎片；已激活藏品按品质和顺序处理。' }),
+    configField('antique.star', '自动升星', 'switch', { help: '按当前星级消耗对应颜色碎片；已激活藏品按品质和顺序处理。' }),
     configField('antique.starQualities', '升星品质', 'multi', { parent: 'antique.star', catalog: 'antiqueQualities', empty: '未选择，不升星', when: d => d.antique.star }),
     configField('antique.targetStar', '升星目标星级', 'number', { parent: 'antique.star', unit: '星', when: d => d.antique.star, help: '0 表示升到当前配置最高星级。' }),
     configField('antique.universal', '允许万能碎片补足升星', 'switch', { parent: 'antique.star', when: d => d.antique.star, help: '只在普通碎片不足时使用；不会用于激活。' }),
-    configField('antique.master', '自动提升藏品大师等级', 'switch', { parent: 'antique.enabled', help: '消耗藏品大师徽章，并满足下一等级要求的总星级。' }),
+    configField('antique.master', '自动提升藏品大师等级', 'switch', { help: '消耗藏品大师徽章，并满足下一等级要求的总星级。' }),
     configField('antique.targetMasterLevel', '大师目标等级', 'number', { parent: 'antique.master', unit: '级', when: d => d.antique.master, help: '0 表示升到当前配置最高等级。' }),
-    configField('antique.suit', '自动激活/升级套装', 'switch', { parent: 'antique.enabled', help: '普通套装需集齐本套装藏品；红色套装至少激活 2 件。升级消耗金币和对应颜色藏品经验。' }),
+    configField('antique.suit', '自动激活/升级套装', 'switch', { help: '普通套装需集齐本套装藏品；红色套装至少激活 2 件。升级消耗金币和对应颜色藏品经验。' }),
     configField('antique.suitQualities', '套装品质', 'multi', { parent: 'antique.suit', catalog: 'antiqueQualities', empty: '未选择，不升级套装', when: d => d.antique.suit }),
     configField('antique.goldReserve', '套装升级后保留金币', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.suit }),
     configField('antique.dailyGoldLimit', '每日套装金币预算', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.suit, help: '0 表示不限额；跨日重置，未确认的消耗仍占预算。' }),
-    configField('antique.maxActions', '每轮最多执行动作', 'number', { unit: '项', help: '包含激活、升星、大师和套装升级。' }),
-    configField('antique.checkEverySeconds', '藏品检查间隔', 'number', { unit: '秒' }),
+  ] },
+  { id: 'hero-recruit', title: '英雄招募', category: 'heroes', fields: [
+    configField('schedule.heroAdRecruit','英雄广告招募','switch',{help:'每天3次，不消耗招募券或钻石。无免广告权益时按设置的等待时间领取。'}),
+  ] },
+  { id: 'antique-recruit', title: '藏品招募', category: 'antique', fields: [
+    configField('schedule.antiqueAdRecruit','藏品广告招募','switch',{help:'每天3次，不消耗招募券或钻石。无免广告权益时按设置的等待时间领取。'}),
   ] },
   { id: 'rewards', title: '任务与奖励', category: 'daily', fields: [
     configField('tasks.main', '领取主线奖励'), configField('tasks.branch', '领取支线奖励'), configField('tasks.achievements', '领取成就奖励'),
@@ -479,6 +489,7 @@ function configSet(key, value) {
   if (key === 'cityWar.fleetIds') {
     draft.cityWar.defenceFleetIds = (draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
   }
+  if (key === 'heroes.heroIds' && value.length) draft.heroes.needsSelection = false;
   if (key === 'farm.autoPlant' && value) draft.farm.customPlant = false;
   if (key === 'farm.customPlant' && value) draft.farm.autoPlant = false;
   configEditor.draft = draft;
@@ -538,7 +549,7 @@ function configMessage(text, kind = 'info') {
 }
 function configBusy(value) {
   configEditor.busy = value;
-  for (const id of ['config-retry', 'config-import', 'config-export', 'config-reload', 'config-preview']) $(id).disabled = value || configEditor.loading || !configEditor.draft;
+  for (const id of ['config-retry', 'config-import', 'config-export', 'config-preview']) $(id).disabled = value || configEditor.loading || !configEditor.draft;
   if (!value && !configEditor.savePromise && !configEditor.saveError && configIsDirty()) configScheduleSave();
 }
 function configUpdateState() {
@@ -548,8 +559,6 @@ function configUpdateState() {
   node.textContent = configEditor.loading ? '正在载入…' : configEditor.saving ? '正在自动保存…' : configEditor.busy ? '正在处理…' : dirty ? configEditor.saveError ? configEditor.saveError.fields?.revision ? '配置有冲突，尚未保存' : configEditor.saveError.fields ? '请修正配置，尚未保存' : configEditor.saveTimer !== null ? '保存失败，正在等待重试…' : '自动保存失败，更改仍保留' : '等待自动保存…' : configEditor.draft ? '自动保存已开启 · 配置已同步' : '尚未载入';
   node.title = node.textContent;
   $('config-retry').hidden = !dirty || !configEditor.saveError || !!configEditor.saveError.fields || configEditor.saveTimer !== null;
-  const at = configEditor.data?.savedAt;
-  $('config-saved-time').textContent = at ? '上次保存：' + new Date(at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '';
 }
 function configRevealTab(tab) {
   const bar = tab.parentElement, item = tab.getBoundingClientRect(), bounds = bar.getBoundingClientRect();
@@ -713,7 +722,11 @@ function configRenderFields(fields, host) {
   for (const field of children.get(null) ?? []) {
     if (field.section && field.section!==section) {
       section=field.section; const details=el('details','config-field-section'),heading=el('summary','config-subheading',section);
-      details.id='config-section-'+field.key.replaceAll('.','-');details.open=!configCollapsedSections.has(details.id);
+      details.id='config-section-'+field.key.replaceAll('.','-');
+      if (field.startCollapsed && !configDisclosureSeen.has(details.id)) {
+        configDisclosureSeen.add(details.id); configCollapsedSections.add(details.id);
+      }
+      details.open=!configCollapsedSections.has(details.id);
       details.ontoggle=()=>{if(details.open)configCollapsedSections.delete(details.id);else configCollapsedSections.add(details.id);};
       details.append(heading);host.append(details);sectionHost=details;
     }else if(!field.section){section=null;sectionHost=host;}
@@ -745,12 +758,14 @@ function configRender() {
   const staticFields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
   const tasks = (configEditor.data.tasks ?? []).filter(task => !mapped.has(task.key)&&!hiddenFields.has('schedule.'+task.key)&&!activityOwnedSettings.has('schedule.'+task.key)&&!staticFields.has('schedule.'+task.key)).map(task => ['freeRecruit', 'ticketRecruit'].includes(task.key) ? { ...task, group: '招募' } : task);
   const destinations = { '联盟': ['cityWar', '联盟城战'], '海面': ['building', '建筑'], '领奖': ['rewards', '任务与领奖'],
-    '周期活动': ['daily-weekly', '周期活动'], '限时活动': ['daily-events', '限时活动'], '藏品': ['daily-collections', '日常招募'],
-    '招募': ['daily-collections', '日常招募'], '日常': ['daily-actions', '日常行动'], '挑战': ['daily-challenges', '挑战与扫荡'] };
+    '周期活动': ['daily-weekly', '周期活动'], '限时活动': ['daily-events', '限时活动'], '藏品': ['antique-recruit', '藏品招募'],
+    '招募': ['hero-recruit', '英雄招募'], '日常': ['daily-actions', '日常行动'], '挑战': ['daily-challenges', '挑战与扫荡'] };
   configLegacyGroups.clear();
+  configLegacyGroups.set('daily-collections', 'hero-recruit');
   [...new Set(tasks.map(task => task.group))].forEach((name, index) => {
     const [id, title] = destinations[name] || ['daily-other', '其他项目'];
-    configLegacyGroups.set('schedule-' + (configGroups.length + index), id);
+    // 旧版从 33 开始为动态分组生成书签。新增静态分组时仍需解析旧编号。
+    configLegacyGroups.set('schedule-' + (33 + index), id);
     let group = groups.find(item => item.id === id);
     if (!group) { group = { id, title, category: 'daily', fields: [] }; groups.push(group); }
     for (const task of tasks.filter(task => task.group === name)) if (!group.fields.some(field => field.key === 'schedule.' + task.key)) group.fields.push(configField('schedule.' + task.key, task.label, 'switch', task.key === 'heroRecruitRewards' ? { help: '只领取本赛季已达标的英雄累计招募奖励，不消耗招募券或钻石。与藏品领奖分别控制，不受日常行动开关控制，暂停托管时停止。' } : {}));
@@ -770,7 +785,7 @@ function configRender() {
   movedFields.add('loop.everySeconds');
   for (const group of groups) {
     const controls = (configEditor.data.rules?.moduleControls ?? []).filter(control => control.configTarget === group.id && !hiddenFields.has(control.key));
-    const switches = controls.map(control => configField(control.key, controls.length === 1 ? '自动挂机' : control.label, 'switch', {
+    const switches = controls.map(control => configField(control.key, control.configLabel ?? (controls.length === 1 ? '自动挂机' : control.label), 'switch', {
       help: control.help || group.fields.find(field => field.key === control.key)?.help,
       moduleControl: true, controlFields: control.fields, gates: control.gates, configuredFields: control.configuredFields,
     }));
@@ -822,18 +837,33 @@ function configRender() {
       section.setAttribute('aria-labelledby', direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
       if (['cityWar','silicon','treasure'].includes(group.id)) {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
-        section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新载入配置；已保存设置会保留。'));
+        section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
       }
-      configRenderFields(group.fields.map(spec => ({ ...spec, category, groupId: group.id })), section);
+      if (group.id === 'equipment-growth') {
+        const intro = el('p', 'config-section-intro', '强化随英雄养成执行，只处理指定英雄已穿戴的装备和徽章。');
+        const link = el('a', 'inline-link', '设置指定英雄');
+        link.href = '#config-group-heroes';
+        intro.append(link); section.append(intro);
+      }
+      const fields = group.fields.map(spec => ({ ...spec, category, groupId: group.id }));
+      if (group.settingsLegend) {
+        configRenderFields(fields.filter(field => field.moduleControl), section);
+        const settings = el('fieldset', 'config-module-settings');
+        settings.append(el('legend', '', group.settingsLegend));
+        section.append(settings);
+        configRenderFields(fields.filter(field => !field.moduleControl), settings);
+      } else {
+        configRenderFields(fields, section);
+      }
       if (group.id === 'progression') {
         const lineups = el('button', 'config-small-button', '管理自定义阵容'); lineups.type = 'button';
         lineups.onclick = async () => {
           const account = current;
           if (!await configFlush() || account !== current) return;
-          const page = document.querySelector('#tabs [data-tab="resources"]');
-          if (page) activateConsolePage(page, 'heroes');
-          await refreshSavedLineups();
-          if (account === current) $('saved-lineup-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const page = document.querySelector('#tabs [data-tab="lineups"]');
+          activateConsolePage(page);
+          page.focus({ preventScroll: true });
+          window.scrollTo(0, 0);
         };
         section.append(lineups);
       }
@@ -1046,7 +1076,7 @@ function configAccountChanged() {
 function configErrors(error, { focus = true } = {}) {
   configClearErrors();
   configEditor.errors = error.fields ?? {};
-  configMessage(error.message, 'error');
+  configMessage(error.fields?.revision ? '配置已在其他页面更新。刷新页面可读取最新配置，本页未保存的更改会被丢弃。' : error.message, 'error');
   let first;
   for (const [key, text] of Object.entries(configEditor.errors)) {
     const lookup = key === 'factory.speedUpSources' ? 'factory.demandPriority' : key;
@@ -1208,14 +1238,17 @@ function configMultiselect(spec, id, options = {}) {
   const count = el('span'); let limit = 120;
   const more = configButton('显示更多选项', () => { limit += 120; paintList(); });
   const all = () => {
-    const options = [...(catalog[spec.catalog] ?? [])];
+    const options = (catalog[spec.catalog] ?? []).filter(item =>
+      spec.key !== 'heroes.heroIds' || !item.hidden || read().includes(item.value));
     if (spec.catalog!=='expeditionFleets') for (const value of read()) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
     return options;
   };
   function paintSummary() {
     const options = all(), values = read().filter(value=>spec.catalog!=='expeditionFleets'||options.some(item=>item.value===value));
     const names = values.map(value => options.find(item => item.value === value)?.label || value);
-    summary.textContent = names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 项' : '') : spec.empty || '请选择';
+    const empty = spec.key === 'heroes.heroIds' && configGet('heroes.needsSelection')
+      ? '旧配置曾允许培养全部英雄，请重新选择' : spec.empty || '请选择';
+    summary.textContent = names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 项' : '') : empty;
   }
   function paintList() {
     const oldScroll = list.scrollTop; clear(list);
@@ -1228,6 +1261,7 @@ function configMultiselect(spec, id, options = {}) {
         if (disabled) return;
         const values = read();
         write(input.checked ? [...values, item.value] : values.filter(value => value !== item.value));
+        if (spec.key === 'heroes.heroIds' && item.hidden && !input.checked) { paintSummary(); paintList(); return; }
         paintSummary(); count.textContent = '已选 ' + read().filter(value=>all().some(item=>item.value===value)).length + ' 项 · 匹配 ' + matches.length + ' 项';
       };
       label.append(input, el('span', '', item.label)); list.append(label);
@@ -1426,7 +1460,7 @@ async function configPreview() {
   configBusy(true); configUpdateState(); $('config-preview').textContent = '读取真实状态…';
   try {
     const selected=scope.startsWith('module:')?configEditor.groups.get(scope.slice(7)):null;
-    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-sweep':'pirateSweep','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
+    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-sweep':'pirateSweep','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes','equipment-growth':'equipmentGrowth'};
     const runtime=await call('/api/loop');
     const source=selected?dedicated[selected.id]:scope;
     let data;
@@ -1549,7 +1583,6 @@ $('config-file').onchange = configImportFile;
 $('config-export').onclick = configExport;
 $('config-preview').onclick = configPreview;
 $('config-preview-scope').onchange = () => {const value=$('config-preview-scope').value;if(value.startsWith('module:')){const g=configEditor.groups.get(value.slice(7));if(g){configActivate(g.category,false,false);configActivateGroup(g.id,false,true,true);}}configEditor.previewSummary=null;clear($('config-preview-result'));configRenderUsage();};
-$('config-reload').onclick = () => { if (!configIsDirty() || window.confirm('重新载入会丢弃当前未保存的配置草稿，是否继续？')) void configLoad(true); };
 for (const tab of document.querySelectorAll('[data-config-tab]')) {
   tab.onclick = () => configActivate(tab.dataset.configTab);
   tab.onkeydown = event => {

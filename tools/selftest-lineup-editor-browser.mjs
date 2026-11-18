@@ -96,9 +96,23 @@ try {
       return route.continue();
     });
     await page.goto(base, { waitUntil: 'domcontentloaded' });
-    await page.locator('#tabs [data-tab="resources"]').click();
-    await page.locator('[data-resource-tab="heroes"]').click();
-    await page.getByRole('button', { name: '编辑阵容 主线突击', exact: true }).waitFor();
+    await page.locator('#account-picker-title').filter({ hasText: '阵容界面隔离验收' }).waitFor();
+    const tab = page.locator('#tabs [data-tab="lineups"]');
+    if (mobile) {
+      const navFits = await page.locator('#tabs > button').evaluateAll(buttons => {
+        const boxes = buttons.map(button => button.getBoundingClientRect());
+        return boxes.every(box => box.top === boxes[0].top && box.width > 0 && box.left >= 0 && box.right <= innerWidth);
+      });
+      assert(navFits, '手机底部导航所有页签均在同一行内可见');
+      await tab.tap();
+    } else await tab.click();
+    const panel = page.locator('#tab-lineups');
+    await panel.locator('#saved-lineup-view').getByRole('button', { name: '编辑阵容 主线突击', exact: true }).waitFor();
+    await panel.locator('#lineup-view').getByText('隔离验收', { exact: true }).waitFor();
+    assert.equal(await tab.getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('#resource-tabs').isVisible(), false);
+    assert.equal(await page.locator('#tab-heroes #saved-lineup-view, #tab-heroes #lineup-view').count(), 0);
+    assert.equal(await page.locator('#tab-heroes #formation-view').count(), 1);
     return { context, page };
   }
 
@@ -186,6 +200,10 @@ try {
   await page.locator('#tabs [data-tab="settings"]').click();
   await page.locator('[data-config-tab="world"]').click();
   await page.locator('[data-config-group="progression"]').click();
+  for (const field of ['mainline', 'trials']) {
+    const disclosure = page.locator('.config-disclosure[aria-controls="config-field-progression-' + field + '-children"]');
+    if (await disclosure.getAttribute('aria-expanded') === 'false') await disclosure.click();
+  }
   const bindingSave = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
   await page.locator('[data-lineup-binding="mainline"]').selectOption('qa-lineup');
   assert.equal((await bindingSave).status(), 200);
@@ -200,7 +218,10 @@ try {
   await page.keyboard.press('Escape');
   await modal.waitFor({ state: 'detached' });
   await page.screenshot({ path: path.join(output, 'lineup-settings-desktop.png'), animations: 'disabled' });
-  console.log('通过：推关与试炼配置选择自定义阵容、自动保存并只读查看');
+  await page.getByRole('button', { name: '管理自定义阵容', exact: true }).click();
+  await page.locator('#tab-lineups').getByRole('button', { name: '编辑阵容 桌面验证阵容', exact: true }).waitFor();
+  assert.equal(await page.locator('#tabs [aria-current="page"]').getAttribute('data-tab'), 'lineups');
+  console.log('通过：推关与试炼配置可选择并查看阵容，管理入口直达阵容页');
 
   await page.locator('#tabs [data-tab="stages"]').click();
   await page.locator('#stage-lineup-control select').selectOption('qa-lineup');

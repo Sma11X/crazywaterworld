@@ -299,6 +299,7 @@ await test('真实协议省略工厂队列零号idx仍可确认新排产', async
 
 await test('英雄连续升级回读目标等级，经验补入不阻塞下一次', async () => {
   const f = fixture(); f.settings.heroes.enabled = f.settings.heroes.level = true; f.state.income = 20;
+  f.settings.heroes.heroIds = ['A'];
   const g = f.guard();
   const results = await runHeroPlan(f.client, protocol, { steps: [{ kind: 'level', heroId: 'A', from: 1, to: 3, count: 2, levelCosts: [10, 10], costs: [{ id: '英雄经验', num: 20 }] }] },
     { allowMutate: true, getSettings: () => f.settings, beforeAction: g.before, afterAction: g.after, cancelAction: g.cancel });

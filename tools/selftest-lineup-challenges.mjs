@@ -407,6 +407,7 @@ await test('CLI读取保存阵容并先恢复遗留记录，预览只读且保�
       process: processStub, console: { log() {} }, AbortController,
       SPEED_UP_ITEM: '加速道具', loadProtocol: () => ({}), getConfig: () => ({}), loadConfigSafe: () => ({}),
       loadCredentials: () => ({ url: 'ws://fixture', login: {}, account: { id: 'cli-account' } }),
+      createUsageLedger: accountId => { assert.equal(accountId, 'cli-account'); return {}; },
       loadAutomationSettings: accountId => { assert.equal(accountId, 'cli-account'); return { settings }; },
       readLineupRuntime: () => ({ pending: true }),
       lineupRole: value => { assert.equal(value, player); return { playerId: '1', worldId: '1' }; },

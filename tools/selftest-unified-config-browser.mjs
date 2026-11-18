@@ -9,7 +9,10 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-unified-config-'));
 process.env.CW_DATA_DIR = directory;
 process.env.CW_CONFIG_PACK = path.join(directory, 'config.json');
 process.env.CW_RESOURCE_AUTO_UPDATE = '0';
-fs.writeFileSync(process.env.CW_CONFIG_PACK, '[]');
+fs.writeFileSync(process.env.CW_CONFIG_PACK, JSON.stringify([[1, 'HeroCfg', { data: [
+  { id: '瑞文', name: '骑士瑞文', quality: 'PURPLE', type: '英雄' },
+  { id: '训练目标', name: '训练木人', quality: 'PURPLE', type: 'NPC' },
+] }]]));
 const { saveStore } = await import('../src/accounts.mjs');
 const { defaultSettings, saveAutomationSettings, loadAutomationSettings, settingsUiRules } = await import('../src/automation-settings.mjs');
 const { GameClient } = await import('../src/client.mjs');
@@ -23,10 +26,14 @@ saveStore({ version: 1, activeId: 'config-a', accounts: ['config-a', 'config-b']
 const settings = defaultSettings();
 settings.factory.enabled = true; settings.factory.produce = false; settings.factory.keepStock = 321;
 settings.heroes.enabled = true; settings.loop.heroes = false; settings.heroes.level = false; settings.heroes.star = true;
+settings.heroes.needsSelection = true;
+settings.antique.maxActions = 7; settings.antique.checkEverySeconds = 90;
 settings.museum.runEnabled = true; settings.museum.enabled = settings.museum.upgrade = false;
 settings.schedule.museumCollect = settings.schedule.museumExplore = false;
 saveAutomationSettings('config-a', settings, { revision: 0 });
-saveAutomationSettings('config-b', defaultSettings(), { revision: 0 });
+const otherSettings = defaultSettings();
+otherSettings.heroes.heroIds = ['训练目标'];
+saveAutomationSettings('config-b', otherSettings, { revision: 0 });
 const otherBefore = loadAutomationSettings('config-b');
 const output = path.resolve('output/unified-config'); fs.mkdirSync(output, { recursive: true });
 const app = createConsole({ port: 0, protocol: {} });
@@ -57,7 +64,7 @@ try {
   };
   await page.goto(base); await openConfig();
   assert.equal(await page.locator('#tabs [data-tab=idle], #tab-idle').count(), 0);
-  assert.equal(await page.locator('#tabs > button').count(), 7);
+  assert.equal(await page.locator('#tabs [data-tab=lineups]').count(), 1);
   assert.equal(await page.getByText('前往挂机启停', { exact: true }).count(), 0);
   for (const control of settingsUiRules().moduleControls) {
     const selector = '[data-config-key="' + control.key + '"]';
@@ -65,6 +72,8 @@ try {
     assert.equal(await page.locator('#config-group-' + control.configTarget + ' ' + selector).count(), 1, control.key + ' 配置归属');
   }
   assert.equal(await page.locator('[data-config-key="loop.heroes"]').count(), 0);
+  assert.equal(await page.locator('#config-root').getByRole('button', { name: /重新载入/ }).count(), 0);
+  assert.equal(await page.locator('#config-root').getByText(/上次保存/).count(), 0);
   console.log('通过：32个模块开关各自归位，旧导航与跨页跳转移除');
 
   await page.locator('[data-config-family=production]').click();
@@ -84,8 +93,66 @@ try {
   assert.equal(loadAutomationSettings('config-a').settings.factory.produce, false);
   console.log('通过：模块暂停与参数一同保存，刷新、键盘启用不改细项');
 
-  await page.locator('[data-config-tab=heroes]').click();
-  await page.locator('[data-config-group=heroes]').click();
+  await page.locator('#tabs [data-tab=resources]').click();
+  await page.locator('[data-resource-tab=heroes]').click();
+  const planPath = url => url.pathname === '/api/heroes';
+  const runPath = url => url.pathname === '/api/heroes/run';
+  await page.route(planPath, route => route.fulfill({ json: {
+    text: '养成计划', heroes: [{ heroId: '瑞文', showName: '骑士瑞文', level: 35, star: 3, skillLevels: [1, 1] }],
+    steps: [{ kind: 'skillAdvance', heroId: '瑞文' }, { kind: 'equipment', heroId: '瑞文' }],
+  } }));
+  await page.route(runPath, route => route.fulfill({ json: { sent: 2, failed: 0, skipped: 0 } }));
+  await page.locator('#hero-plan').click();
+  await page.locator('#hero-table').getByText('技能进阶、装备强化', { exact: true }).waitFor();
+  await page.locator('#hero-run').click();
+  await page.locator('#hero-hint').filter({ hasText: '已发送 2 项' }).waitFor();
+  await page.locator('#hero-run:enabled').waitFor();
+  await page.unroute(planPath); await page.unroute(runPath);
+  await page.locator('#tab-heroes').getByRole('link', { name: '养成设置' }).click();
+  await page.locator('#config-group-heroes').waitFor();
+  const picker = page.locator('#config-field-heroes-heroIds');
+  assert.match(await picker.locator('summary').textContent(), /重新选择/);
+  await picker.locator('summary').click();
+  assert.equal(await picker.getByRole('checkbox', { name: '训练木人' }).count(), 0);
+  await picker.getByRole('searchbox').fill('骑士');
+  await picker.getByRole('checkbox', { name: '骑士瑞文' }).check();
+  await picker.locator('summary').click(); await saved();
+  assert.deepEqual(loadAutomationSettings('config-a').settings.heroes.heroIds, ['瑞文']);
+  assert.equal(loadAutomationSettings('config-a').settings.heroes.needsSelection, false);
+  const advanced = page.locator('#config-group-heroes details').filter({ has: page.getByText('高级设置', { exact: true }) });
+  assert.equal(await advanced.getAttribute('open'), null);
+  await advanced.locator('summary').click();
+  await advanced.getByLabel('目标等级', { exact: true }).fill('35');
+  await advanced.locator('summary').click();
+  const newActions = ['skillAdvance', 'exclusiveLevel', 'exclusiveStar', 'showSkillReward'];
+  for (const action of newActions) {
+    const toggle = page.locator('#config-field-heroes-' + action);
+    assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+    await toggle.click();
+  }
+  await saved();
+  await page.locator('[data-config-tab=equipment]').click();
+  for (const action of ['equipment', 'badge']) {
+    const toggle = page.locator('#config-group-equipment-growth #config-field-heroes-' + action);
+    assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+    await toggle.click();
+  }
+  await saved();
+  await page.reload(); await openConfig();
+  await page.locator('[data-config-tab=equipment]').click();
+  for (const action of ['equipment', 'badge']) {
+    assert.equal(await page.locator('#config-group-equipment-growth #config-field-heroes-' + action).getAttribute('aria-checked'), 'true');
+  }
+  await page.getByRole('link', { name: '设置指定英雄' }).click();
+  await picker.waitFor();
+  const growth = loadAutomationSettings('config-a').settings.heroes;
+  assert(growth.equipment && growth.badge);
+  assert(newActions.every(action => growth[action])); assert.equal(growth.targetLevel, 35);
+  await picker.locator('summary').click(); await picker.getByRole('button', { name: '清空选择' }).click();
+  await picker.locator('summary').click(); await saved();
+  assert.equal(await picker.locator('summary').textContent(), '留空则不处理任何英雄');
+  assert.deepEqual(loadAutomationSettings('config-a').settings.heroes.heroIds, []);
+  console.log('通过：从手动养成直达设置，按游戏名称选英雄、保存独立动作及目标、清空名单');
   const hero = page.locator('#config-field-heroes-enabled');
   assert.equal(await hero.getAttribute('aria-checked'), 'false', '组合字段有一项关闭时显示暂停');
   await hero.click(); await saved();
@@ -100,12 +167,41 @@ try {
   assert.equal(await page.locator('#config-field-museum-runEnabled-note').isVisible(), false);
   console.log('通过：英雄组合主控同时保存两层状态，博物馆未配置提示及时更新');
 
+  await page.locator('[data-config-tab=antique]').click();
+  const antiques = page.locator('#config-group-antique');
+  assert.equal(await antiques.locator('#config-field-antique-maxActions, #config-field-antique-checkEverySeconds').count(), 0);
+  const antiqueMaster = antiques.getByRole('switch', { name: '藏品养成总开关', exact: true });
+  const actions = antiques.getByRole('group', { name: '养成设置', exact: true });
+  for (const key of ['activate', 'star', 'master', 'suit']) {
+    const toggle = actions.locator('#config-field-antique-' + key);
+    assert(await toggle.isVisible() && await toggle.isEnabled());
+  }
+  await antiqueMaster.click(); await saved();
+  assert.match(await antiques.locator('#config-field-antique-enabled-note').textContent(), /尚未选择执行动作/);
+  const masterLevel = actions.locator('#config-field-antique-master');
+  await masterLevel.click(); await saved();
+  await antiqueMaster.click(); await saved();
+  assert.equal(loadAutomationSettings('config-a').settings.antique.enabled, false);
+  assert.equal(await masterLevel.getAttribute('aria-checked'), 'true');
+  await masterLevel.click(); await saved();
+  const savedAntique = loadAutomationSettings('config-a').settings.antique;
+  assert.equal(savedAntique.master, false);
+  assert.equal(savedAntique.maxActions, 7);
+  assert.equal(savedAntique.checkEverySeconds, 90);
+  console.log('通过：藏品总开关可单独保存，暂停时四个养成动作可见可编辑');
+
   assert.equal(await page.locator('[data-config-tab=runtime], #config-field-loop-rounds, #config-group-runtime').count(), 0);
-  assert.deepEqual(await page.locator('[data-config-tab]').allTextContents(), ['基地', '世界', '英雄', '日常与活动']);
+  assert.deepEqual(await page.locator('[data-config-tab]').allTextContents(), ['基地', '世界', '英雄', '藏品', '装备', '日常与活动']);
   await page.locator('#account-picker-trigger').click();
   await page.locator('#account-picker-list [role=option]').filter({ hasText: '配置验收账号2' }).click();
   await page.locator('#config-account-name').filter({ hasText: '配置验收账号2' }).waitFor(); await saved();
   assert.deepEqual(loadAutomationSettings('config-b'), otherBefore, '另一个账号不受编辑影响');
+  await group('heroes'); await picker.locator('summary').click();
+  const retiredTarget = picker.getByRole('checkbox', { name: '训练木人' });
+  assert.equal(await retiredTarget.isChecked(), true);
+  await retiredTarget.click(); await saved();
+  assert.equal(await retiredTarget.count(), 0);
+  assert.deepEqual(loadAutomationSettings('config-b').settings.heroes.heroIds, []);
   await group('factory');
   assert.equal(await page.locator('#config-field-factory-keepStock').inputValue(), String(otherBefore.settings.factory.keepStock));
   await page.locator('#account-picker-trigger').click();
@@ -120,6 +216,7 @@ try {
   saveAutomationSettings('config-a', external.settings, { revision: external.revision });
   await factory.click();
   await page.locator('#config-state').filter({ hasText: '配置有冲突' }).waitFor();
+  assert.match(await page.locator('#config-message').textContent(), /刷新页面.*未保存/);
   assert.equal(loadAutomationSettings('config-a').settings.factory.enabled, true);
   assert.equal(loadAutomationSettings('config-a').settings.factory.keepStock, 876);
   assert.equal(await factory.getAttribute('aria-checked'), 'false', '本地草稿仍保留供处理');
@@ -163,7 +260,7 @@ try {
     });
     assert.equal(layout.overflow, false, width + 'px 页面无横向溢出');
     assert(layout.controls.every(item => Math.abs(item.top - layout.controls[0].top) <= 1 && item.height >= 40 && item.left >= 0 && item.right <= width && !item.overflow), JSON.stringify({ width, layout }));
-    assert.equal(layout.tabs.length, 4);
+    assert.equal(layout.tabs.length, 6);
     assert(layout.tabs.every(item => item.visible && !item.overflow && Math.abs(item.top - layout.tabs[0].top) <= 1), JSON.stringify({ width, layout }));
     assert.equal(await mobile.evaluate(() => [...document.querySelectorAll('.config-subtabs,.config-families')].filter(node => node.getClientRects().length).every(bar => {
       const bounds = bar.getBoundingClientRect();
@@ -171,13 +268,13 @@ try {
         const box = node.getBoundingClientRect(); return box.top >= bounds.top && box.bottom <= bounds.bottom + 1;
       });
     })), true, width + 'px 触屏子页签的按钮完整位于底座内');
-    for (const category of ['daily', 'heroes', 'world', 'base']) {
+    for (const category of ['daily', 'equipment', 'antique', 'heroes', 'world', 'base']) {
       await mobile.locator('[data-config-tab=' + category + ']').tap();
       assert.equal(await mobile.locator('[data-config-tab=' + category + ']').getAttribute('aria-selected'), 'true');
     }
     await mobile.screenshot({ path: path.join(output, 'header-tabs-' + width + '.png'), animations: 'disabled' });
   }
-  console.log('通过：320–768px 手机顶部四项操作同排，四个配置分类完整显示并可点击，大日志数和最大间隔不撑破布局');
+  console.log('通过：320–768px 手机顶部四项操作同排，六个配置分类完整显示并可点击，大日志数和最大间隔不撑破布局');
   assert.deepEqual(errors, []); assert.equal(connections, 0);
   console.log('通过：360px手机导航、启停和参数无横向溢出，无脚本错误或游戏连接');
 } finally {

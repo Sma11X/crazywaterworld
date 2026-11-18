@@ -119,11 +119,11 @@ export function inventoryPage() {
 
 export function heroesPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="英雄养成" help="升级、升星、升技能的条件取自游戏客户端的红点逻辑；执行前会先算一遍计划。">
-<div className="bar">
+    <Panel title="英雄养成" help="按当前账号的指定英雄和已开启动作计算计划。执行养成时会重新核对条件。" titleAfter={<a className="inline-link" href="#config-group-heroes">养成设置</a>}>
+    <div className="bar">
       <Button id="hero-plan" variant="outline">计算计划</Button>
       <Button id="hero-run" variant="default">执行养成</Button>
-      <span id="hero-hint" className="warn"></span>
+      <span id="hero-hint" className="warn" role="status"></span>
     </div>
     <pre id="hero-view">尚未计算</pre>
     <div id="hero-table"></div>
@@ -139,12 +139,17 @@ export function heroesPage() {
       <div id="equipment-view" className="progression-view" aria-live="polite" />
     </Panel>
     <Panel title="装备制造"><div className="bar"><Button id="crafting-refresh" variant="outline">刷新装备厂</Button></div><div id="crafting-view" className="progression-view" aria-live="polite" /></Panel>
+    <Panel title="远征舰队编队" help="保留空编队的初始化入口。已有编队不会自动重排；舰队状态在总览查看，首杀连续推进在挑战页开启。"><div id="formation-view" className="progression-view" aria-live="polite" /></Panel>
+  </div>)
+}
+
+export function lineupsPage() {
+  return renderToStaticMarkup(<div className="grid gap-3">
     <Panel title="我的阵容" help="管理已保存的自定义阵容，点击查看或在弹窗中编辑。主线和试炼可在各自入口选择阵容，挑战结束后自动还原到挑战前的搭配。">
       <div className="bar"><Button id="saved-lineup-refresh" variant="outline">刷新已保存阵容</Button></div>
       <div id="saved-lineup-view" className="progression-view" />
     </Panel>
     <Panel title="推荐阵容"><div className="bar"><Button id="lineup-refresh" variant="outline">刷新推荐</Button></div><div id="lineup-view" className="progression-view" aria-live="polite" /></Panel>
-    <Panel title="远征舰队编队" help="保留空编队的初始化入口。已有编队不会自动重排；舰队状态在总览查看，首杀连续推进在挑战页开启。"><div id="formation-view" className="progression-view" aria-live="polite" /></Panel>
   </div>)
 }
 

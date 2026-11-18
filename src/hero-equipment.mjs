@@ -15,9 +15,18 @@ export function uidText(uid) {
   return n > 0n && n <= maxUid ? n.toString() : null;
 }
 
-function wireUid(uid) {
+export function wireUid(uid) {
   const n = BigInt(uid);
   return { low: Number(BigInt.asIntN(32, n)), high: Number(n >> 32n), unsigned: false };
+}
+
+// Both the manual equipment page and hero growth use the star-specific cap and iron price.
+export function equipmentUpgrade(config, equip, definition = rows(config, 'EquipCfg').find(row => row.id === equip.equipId)) {
+  const level = equip.level ?? 0, star = equip.star ?? 0;
+  const max = rows(config, 'EquipAttrCfg').find(row => row.id === equip.equipId && Number(row.star) === star)?.maxLv;
+  const cost = rows(config, 'EquipUpDecomposeCfg').find(row => row.level === level + 1)?.upgradeCost;
+  const nextCost = definition && Number.isSafeInteger(max) && level < max && Number.isSafeInteger(cost) && cost >= 0 ? cost : null;
+  return { max, nextCost };
 }
 
 function ownership(roster) {
@@ -56,9 +65,7 @@ export async function readHeroEquipment(client, config, playerLevel) {
     if (!uid || itemsByUid.has(uid)) throw new Error('无法确认装备编号，请刷新装备仓库');
     const cfg = base.get(equip.equipId);
     const level = equip.level ?? 0, star = equip.star ?? 0;
-    const max = rows(config, 'EquipAttrCfg').find(r => r.id === equip.equipId && Number(r.star) === star)?.maxLv;
-    const cost = rows(config, 'EquipUpDecomposeCfg').find(r => r.level === level + 1)?.upgradeCost;
-    const nextCost = cfg && Number.isSafeInteger(max) && level < max && Number.isSafeInteger(cost) && cost >= 0 ? cost : null;
+    const { max, nextCost } = equipmentUpgrade(config, equip, cfg);
     const item = { uid, name: cfg?.name || '未知装备', type: cfg?.type ?? '', qualityIndex: cfg?.qualityIndex ?? 0,
       level, star, owner: owners.get(uid) ?? null, maxLevel: max ?? null, nextCost };
     itemsByUid.set(uid, item);

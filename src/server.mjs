@@ -68,7 +68,7 @@ import { pirateTracker, pirateHuntOptions, startPirateHunt } from './pirates.mjs
 import { activityEntries, activityView, runActivity, runWeekOrder } from './activities.mjs';
 import { activityCatalogPushNames, readActivityCatalog, rememberActivityCatalog, rememberActivityPush } from './activity-catalog.mjs';
 import { displayMaterial, getConfig } from './config.mjs';
-import { planHeroes, runHeroPlan, formatHeroPlan } from './heroes.mjs';
+import { readHeroGrowthPlan, heroStepLabel, runHeroPlan, formatHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
 import { APPOINTMENT_PRIORITIES } from './appointment-priorities.mjs';
 import { surveyDailies, runDailies, formatSurvey } from './dailies.mjs';
@@ -1603,23 +1603,14 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   async function heroes(session, account) {
     const instance = await ensureConnected(session, account);
-    const heroList = await instance.request('AllHeroRequest', {}, 'AllHeroResponse', 15000);
-    const itemList = await instance.request('AllItemRequest', {}, 'AllItemResponse', 15000);
-    const counts = new Map();
-    for (const item of itemList.items ?? []) {
-      const id = item.itemId ?? item.id;
-      counts.set(id, (counts.get(id) ?? 0) + Number(item.num ?? item.count ?? 0));
-    }
-    const config = loadConfigSafe();
-    if (!config) throw new Error('没有配置表，算不出英雄养成计划');
-    const plan = planHeroes({ config, heroes: heroList.heroes ?? [], itemNum: (id) => counts.get(id) ?? 0, playerLevel: describeRole(session.player)?.level ?? 1, settings: session.preferences });
+    const { plan, heroes: roster } = await readHeroGrowthPlan(instance, loadConfigSafe(), session.player, session.preferences ?? settingsView(session).settings);
     return {
       steps: plan.steps,
       notes: plan.notes,
       maxLevel: plan.maxLevel,
       maxStar: plan.maxStar,
       text: formatHeroPlan(plan),
-      heroes: (heroList.heroes ?? []).map((hero) => ({ ...hero, icon: heroCard(hero.heroId), head: heroIcon(hero.heroId) })),
+      heroes: roster.map((hero) => ({ ...hero, icon: heroCard(hero.heroId), head: heroIcon(hero.heroId) })),
     };
   }
 
@@ -2019,7 +2010,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!config) throw new Error('缺少游戏配置表，暂时不能预览');
         const settings = validateSettings(payload.settings ?? settingsView(session).settings, { catalog: settingsCatalog(config) });
         const category = payload.category ?? 'base';
-        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid'].includes(category)) throw new Error('不支持的预览分类');
+        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'equipmentGrowth', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid'].includes(category)) throw new Error('不支持的预览分类');
 
         if (category === 'runtime') {
           json({ checkedAt: new Date().toISOString(), usage: usageFor(session).snapshot(), actions: [], counts: {}, viewOnly: true, scopeLabel: '运行安排（仅查看，不执行）',
@@ -2141,14 +2132,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               fuelPerFleet: snapshot.fuelPerFleet, todayRewardTimes: snapshot.todayRewardTimes, rewardLimit: snapshot.rewardLimit,
               participationMode: settings.treasure.participationMode, nextRefreshTime: snapshot.nextRefreshTime } };
           }
-          if (category === 'heroes') {
-            const list = normalize(await client.request('AllHeroRequest', {}, 'AllHeroResponse'));
-            const bag = normalize(await client.request('AllItemRequest', {}, 'AllItemResponse'));
-            const stock = new Map((bag.items ?? []).map(item => [item.itemId, Number(item.num)]));
-            const plan = planHeroes({ config, heroes: list.heroes ?? [], itemNum: id => stock.get(id) ?? 0, playerLevel: session.player?.level ?? 1, settings });
-            const actions = plan.steps.map(step => ({ ...step, label: step.kind === 'level' ? `${step.heroId} 从 ${step.from} 级升至 ${step.to} 级` : step.kind === 'star' ? `${step.heroId} 升至 ${step.to} 星` : `${step.heroId} 技能 ${step.slot + 1} 升至 ${step.to} 级` }));
+          if (category === 'heroes' || category === 'equipmentGrowth') {
+            const gearOnly = category === 'equipmentGrowth';
+            const excluded = gearOnly
+              ? { level: false, star: false, skill: false, skillAdvance: false, exclusiveLevel: false, exclusiveStar: false, showSkillReward: false }
+              : { equipment: false, badge: false };
+            const previewSettings = { ...settings, heroes: { ...settings.heroes, ...excluded } };
+            const { plan, heroes, stock } = await readHeroGrowthPlan(client, config, session.player, previewSettings);
+            const actions = plan.steps.map(step => ({ ...step, label: heroStepLabel(step), setting: 'heroes.' + step.kind }));
             const checked = budgetPreview(actions, stock, settings, usage);
-            return output({ ...checked, notes: [...plan.notes, ...checked.notes, ...(settings.loop.heroes ? [] : ['英雄养成未加入挂机，可在英雄页手动按本配置执行'])] }, { heroes: list.heroes?.length ?? 0 }, '英雄养成');
+            return output({ ...checked, notes: [...plan.notes, ...checked.notes, ...(settings.loop.heroes ? [] : ['英雄养成未加入挂机，可在英雄页手动按本配置执行'])] }, { heroes: heroes.length }, gearOnly ? '装备强化' : '英雄养成');
           }
           if (category === 'daily') {
             const flags = nativeTaskValues(settings, session.loop.tasks);
@@ -3362,12 +3355,13 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           const guard = actionGuard(session, instance);
           const results = await runHeroPlan(instance, protocol, plan, {
             allowMutate: true,
+            config: loadConfigSafe(), player: session.player,
             timeout: 8000,
-            enabled: () => !session.paused && instance.connected,
+            enabled: () => !session.paused && instance.connected && session.client === instance,
             getSettings: () => session.preferences, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
             onStep: (entry) => {
               const step = entry.step;
-              const label = step.kind === 'level' ? `${step.heroId} 升级请求 · 目标 ${entry.targetLevel} 级` : step.kind === 'star' ? `${step.heroId} 升到 ${step.to} 星` : `${step.heroId} 技能 ${step.slot + 1}`;
+              const label = heroStepLabel(step, entry.targetLevel);
               steps.push({ label, ok: entry.ok, skipped: entry.skipped === true, error: entry.error });
               if (entry.skipped) emit(session, 'warn', `英雄 ${label} 已跳过：${entry.error}`);
               else emit(session, entry.ok ? 'info' : 'error', entry.ok ? `英雄 ${label}` : `英雄 ${label} 失败：${entry.error}`);

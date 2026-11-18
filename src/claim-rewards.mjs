@@ -1,6 +1,5 @@
 import { runAction } from './actions.mjs';
 import { claimDailies } from './dailies.mjs';
-import { claimHeroShowRewards } from './hero-show-rewards.mjs';
 import { surveyTasks, runTasks } from './tasks.mjs';
 import { claimMail } from './mail.mjs';
 
@@ -55,6 +54,5 @@ export async function claimRewards(client, protocol, config, onResult, enabled =
     const level = config?.nextAfkRewardLevel(afkInfo.rewardedLevel ?? 0);
     if (level != null && level <= afkInfo.level) await draw('afk', `挂机等级 ${level} 奖励`, 'afkLevelDraw', { level });
   });
-  if (ready('heroShowRewards')) await group('英雄技能展示奖励', () => claimHeroShowRewards(client, config, report));
   return results;
 }

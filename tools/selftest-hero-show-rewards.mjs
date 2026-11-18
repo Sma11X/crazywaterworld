@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { claimRewards } from '../src/claim-rewards.mjs';
+import { claimHeroShowRewards } from '../src/hero-show-rewards.mjs';
 
 const heroes = [
   { heroId: '待领取', showName: '瑞文' }, { heroId: '已完成' },
@@ -27,8 +27,9 @@ const client = {
     return { reward: { asset: [{ id: 'RUBY', num: { low: 20, high: 0 } }] } };
   },
 };
-const enabled = key => key === 'heroShowRewards';
-const results = await claimRewards(client, {}, config, null, enabled);
+const heroIds = ['待领取', '已完成', '回包丢失', '名单未更新', '被拒绝', '无奖励'];
+const results = [];
+await claimHeroShowRewards(client, config, (label, ok, error) => results.push({ label, ok, error }), heroIds);
 assert.deepEqual(writes, ['待领取', '被拒绝', '回包丢失', '名单未更新']);
 assert.deepEqual(results.map(row => row.ok), [true, false, true, false]);
 assert.match(results[0].label, /瑞文.*钻石 ×20/);
@@ -37,8 +38,8 @@ assert.match(results[2].label, /奖励明细未返回/);
 assert.match(results[3].error, /尚未.*已领名单/);
 
 writes.length = 0;
-await claimRewards(client, {}, config, null, enabled);
+await claimHeroShowRewards(client, config, () => {}, heroIds);
 assert.deepEqual(writes, ['被拒绝', '名单未更新'], '新的领取轮次以最新已领名单为准');
-assert.deepEqual(await claimRewards({ request() { assert.fail('未开启该项时不应读写英雄'); } },
-  {}, config, null, () => false), []);
+await claimHeroShowRewards({ request() { assert.fail('未开启该项时不应读写英雄'); } }, config, () => {}, heroIds, () => false);
+await claimHeroShowRewards({ request() { assert.fail('空名单不应读写英雄'); } }, config, () => {}, []);
 console.log('hero show rewards ok: eligible and owned only, confirmation, duplicate and partial failure handling, Chinese reward names');

@@ -11,13 +11,14 @@ import { collectState, summarize, formatState } from './game.mjs';
 import { ACTIONS, listActions, runAction, assertAllowed, buildBody } from './actions.mjs';
 import { normalize } from './worlds.mjs';
 import { getConfig } from './config.mjs';
-import { planHeroes, runHeroPlan, formatHeroPlan } from './heroes.mjs';
+import { readHeroGrowthPlan, heroStepLabel, runHeroPlan, formatHeroPlan } from './heroes.mjs';
 import { surveyDailies, runDailies, formatSurvey, planChests, planDailyGift } from './dailies.mjs';
 import { surveyTasks, runTasks, formatTaskPlan } from './tasks.mjs';
 import { surveyWorld, planWorld, runWorld, runWorldRound, formatWorldPlan, formatFieldReport, loadMapAsset, planFieldOccupy, planFieldGiveUp, SPEED_UP_ITEM, makeTypeResolver as resolveBuildingType, upgradeRow } from './world.mjs';
 import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
 import { runStages, stageFailureLimit } from './stages.mjs';
-import { loadAutomationSettings } from './automation-settings.mjs';
+import { loadAutomationSettings, createUsageLedger } from './automation-settings.mjs';
+import { createActionGuard } from './automation-policy.mjs';
 import { createLineupExecutor, lineupRole } from './lineup-execution.mjs';
 import { readLineupRuntime, recoverLineup } from './lineup-runtime.mjs';
 import { createPhoneLogin } from './phone-login.mjs';
@@ -348,7 +349,7 @@ async function act({ id, params, allowMutate }) {
 
 // 英雄养成：先按客户端红点条件算计划，--dry 只打印，--yes 才真发请求。
 async function heroes({ allowMutate, dryRun, allowUniversal }) {
-  const { url, login } = loadCredentials();
+  const { url, login, account } = loadCredentials();
   const protocol = loadProtocol();
   const client = new GameClient({ url, protocol });
   client.on('warn', (message) => console.log(`warn: ${message}`));
@@ -357,16 +358,13 @@ async function heroes({ allowMutate, dryRun, allowUniversal }) {
   const response = await client.connect(login);
   const config = loadConfigSafe();
   try {
-    const heroList = await client.request('AllHeroRequest', {}, 'AllHeroResponse', 15000);
-    const itemList = await client.request('AllItemRequest', {}, 'AllItemResponse', 15000);
-    const counts = new Map();
-    for (const item of itemList.items ?? []) {
-      const id = item.itemId ?? item.id;
-      counts.set(id, (counts.get(id) ?? 0) + Number(item.num ?? item.count ?? 0));
-    }
-    const itemNum = (id) => counts.get(id) ?? 0;
-    const playerLevel = describeRole(response.playerInfo).level;
-    const plan = planHeroes({ config, heroes: heroList.heroes ?? [], itemNum, playerLevel, allowUniversal });
+    const getSettings = () => {
+      const { settings } = loadAutomationSettings(account.id);
+      if (!allowUniversal) settings.heroes.universal = false;
+      return settings;
+    };
+    const player = response.playerInfo, playerLevel = player.level;
+    const { plan } = await readHeroGrowthPlan(client, config, player, getSettings());
     console.log(`玩家等级 ${playerLevel}，英雄等级上限 ${plan.maxLevel}，星级上限 ${plan.maxStar}`);
     console.log(formatHeroPlan(plan));
     const requests = plan.steps.reduce((sum, step) => sum + (step.kind === 'level' ? step.count : 1), 0);
@@ -376,12 +374,15 @@ async function heroes({ allowMutate, dryRun, allowUniversal }) {
       console.log('\n--dry：只列计划，未执行');
       return;
     }
+    const enabled = () => client.connected;
+    const guard = createActionGuard(client, getSettings, createUsageLedger(account.id), { player, enabled });
     await runHeroPlan(client, protocol, plan, {
       allowMutate,
+      config, player, getSettings, enabled, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
       timeout: 8000,
       onStep: (entry) => {
         const step = entry.step;
-        const label = step.kind === 'level' ? `${step.heroId} 目标 lv${entry.targetLevel}` : step.kind === 'star' ? `${step.heroId} ${step.to}星` : `${step.heroId} 技能${step.slot + 1}`;
+        const label = heroStepLabel(step, entry.targetLevel);
         if (entry.skipped) console.log(`  - ${label} 已跳过：${entry.error}`);
         else console.log(entry.ok ? `  . ${label}` : `  x ${label} 失败: ${entry.error}`);
       },
@@ -637,6 +638,8 @@ async function loopCli({ allowMutate, rounds, everySeconds, allowSpeedUp, allowR
     console.log(`开关: 加速=${allowSpeedUp ? '开(只花' + SPEED_UP_ITEM + ')' : '关'} 拒绝重刷=${allowReroll ? '开' : '关'}`);
     await runLoop(client, protocol, {
       config,
+      getHeroSettings: () => loadAutomationSettings(account.id).settings,
+      heroUsageLedger: createUsageLedger(account.id),
       refreshConfig: loadConfigSafe,
       player,
       rounds,

@@ -632,6 +632,7 @@ try {
       HeroUpgradeCfg: table([{ level: 1, reqPlayerLv: 1, exp: 0 }, { level: 2, reqPlayerLv: 1, exp: 20 }, { level: 3, reqPlayerLv: 1, exp: 30 }]),
       HeroStarCfg: table([{ star: 1, consumeBlue: 2, maxSkillLevel: [1, 1, 1, 1] }]), HeroSkillUpCfg: table([]) } };
     const settings = defaultSettings(); settings.heroes.keepExp = 50; settings.heroes.targetLevel = 3; settings.heroes.star = false;
+    settings.heroes.heroIds = ['甲'];
     const plan = planHeroes({ config: cfg, heroes: [{ heroId: '甲', level: 1, star: 0, skillLevels: [1] }], playerLevel: 10, itemNum: id => id === '英雄经验' ? 70 : 100, settings });
     assert.equal(plan.steps.find(step => step.kind === 'level').to, 2); assert.ok(!plan.steps.some(step => step.kind === 'star'));
     settings.heroes.heroIds = ['乙']; assert.equal(planHeroes({ config: cfg, heroes: [{ heroId: '甲', level: 1 }], playerLevel: 10, itemNum: () => 100, settings }).steps.length, 0);
@@ -751,7 +752,8 @@ try {
       const session = app.sessions.get('qa-a'); const queries = []; session.paused = false; session.player = { level: 36 };
       session.client = { connected: true, stop() {}, async request(name) { queries.push(name); if (name === 'AllHeroRequest') return { heroes: [{ heroId: '兰博', level: 180, star: 20 }] }; if (name === 'AllItemRequest') return { items: [] }; throw new Error('英雄预览不应读取其他模块'); } };
       const heroPreview = await api('qa-a', '/api/settings/preview', { settings: save.body.settings, category: 'heroes' });
-      assert.equal(heroPreview.status, 200); assert.equal(heroPreview.body.scopeLabel, '英雄养成'); assert.equal(heroPreview.body.counts.heroes, 1); assert.deepEqual(queries, ['AllHeroRequest', 'AllItemRequest']);
+      assert.equal(heroPreview.status, 200); assert.equal(heroPreview.body.scopeLabel, '英雄养成'); assert.equal(heroPreview.body.counts.heroes, 1); assert.deepEqual(queries, ['AllHeroRequest']);
+      assert.deepEqual(heroPreview.body.actions, [], '空名单预览不安排养成或读取材料');
     } finally { await app.close(); }
   });
 } finally {
