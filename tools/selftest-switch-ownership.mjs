@@ -35,10 +35,10 @@ let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 
 try {
-  await check('32个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
+  await check('30个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
     const rendered = configFields.filter(field => field.moduleControl).map(field => field.key);
     const idleKeys = idleAutomationControls.map(control => control.key), movedFields = idleAutomationControls.flatMap(control => control.fields);
-    assert.equal(idleKeys.length, 32, '超凡英雄和联盟商船统一在活动页编辑，其余紧凑模块和独立任务入口保留');
+    assert.equal(idleKeys.length, 30, '装备领取与续产统一使用装备自动锻造，其余模块入口保留');
     assert.equal(rendered.length, new Set(rendered).size, '每个入口只显示一次');
     assert.deepEqual(new Set(rendered), new Set(idleKeys));
     assert.deepEqual(new Set(settingsUiRules().controlFields), new Set(movedFields));
@@ -59,6 +59,23 @@ try {
     assert(!configGroups.some(group => group.id === 'runtime'), '运行安排已从网页配置移除');
     assert(!configKeys.has('loop.rounds'), '网页挂机持续循环，不提供轮数编辑');
     assert(!configKeys.has('loop.everySeconds'));
+  });
+
+  await check('装备领取与续产只有锻造总开关，旧开关不能重新启用', () => {
+    assert.deepEqual(configGroups.filter(group => group.category === 'equipment').map(group => group.id), ['forge']);
+    const before = defaultSettings();
+    before.forge.buildingIds = ['1装备厂']; before.forge.recipeIds = ['1001'];
+    before.forge.dailyLimit = 7;
+    const after = setAutomationControl(before, 'forge.enabled', true);
+    const expected = structuredClone(before); expected.forge.enabled = true;
+    assert.deepEqual(after, expected, '锻造总开关启用时保留工厂、配方和预算');
+    assert.equal(automationControlView(after).find(control => control.key === 'forge.enabled').enabled, true);
+    assert.deepEqual(setAutomationControl(after, 'forge.enabled', false), before);
+    for (const key of ['schedule.equipmentCollect', 'schedule.equipmentCraft']) {
+      assert(!configKeys.has(key), '动态配置不能重新生成旧开关');
+      assert(!automationControlView(after).some(control => control.key === key));
+      assert.throws(() => setAutomationControl(after, key, true), /无效/);
+    }
   });
 
   await check('模块下方保留执行细项、资源权限、策略与预算', () => {

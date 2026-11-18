@@ -144,7 +144,7 @@ test('英雄、藏品、装备各有唯一设置入口，原有分组书签指�
   const categories = {
     heroes: ['heroes', 'hero-recruit'],
     antique: ['antique', 'antique-recruit'],
-    equipment: ['equipment-growth', 'forge', 'equipment-legacy'],
+    equipment: ['forge'],
   };
   for (const [category, groupIds] of Object.entries(categories)) {
     assert.deepEqual([...f.editor.groups.values()].filter(g => g.category === category).map(g => g.id), groupIds);
@@ -158,8 +158,14 @@ test('英雄、藏品、装备各有唯一设置入口，原有分组书签指�
   for (const [id, keys] of Object.entries({
     'hero-recruit': ['schedule.freeRecruit', 'schedule.ticketRecruit', 'schedule.heroAdRecruit', 'schedule.heroRecruitRewards'],
     'antique-recruit': ['schedule.freeAntiqueRecruit', 'schedule.antiqueAdRecruit', 'schedule.antiqueRecruitRewards'],
-    'equipment-growth': ['heroes.equipment', 'heroes.badge'],
   })) assert.deepEqual(new Set(f.editor.groups.get(id).fields.map(field => field.key)), new Set(keys));
+  for (const key of ['schedule.equipmentCollect', 'schedule.equipmentCraft']) {
+    assert(!f.editor.fields.has(key), '旧装备开关不应动态生成到其他分组：' + key);
+  }
+  f.env.hash = '#config-group-equipment-legacy'; f.applyHash();
+  assert(visible(f.env.node('config-group-forge')));
+  assert.equal(f.editor.category, 'equipment');
+  assert.equal(f.env.node('config-preview-scope').value, 'module:forge');
   f.env.hash = '#config-group-daily-collections'; f.applyHash();
   assert(visible(f.env.node('config-group-hero-recruit')));
   assert.equal(f.env.saves, 0);

@@ -74,7 +74,7 @@ try {
   assert.equal(await page.locator('[data-config-key="loop.heroes"]').count(), 0);
   assert.equal(await page.locator('#config-root').getByRole('button', { name: /重新载入/ }).count(), 0);
   assert.equal(await page.locator('#config-root').getByText(/上次保存/).count(), 0);
-  console.log('通过：32个模块开关各自归位，旧导航与跨页跳转移除');
+  console.log('通过：30个模块开关各自归位，旧导航与跨页跳转移除');
 
   await page.locator('[data-config-family=production]').click();
   const factory = page.locator('#config-field-factory-enabled');
@@ -132,21 +132,18 @@ try {
   }
   await saved();
   await page.locator('[data-config-tab=equipment]').click();
-  for (const action of ['equipment', 'badge']) {
-    const toggle = page.locator('#config-group-equipment-growth #config-field-heroes-' + action);
-    assert.equal(await toggle.getAttribute('aria-checked'), 'false');
-    await toggle.click();
-  }
-  await saved();
+  assert.equal(await page.locator('#config-subtab-equipment-growth, #config-group-equipment-growth').count(), 0);
+  assert.equal(await page.locator('#config-subtab-equipment-legacy, #config-group-equipment-legacy').count(), 0);
+  assert.equal(await page.locator('[data-config-key="schedule.equipmentCollect"], [data-config-key="schedule.equipmentCraft"]').count(), 0);
+  assert.equal(await page.locator('#config-group-forge').isVisible(), true);
+  assert.equal(await page.locator('#config-group-forge [data-config-key="forge.enabled"]').count(), 1);
   await page.reload(); await openConfig();
   await page.locator('[data-config-tab=equipment]').click();
-  for (const action of ['equipment', 'badge']) {
-    assert.equal(await page.locator('#config-group-equipment-growth #config-field-heroes-' + action).getAttribute('aria-checked'), 'true');
-  }
-  await page.getByRole('link', { name: '设置指定英雄' }).click();
+  assert.equal(await page.locator('#config-subtab-equipment-growth, #config-group-equipment-growth').count(), 0);
+  assert.equal(await page.locator('#config-group-forge').isVisible(), true);
+  await page.locator('[data-config-tab=heroes]').click();
   await picker.waitFor();
   const growth = loadAutomationSettings('config-a').settings.heroes;
-  assert(growth.equipment && growth.badge);
   assert(newActions.every(action => growth[action])); assert.equal(growth.targetLevel, 35);
   await picker.locator('summary').click(); await picker.getByRole('button', { name: '清空选择' }).click();
   await picker.locator('summary').click(); await saved();

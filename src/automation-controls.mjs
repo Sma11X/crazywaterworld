@@ -1,4 +1,4 @@
-import { automationTasks } from './automation.mjs';
+import { automationTasks, retiredAutomationTasks } from './automation.mjs';
 
 // 模块总开关与细项分别保存，暂停模块不改动细项选择。
 const controls = [];
@@ -47,9 +47,9 @@ for (const [key,label,group,gates] of [
 ]) add(key,label,group,{gates});
 const nativeKeys = new Set(['trialPaidSweep','trialAdSweep','diveEnhance','autoDive','salvageEnhance','autoSalvage','autoFish','fishEnhance','floaters','antiqueFloaters','cargo','farm','collect','finishUpgrade','build','buildSupply','upgrade','finishOrder','startProduce','speedUp','denyOrder','paidGold','dailyRewards','chests','gift','tasks']);
 for (const task of automationTasks) {
- if (task.key === 'stageAuto' || task.key === 'heroGrowth') continue;
+ if (task.key === 'stageAuto' || task.key === 'heroGrowth' || retiredAutomationTasks.has(task.key)) continue;
  if (nativeKeys.has(task.key)) continue;
- const group = ['freeRecruit','ticketRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['equipmentCollect','equipmentCraft'].includes(task.key) ? '装备' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
+ const group = ['freeRecruit','ticketRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
  const gates = task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
  if (['museumCollect','museumExplore'].includes(task.key)) gates.push('museum.runEnabled');
  if (['radarAuto','radarRepair'].includes(task.key)) gates.push('radar.runEnabled');
@@ -77,8 +77,6 @@ const idleModules = {
  'loop.tasks':['日常与活动','rewards','主线、支线与成就'],
  'loop.dailies':['日常与活动','daily-actions','日常行动'],
  'schedule.guildOrders':['世界','guild-orders','联盟订单'],
- 'schedule.equipmentCollect':['装备','equipment-legacy','装备制造领取'],
- 'schedule.equipmentCraft':['装备','equipment-legacy','装备制造续产'],
  'schedule.petCollect':['基地','pet','海兽成熟领取'],
  'schedule.petBreed':['基地','pet','海兽培育'],
 };

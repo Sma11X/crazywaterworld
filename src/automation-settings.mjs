@@ -3,7 +3,7 @@ import path from 'node:path';
 import { atomicJson, readJson, withFileLock } from './json-store.mjs';
 import { accountKey, dataDirectory } from './usage-ledger.mjs';
 export { beijingDay, createUsageLedger, usageFile } from './usage-ledger.mjs';
-import { taskSettings } from './automation.mjs';
+import { taskSettings, retiredAutomationTasks } from './automation.mjs';
 import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, validateSiliconFleets } from './extended-settings.mjs';
 import { treasureRewardOptions } from './treasure-reward-filter.mjs';
 import { activityAutomationDefaults } from './activity-automation.mjs';
@@ -156,7 +156,7 @@ const constraints = {
   'cityWar.dailyDispatchLimit': int(1000, 1), 'cityWar.checkEverySeconds': int(300, 5),
   'forge.buildingIds': strings(10), 'forge.recipeIds': strings(100), 'forge.materialReserve': int(),
   'forge.universalReserve': int(), 'forge.goldReserve': int(), 'forge.dailyLimit': int(1000, 1),
-  'forge.dailyGoldLimit': int(1000000000, 1), 'forge.checkEverySeconds': int(300, 10),
+  'forge.dailyGoldLimit': int(1000000000, 1), 'forge.checkEverySeconds': int(300, 10), // 兼容旧配置；锻造检查已跟随每轮挂机。
   'antique.activateQualities': { ...strings(4), values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
   'antique.starQualities': { ...strings(4), values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
   'antique.suitQualities': { ...strings(4), values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
@@ -215,6 +215,7 @@ export function nativeTaskValues(settings, current) {
   delete result.weekFactory;
   for (const [key, fields] of Object.entries(nativeFields)) result[key] = fields.some(field => { const [group, name] = field.split('.'); return settings[group][name]; });
   result.heroGrowth = false; // The old mainline-only job has been retired.
+  for (const key of retiredAutomationTasks) result[key] = false;
   result.startProduce = settings.factory.produce || settings.factory.cooperateNative;
   result.speedUp = settings.building.speedUp || settings.factory.speedUp || settings.farm.speedUp || settings.factory.speedUpSources.length > 0;
   return result;
@@ -231,7 +232,7 @@ export function hasBaseWork(settings) {
     (settings.loop.dailies && settings.gold.enabled));
 }
 export function settingsUiRules() {
-  return { moduleControls: idleAutomationControls, controlFields: idleControlFields, controlGroups: Object.fromEntries(automationControls.flatMap(c=>c.fields.map(path=>[path,c.idleGroup??c.group]))), mappedTasks: Object.keys(nativeFields), numbers: Object.fromEntries(Object.entries(constraints).filter(([, rule]) => rule.kind === 'number').map(([key, rule]) => [key, { min: rule.min, max: rule.max }])) };
+  return { moduleControls: idleAutomationControls, controlFields: idleControlFields, controlGroups: Object.fromEntries(automationControls.flatMap(c=>c.fields.map(path=>[path,c.idleGroup??c.group]))), mappedTasks: [...Object.keys(nativeFields), ...retiredAutomationTasks], numbers: Object.fromEntries(Object.entries(constraints).filter(([, rule]) => rule.kind === 'number').map(([key, rule]) => [key, { min: rule.min, max: rule.max }])) };
 }
 
 export function validateSettings(input, { partial = false, catalog = null } = {}) {

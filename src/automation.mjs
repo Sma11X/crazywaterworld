@@ -5,6 +5,9 @@ export const defaultFishingGoldReserve = 10_000;
 export const defaultCompassSpinCount = 10;
 export const maxCompassSpinCount = 999;
 
+// 保留旧配置字段用于导入，装备领取与续产统一由 forge.enabled 控制。
+export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft']);
+
 export const automationTasks = [
   ['armsRaceRewards', '军备竞赛达标奖励与免费补给', '周期活动', true],
   ['riverScore', '走江踏浪积分奖励', '限时活动', true],

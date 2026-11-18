@@ -71,7 +71,7 @@ for (const [name, keys] of wakeups) {
   assert.equal(scheduler.nextCheck('mail'), null);
 }
 
-const legacyKeys = ['guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft',
+const legacyKeys = ['guildOrders', 'radarAuto', 'radarRepair',
   'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
 function loopFixture() {
   const client = new EventEmitter(), reads = [], reports = [];
@@ -108,6 +108,15 @@ for (const getSettings of [() => null, () => defaultSettings()]) {
     assert(f.reports.some(entry => entry.key === key && entry.skipped), '原主分支开关仍有实际服务入口：' + key);
   }
   assert.deepEqual(f.reads, [], '未解锁的原服务在读取游戏前给出等待原因');
+}
+
+for (const settings of [null, defaultSettings()]) {
+  const f = loopFixture();
+  if (settings) settings.schedule.equipmentCollect = settings.schedule.equipmentCraft = true;
+  await runLoop(f.client, {}, { ...f.options, getSettings: () => settings,
+    isEnabled: key => ['equipmentCollect', 'equipmentCraft'].includes(key) });
+  assert.deepEqual(f.reads, [], '旧账号装备开关不能绕过锻造总开关发起请求');
+  assert.deepEqual(f.reports, [], '退役装备入口不应继续执行或显示接管状态');
 }
 
 for (const getSettings of [() => null, () => defaultSettings()]) {
@@ -156,7 +165,7 @@ for (const getSettings of [() => null, () => defaultSettings()]) {
 
 {
   const f = loopFixture(), settings = defaultSettings();
-  const controlled = ['radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft', 'museumCollect',
+  const controlled = ['radarAuto', 'radarRepair', 'museumCollect',
     'museumExplore', 'museumAchievements', 'petCollect', 'petBreed', 'treasureLoot', 'heroGrowth'];
   settings.radar.enabled = settings.forge.enabled = settings.museum.enabled = settings.pet.enabled = true;
   settings.treasure.enabled = true;

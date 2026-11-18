@@ -93,7 +93,7 @@ npm run sync-art              # 同步素材；缓存缺图可加 -- --fetch
 3. 在 `loop.mjs` 接入实际执行与 `report`，通过 `reward-schedule` 或模块调度控制复查；手动日常单项还涉及 `daily-single.mjs`。报告明确区分完成、已发送、跳过与失败。
 4. 新增路由在 `operation-labels.mjs` 补中文名称；测试放入 core、progression 或 extra，并更新用户文档。
 
-原有 `schedule.guildOrders/radarAuto/radarRepair/equipmentCollect/equipmentCraft/museumCollect/museumExplore/petCollect/petBreed` 独立保存，不强行映射成需要舰队、配方等参数的新模块。对应详细模块有效开启时接管相同功能，避免双跑；停用详细模块后可恢复旧规则。周订单手动、自动和活动入口统一调用 `activities.mjs` 的 `runWeekOrder`，共用持久防重键和材料预留。
+装备领取与续产统一由 `forge.enabled` 控制，随主循环检查；`schedule.equipmentCollect/equipmentCraft` 仅兼容旧配置，归一化为关闭，不再暴露控制或执行旧策略。原有 `schedule.guildOrders/radarAuto/radarRepair/museumCollect/museumExplore/petCollect/petBreed` 独立保存，不强行映射成需要舰队、配方等参数的新模块。对应详细模块有效开启时接管相同功能，避免双跑；停用详细模块后可恢复旧规则。周订单手动、自动和活动入口统一调用 `activities.mjs` 的 `runWeekOrder`，共用持久防重键和材料预留。
 
 门控有各自范围：`loop.world` 管基地，`loop.dailies` 管招募、点金、竞技场等日常动作，英雄自动养成需要 `loop.heroes && heroes.enabled`。免费领奖有独立开关。新增资源消费应由用户主动开启，海商王走商 `merchantTrade`、风采投票 `beautyVotes` 和罗盘用券 `compassSpin` 默认 false；不要笼统把所有“活动”都当成免费领奖。
 

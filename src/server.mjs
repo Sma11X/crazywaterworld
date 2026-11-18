@@ -80,7 +80,7 @@ import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
 import { createLogAccountLabels } from './log-accounts.mjs';
 import { operationLabels } from './operation-labels.mjs';
-import { automationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
+import { automationTasks, retiredAutomationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
 import { rewardSchedule } from './reward-schedule.mjs';
 import { rememberTournament } from './side-rewards.mjs';
 import { beijingDay, loadAutomationSettings, saveAutomationSettings, validateSettings, settingsCatalog, settingsFromNative, nativeTaskValues, applyNativeTask, hasExtraWork, createUsageLedger, exportAutomationSettings, importAutomationSettings, SettingsError, settingsUiRules } from './automation-settings.mjs';
@@ -603,7 +603,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const baseRevision = createHash('sha256').update(JSON.stringify([session.loop.tasks, session.loop.rounds, session.loop.everyMs, session.loop.fishingGoldReserve])).digest('hex');
     const availability = activityAvailability(session.client);
     return { settings, revision: saved.revision, savedAt: saved.savedAt, baseRevision, catalog: ownedFleetCatalog(session,settingsCatalog(loadConfigSafe())),
-      tasks: automationTasks.filter(task => !availability.hiddenTasks.includes(task.key)), rules: { ...settingsUiRules(), hiddenFields: availability.hiddenFields },
+      tasks: automationTasks.filter(task => !retiredAutomationTasks.has(task.key) && !availability.hiddenTasks.includes(task.key)), rules: { ...settingsUiRules(), hiddenFields: availability.hiddenFields },
       usage: usageFor(session).snapshot(), pendingUsage: usageFor(session).pendingCounters(), running: session.loop.running };
   }
 
@@ -3619,6 +3619,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { session } = scoped_(parsed);
         const task = automationTasks.find(item => item.key === payload.key);
         if (!task || typeof payload.enabled !== 'boolean') throw new Error('无效的自动任务设置');
+        if (retiredAutomationTasks.has(task.key)) throw new Error('装备领取与续产已统一，请在装备自动锻造中设置自动挂机');
         const tasks = { ...session.loop.tasks, [task.key]: payload.enabled };
         if (session.preferences) {
           const current = settingsView(session);
@@ -3629,7 +3630,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           session.loop.tasks = tasks;
         }
         if (session.client && payload.enabled) rewardSchedule(session.client).clearTask(task.key);
-        if (!Object.values(session.loop.tasks).some(Boolean) && !hasExtraWork(session.preferences) && !(session.preferences?.radar?.runEnabled !== false && session.preferences?.radar?.enabled) && !session.preferences?.worldBoss?.enabled && !treasureAutomationEnabled(session.preferences) && !antiqueEnabled(session.preferences)) stopLoop(session, '全部自动项目已暂停');
+        if (!Object.values(session.loop.tasks).some(Boolean) && !hasExtraWork(session.preferences) && !(session.preferences?.radar?.runEnabled !== false && session.preferences?.radar?.enabled) && !session.preferences?.worldBoss?.enabled && !treasureAutomationEnabled(session.preferences) && !forgeEnabled(session.preferences) && !antiqueEnabled(session.preferences)) stopLoop(session, '全部自动项目已暂停');
         emit(session, 'info', task.label + (payload.enabled ? nativePreferenceEnabled(session.preferences, task.key) ? '已启用' : '已保存为开启，当前分组总开关仍暂停此动作' : '已暂停'));
         json(loopView(session));
         return;
@@ -3934,7 +3935,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       autoStart: loop.autoStart,
       recovery: loop.recovery,
       stopping: !!loop.controller?.signal.aborted,
-      tasks: automationTasks.filter(task => isActivityTaskAvailable(task.key, session.client)).map(({ key, label, group }) => ({
+      tasks: automationTasks.filter(task => !retiredAutomationTasks.has(task.key) && isActivityTaskAvailable(task.key, session.client)).map(({ key, label, group }) => ({
         key, label, group, enabled: loop.tasks[key], blockedBySettings: loop.tasks[key] && !nativePreferenceEnabled(session.preferences, key),
         nextCheck: loop.tasks[key] && nativePreferenceEnabled(session.preferences, key) ? rewards?.nextCheck(key) : null,
       })),

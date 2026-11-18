@@ -14,6 +14,7 @@ import { planHeroes } from '../src/heroes.mjs';
 import { DAILY_DRIVERS, runDailies } from '../src/dailies.mjs';
 import { serviceCargo } from '../src/cargo.mjs';
 import { runLoop } from '../src/loop.mjs';
+import { retiredAutomationTasks } from '../src/automation.mjs';
 
 const parent = path.join(os.tmpdir(),'cw-parameter-test-runs');
 fs.mkdirSync(parent, { recursive: true });
@@ -358,7 +359,7 @@ try {
     assert.deepEqual(draft.factory.speedUpSources, []);
   });
 
-  await check('两版任务设置迁移保留显式开关，缺省消费任务保持关闭', () => {
+  await check('两版任务设置迁移保留有效开关，退役装备开关与缺省消费任务保持关闭', () => {
     const keys = ['festivalActive', 'festivalGifts', 'snowballFree', 'weekLotterySpin', 'weekCharge', 'weekChipFree', 'weekUniqueFree', 'weekOrderFinal', 'weekOrderSubmit', 'vipDaily', 'campaignReports', 'openRankRewards',
       'guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft', 'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
     for (const enabled of [true, false]) {
@@ -366,9 +367,19 @@ try {
       const settings = settingsFromNative(tasks);
       const restored = importAutomationSettings(exportAutomationSettings(settings));
       for (const key of keys) {
-        assert.equal(restored.schedule[key], enabled, key + ' 保存值不能被新版默认值覆盖');
-        assert.equal(nativeTaskValues(restored, {})[key], enabled);
+        const expected = retiredAutomationTasks.has(key) ? false : enabled;
+        assert.equal(restored.schedule[key], expected, key + ' 仅退役开关归一化为关闭');
+        assert.equal(nativeTaskValues(restored, {})[key], expected);
       }
+    }
+    const legacy = defaultSettings();
+    legacy.schedule.equipmentCollect = legacy.schedule.equipmentCraft = true;
+    Object.assign(legacy.forge, { enabled: true, buildingIds: ['1装备厂'], recipeIds: ['1001'], dailyLimit: 7 });
+    const normalized = validateSettings(legacy);
+    assert.deepEqual(normalized.forge, legacy.forge, '兼容旧装备开关时不改已授权的锻造设置');
+    for (const key of retiredAutomationTasks) {
+      assert.equal(normalized.schedule[key], false);
+      assert.equal(nativeTaskValues(legacy, { [key]: true })[key], false, '未迁移的旧开关也不能参与执行');
     }
     const oldDocument = exportAutomationSettings(defaultSettings());
     for (const key of keys) delete oldDocument.settings.schedule[key];

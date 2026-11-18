@@ -1,4 +1,5 @@
 import { normalize } from './worlds.mjs';
+import { retiredAutomationTasks } from './automation.mjs';
 import { goldAccountKey, reserveGold, rejectGold, cancelUnsentGold, confirmGoldOperation, readGoldSpendState, settleGoldSpendState, refreshGoldSpend } from './gold-reservations.mjs';
 import { beginOrderMaterialSpend, cancelOrderMaterialSpend, confirmOrderMaterialSpends, pendingFarmMaterialSpends, pendingMuseumMaterialSpends,
   confirmOrderMaterialOperation, readOrderMaterialState, settleOrderMaterialState, refreshOrderMaterialSpends } from './order-reservations.mjs';
@@ -61,6 +62,7 @@ export function needsCargoDemand(settings) {
 }
 
 export function nativePreferenceEnabled(settings, key) {
+  if (retiredAutomationTasks.has(key)) return false;
   if (!settings) return true;
   if (!activityTaskEnabled(settings, key)) return false;
   if (settings.alliance?.enabled && ['guildOrders', 'guildAidHelp', 'guildWelfare'].includes(key)) return false;

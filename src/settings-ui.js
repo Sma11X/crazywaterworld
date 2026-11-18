@@ -256,12 +256,8 @@ const configGroups = [
     configField('pet.feed', '自动喂养', 'switch', { help: '消耗服务器列出的喂养材料，加快当前培育。' }),
     configField('pet.advance', '自动进阶', 'switch', { help: '对已入驻的海兽投喂进阶材料；达到喂养和等级要求后进阶。' }),
   ] },
-  { id: 'equipment-growth', title: '装备强化', category: 'equipment', fields: [
-    configField('heroes.equipment', '装备强化', 'switch', { help: '逐件强化指定英雄已穿戴的装备。' }),
-    configField('heroes.badge', '徽章强化', 'switch', { help: '提升指定英雄已佩戴徽章的等级，使用徽章经验材料和所需金币。' }),
-  ] },
   { id: 'forge', title: '装备自动锻造', category: 'equipment', fields: [
-    configField('forge.enabled', '自动锻造总开关', 'switch', { help: '开始挂机后生效，自动领取所选工厂已完成的装备，再安排下一件。下方选择“装备锻造”预览；不会开启游戏原生自动锻造。' }),
+    configField('forge.enabled', '自动锻造总开关', 'switch', { help: '随每轮挂机检查，自动领取所选工厂已完成的装备，确认入库后再安排下一件；达到下单上限仍可领取。下方选择“装备锻造”预览；不会开启游戏原生自动锻造。' }),
     configField('forge.buildingIds', '锻造工厂', 'multi', { catalog: 'forgeBuildings', empty: '请选择装备工厂' }),
     configField('forge.decompose','自动分解','switch',{help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
     configField('forge.decomposeQualities','处理品质','multi',{ parent: 'forge.decompose',catalog:'equipQualities',empty:'未选择，不处理',when:d=>d.forge.decompose}),
@@ -272,7 +268,6 @@ const configGroups = [
     configField('forge.goldReserve', '锻造后保留金币', 'number', { unit: '金币' }),
     configField('forge.dailyLimit', '每日锻造次数上限', 'number', { unit: '次', help: '至少1次；只计本工具下单，未知结果仍占额度。' }),
     configField('forge.dailyGoldLimit', '每日锻造金币预算', 'number', { unit: '金币', help: '至少1金币，跨轮和重启保留；不自动购买材料、不消耗钻石或加速器。' }),
-    configField('forge.checkEverySeconds', '锻造检查间隔', 'number', { unit: '秒', help: '制作完成后正常领取，确认新装备入库再继续；领取不受新下单次数上限阻断。' }),
   ] },
   { id: 'museum', title: '博物馆探宝', category: 'base', fields: [
     configField('museum.runEnabled', '博物馆探宝总开关', 'switch', { help: '统一暂停本组探宝、领奖、旧规则派遣和升级，保留细项选择。未选择任何执行动作时不会操作。' }),
@@ -409,10 +404,6 @@ const configGroups = [
   ] },
   { id: 'guild-orders', title: '联盟订单', category: 'world', fields: [
     configField('schedule.guildOrders', '自动提交联盟订单', 'switch', { help: '每轮最多提交一单，仅使用现有材料并预留其他订单用料。默认关闭。' }),
-  ] },
-  { id: 'equipment-legacy', title: '装备制造原有规则', category: 'equipment', fields: [
-    configField('schedule.equipmentCollect', '领取完工装备', 'switch', { help: '保留原挂机设置。开启装备自动锻造后，由锻造模块统一领取。' }),
-    configField('schedule.equipmentCraft', '空闲装备厂续产', 'switch', { help: '每轮一件，保留一万金币。开启装备自动锻造后，改用所选工厂、配方与每日预算。' }),
   ] },
   { id: 'heroes', title: '英雄养成', category: 'heroes', fields: [
     configField('heroes.enabled', '养成总开关'), configField('loop.heroes', '加入自动挂机'),
@@ -762,6 +753,7 @@ function configRender() {
     '招募': ['hero-recruit', '英雄招募'], '日常': ['daily-actions', '日常行动'], '挑战': ['daily-challenges', '挑战与扫荡'] };
   configLegacyGroups.clear();
   configLegacyGroups.set('daily-collections', 'hero-recruit');
+  configLegacyGroups.set('equipment-legacy', 'forge');
   [...new Set(tasks.map(task => task.group))].forEach((name, index) => {
     const [id, title] = destinations[name] || ['daily-other', '其他项目'];
     // 旧版从 33 开始为动态分组生成书签。新增静态分组时仍需解析旧编号。
@@ -838,12 +830,6 @@ function configRender() {
       if (['cityWar','silicon','treasure'].includes(group.id)) {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
         section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
-      }
-      if (group.id === 'equipment-growth') {
-        const intro = el('p', 'config-section-intro', '强化随英雄养成执行，只处理指定英雄已穿戴的装备和徽章。');
-        const link = el('a', 'inline-link', '设置指定英雄');
-        link.href = '#config-group-heroes';
-        intro.append(link); section.append(intro);
       }
       const fields = group.fields.map(spec => ({ ...spec, category, groupId: group.id }));
       if (group.settingsLegend) {
@@ -1460,7 +1446,7 @@ async function configPreview() {
   configBusy(true); configUpdateState(); $('config-preview').textContent = '读取真实状态…';
   try {
     const selected=scope.startsWith('module:')?configEditor.groups.get(scope.slice(7)):null;
-    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-sweep':'pirateSweep','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes','equipment-growth':'equipmentGrowth'};
+    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-sweep':'pirateSweep','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
     const runtime=await call('/api/loop');
     const source=selected?dedicated[selected.id]:scope;
     let data;
@@ -1566,7 +1552,7 @@ async function configPreview() {
     for (const action of data.actions) { const row = el('li', '', action.label); if (action.costs.length) row.append(el('span', 'config-preview-cost', '消耗：' + action.costs.map(cost => cost.name + ' ×' + cost.num).join('、'))); list.append(row); }
     root.append(list);
     if (data.notes.length) { const details = el('details'); details.append(el('summary', '', (data.viewOnly ? '状态说明（' : '查看跳过原因与条件（') + data.notes.length + '）')); const notes = el('ul'); for (const text of data.notes) notes.append(el('li', '', text)); details.append(notes); root.append(details); }
-    configMessage(data.viewOnly ? '已读取状态说明，没有执行游戏动作。' : '已读取真实状态并计算计划，没有执行游戏动作。', 'success');
+    configMessage('');
   } catch (error) {
     if (account === current) {
       if (contextChanged()) { clear($('config-preview-result')); configMessage('草稿、分组或预览范围已变化，请重新预览。'); }

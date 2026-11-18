@@ -722,6 +722,72 @@ await check('轮间15秒检查在原生额度耗尽后接续，暂停立即阻�
     assert.equal(clock-start,15000);assert.equal(f.client.writes.length,1);assert.equal(f.client.writes[0].name,'MoveFleetsToCityRequest');
   } finally {Date.now=original;}
 });
+await check('锻造随每轮挂机检查，旧独立间隔不跳过短轮次或触发轮间检查', async () => {
+  const originalNow = Date.now;
+  try {
+    for (const [everyMs, legacySeconds] of [[1000, 300], [60000, 10]]) {
+      const base = Date.UTC(2026, 10, 18, 4);
+      let clock = base;
+      Date.now = () => clock;
+      const f = warForgeFixture(), settings = warForgeSettings();
+      settings.cityWar.enabled = false;
+      settings.forge.checkEverySeconds = legacySeconds;
+      // 保持工厂生产中，每次读取都应确认状态，不产生领取或新下单。
+      f.state.factory.equipMaking = { makeId: 1001, finishTime: base / 1000 + 3600, equipId: '测试武器', star: 2 };
+      const reads = [], waits = [];
+      f.beforeRead = name => { if (name === 'EquipsRequest') reads.push(clock - base); };
+      await runLoop(f.client, f.protocol, {
+        config: f.config, player: f.player, rounds: 3, everyMs, allowMutate: true,
+        getSettings: () => settings, usageLedger: ledger(), isEnabled: () => false,
+        sleep: async ms => { waits.push(ms); clock += ms; },
+      });
+      assert.deepEqual(reads, [0, everyMs, everyMs * 2], '每轮读取一次，旧锻造间隔为 ' + legacySeconds + ' 秒');
+      assert.deepEqual(waits, [everyMs, everyMs], '轮间只等待主循环间隔');
+      assert.equal(f.client.writes.length, 0, '生产中不重复下单或提前领取');
+    }
+  } finally { Date.now = originalNow; }
+});
+await check('仅开启装备自动锻造即可跨轮领取续产，达到下单上限仍领取完工装备', async () => {
+  const originalNow = Date.now;
+  let clock = Date.UTC(2026, 10, 18, 4);
+  Date.now = () => clock;
+  try {
+    const f = warForgeFixture(), settings = warForgeSettings(), usage = ledger();
+    settings.cityWar.enabled = false;
+    settings.forge.dailyLimit = 2;
+    assert.equal(settings.schedule.equipmentCollect, false);
+    assert.equal(settings.schedule.equipmentCraft, false);
+    const rounds = [];
+    await runLoop(f.client, f.protocol, {
+      config: f.config, player: f.player, rounds: 3, everyMs: 15000, allowMutate: true,
+      getSettings: () => settings, usageLedger: usage, isEnabled: key => settings.schedule[key] === true,
+      sleep: async ms => { clock += ms; },
+      onRound: () => rounds.push(f.client.writes.map(row => row.name)),
+    });
+    assert.deepEqual(rounds, [
+      ['MakeEquipRequest'],
+      ['MakeEquipRequest', 'PickMadeEquipRequest', 'MakeEquipRequest'],
+      ['MakeEquipRequest', 'PickMadeEquipRequest', 'MakeEquipRequest', 'PickMadeEquipRequest'],
+    ]);
+    assert(f.client.writes.filter(row => row.name === 'MakeEquipRequest').every(row =>
+      row.body.buildingId === '1装备厂' && row.body.makeId === 1001));
+    assert.equal(f.state.equipment.length, 3, '两件完工装备均回读确认入库');
+    assert.equal(f.state.factory.equipMaking, null, '达到下单次数上限后仍可收取最后一件');
+    assert.equal(usage.snapshot().counters.forgeStarts, 2);
+    assert.equal(usage.snapshot().counters.forgeGold, 4000);
+  } finally { Date.now = originalNow; }
+});
+await check('装备自动锻造关闭时旧领取续产开关不再执行隐藏任务', async () => {
+  const f = warForgeFixture(), settings = warForgeSettings();
+  settings.cityWar.enabled = settings.forge.enabled = false;
+  settings.schedule.equipmentCollect = settings.schedule.equipmentCraft = true;
+  await runLoop(f.client, f.protocol, {
+    config: f.config, player: f.player, rounds: 1, allowMutate: true,
+    getSettings: () => settings, usageLedger: ledger(), isEnabled: key => settings.schedule[key] === true,
+  });
+  assert.equal(f.calls.length, 0, '旧开关不能触发装备厂读取或制造');
+  assert.equal(f.client.writes.length, 0);
+});
 await check('独立于基地开关的完整挂机链路，城战优先保护巨轮舰队', async () => {
   const f=warForgeFixture(),s=warForgeSettings(),u=ledger();
   Object.assign(s.treasure,{enabled:true,autoJoin:true,fleetIds:['1远征船','2远征船']});
@@ -746,6 +812,26 @@ const { createConsole } = await import('../src/server.mjs');const app=createCons
 const base='http://127.0.0.1:'+app.server.address().port;
 const api=async(route,account='a',body)=>{const response=await fetch(base+'/api/'+route+'?account='+account,{method:body?'POST':'GET',body:body?JSON.stringify(body):undefined});return{status:response.status,data:await response.json()};};
 try {
+  await check('旧装备任务不再暴露为配置或挂机入口，旧控制请求拒绝且不改变配置', async () => {
+    const before = (await api('settings', 'b')).data;
+    const runtime = (await api('loop', 'b')).data;
+    for (const key of ['equipmentCollect', 'equipmentCraft']) {
+      const field = 'schedule.' + key;
+      assert(!before.tasks.some(task => task.key === key));
+      assert(before.rules.mappedTasks.includes(key), '旧任务不能被动态补回配置');
+      assert(!before.rules.moduleControls.some(control => control.key === field));
+      assert(!before.rules.controlFields.includes(field));
+      assert(!runtime.tasks.some(task => task.key === key));
+      assert(!runtime.controls.some(control => control.key === field || control.fields.includes(field)));
+      const response = await api('loop/task', 'b', { confirm: true, key, enabled: true });
+      assert.equal(response.status, 400);
+      assert.match(response.data.error, /装备领取与续产已统一/);
+    }
+    const after = (await api('settings', 'b')).data;
+    assert.equal(after.revision, before.revision);
+    assert.deepEqual(after.settings, before.settings);
+    assert(!app.sessions.get('b').client, '旧任务请求不能连接游戏');
+  });
   await check('新设置API按账号隔离、保存不启动、只读预览不写游戏',async()=>{
     const before=fs.readFileSync(path.join(directory,'accounts.json'));const a=(await api('settings')).data;
     assert.equal(a.settings.cityWar.enabled,false);assert.equal(a.settings.forge.enabled,false);

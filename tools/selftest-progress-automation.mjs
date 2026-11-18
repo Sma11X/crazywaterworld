@@ -7,7 +7,7 @@ import { surveyDailies } from '../src/dailies.mjs';
 import { PAGE } from '../src/page.mjs';
 import { settingsUiRules } from '../src/automation-settings.mjs';
 
-const keys = ['guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft',
+const keys = ['guildOrders', 'radarAuto', 'radarRepair',
   'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
 const migrated = taskSettings({ mail: true });
 for (const key of keys) {
@@ -65,7 +65,7 @@ function fixture() {
   assert.deepEqual(new Set(f.reports.map(entry => entry.key)), new Set(keys));
   assert.ok(f.reports.every(entry => entry.skipped && entry.reason));
   assert.equal(result.history.length, 1);
-  assert.equal(result.history[0].world.results.length, 4);
+  assert.equal(result.history[0].world.results.length, 2);
   assert.equal(result.history[0].dailies.results.length, 5);
 }
 
@@ -87,7 +87,7 @@ function fixture() {
     assert.equal(sa.due(key), true);
     assert.equal(sb.due(key), false);
   }
-  assert.equal(sa.due('equipmentCraft'), false);
+  assert.equal(sa.due('petBreed'), false);
 }
 
 // The daily page points to the implemented flow instead of claiming that the

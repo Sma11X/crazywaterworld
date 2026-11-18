@@ -56,7 +56,6 @@ import { readHeroGrowthPlan, heroStepLabel, runHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
 import { serviceGuildOrders } from './guild-orders.mjs';
 import { serviceRadar } from './radar.mjs';
-import { serviceEquipmentCrafting } from './equipment-automation.mjs';
 import { serviceMuseum } from './museum.mjs';
 import { servicePetBreeding } from './pet-breeding.mjs';
 import { serviceGuildAid } from './guild-aid.mjs';
@@ -135,8 +134,8 @@ export async function runLoop(client, protocol, {
   const appointmentSettings = () => JSON.stringify(getSettings()?.appointments);
   const appointmentNext = () => getSettings()?.appointments?.enabled
     ? (appointmentPreference === appointmentSettings() ? appointmentAt : 0) : Infinity;
-  let cityWarAt = 0, forgeAt = 0, antiqueAt = 0, lastCityWarNotes = '', lastForgeNotes = '', lastAntiqueNotes = '';
-  let cityWarState = null, cityWarPreference = null, forgePreference = null, antiquePreference = null, cityFuelCeiling = null;
+  let cityWarAt = 0, antiqueAt = 0, lastCityWarNotes = '', lastForgeNotes = '', lastAntiqueNotes = '';
+  let cityWarState = null, cityWarPreference = null, antiquePreference = null, cityFuelCeiling = null;
   // rounds <= 0 表示一直跑，靠 stop.aborted（Ctrl-C 或网页停止按钮）退出。
   const total = rounds > 0 ? rounds : Infinity;
   const travel=watchTreasureTravel(client);
@@ -257,7 +256,6 @@ export async function runLoop(client, protocol, {
     const takeoverReason = key => {
       const s = getSettings();
       if (s?.radar?.runEnabled !== false && s?.radar?.enabled && ['radarAuto','radarRepair'].includes(key)) return '联盟情报';
-      if (s?.forge?.enabled && ['equipmentCollect','equipmentCraft'].includes(key)) return '装备锻造';
       if (s?.loop?.world && s.museum?.runEnabled !== false && s.museum?.enabled && ['museumCollect','museumExplore','museumAchievements'].includes(key)) return '博物馆';
       if (s?.loop?.world && s.pet?.enabled && ['petCollect','petBreed'].includes(key)) return '海兽';
       if (s?.treasure?.enabled && key === 'treasureLoot') return '巨轮';
@@ -545,8 +543,7 @@ export async function runLoop(client, protocol, {
       finally{rewards?.expect('联盟情报',rewards.now()+(getSettings()?.radar.checkEverySeconds??30));radarAt=Date.now()+(getSettings()?.radar.checkEverySeconds??30)*1000;}
     }
     async function checkForge() {
-      if (stop.aborted || !forgeEnabled(getSettings()) || (Date.now() < forgeAt && forgePreference === getSettings().forge)) return;
-      forgePreference = getSettings().forge;
+      if (stop.aborted || !forgeEnabled(getSettings())) return;
       try {
         const result = await runEquipmentForge(client, protocol, config, player, { getSettings, ledger: usageLedger,
           enabled: () => !stop.aborted && client.connected && forgeEnabled(getSettings()),
@@ -556,7 +553,7 @@ export async function runLoop(client, protocol, {
         if (text && text !== lastForgeNotes) stepLog('world')({ title: '装备锻造检查', category: '装备锻造', skipped: true, reason: text });
         lastForgeNotes = text;
       } catch (error) { phaseFailure('world', '装备锻造检查', error); }
-      finally { rewards?.expect('装备锻造',rewards.now()+(getSettings()?.forge?.checkEverySeconds??30));forgeAt = Date.now() + (getSettings()?.forge?.checkEverySeconds ?? 30) * 1000; }
+      finally { rewards?.expect('装备锻造', rewards.now() + Math.ceil(getEveryMs() / 1000)); }
     }
     async function checkAntique() {
       if (stop.aborted || !antiqueEnabled(getSettings()) || (Date.now() < antiqueAt && antiquePreference === getSettings().antique)) return;
@@ -770,11 +767,11 @@ export async function runLoop(client, protocol, {
             ...(error.code==='AUTOMATION_SKIP'?{skipped:true,reason:error.message}:{}),error:error.message}); }
         }
       }
-      for (const key of ['radarAuto','radarRepair','equipmentCollect','equipmentCraft','museumCollect','museumExplore','museumAchievements','petCollect','petBreed','treasureLoot','heroGrowth']) {
+      for (const key of ['radarAuto','radarRepair','museumCollect','museumExplore','museumAchievements','petCollect','petBreed','treasureLoot','heroGrowth']) {
         const reason = takeoverReason(key);
         if (enabled(key) && reason) serviceReport('dailies', reason)({key, skipped:true, reason:'由游戏配置中的' + reason + '接管'});
       }
-      // 兼容主分支原有的联盟、装备、博物馆、海兽、成长和巨轮服务。
+      // 兼容主分支原有的联盟、博物馆、海兽、成长和巨轮服务。
       // 新版调度服务与这些入口共享同一个账号队列；只有显式开启旧开关时才执行，避免重复请求。
       await checkFactoryDue({ checkpoint: true });
       if (isEnabled && legacyEnabled('guildOrders')) {
@@ -784,10 +781,6 @@ export async function runLoop(client, protocol, {
       if (isEnabled && legacyEnabled('guildAidHelp')) {
         try { await serviceGuildAid(client, protocol, config, { player, getSettings, enabled: () => legacyActive('guildAidHelp'), scheduler: rewards, report: serviceReport('dailies', '联盟互助') }); }
         catch (error) { phaseFailure('dailies', '联盟互助检查', error); }
-      }
-      if (isEnabled && ['equipmentCollect', 'equipmentCraft'].some(legacyEnabled)) {
-        try { await serviceEquipmentCrafting(client, config, { player, enabled: legacyActive, scheduler: rewards, report: serviceReport('world', '装备制造') }); }
-        catch (error) { phaseFailure('world', '装备厂检查', error); }
       }
       await checkFactoryDue({ checkpoint: true });
       if (isEnabled && ['radarAuto', 'radarRepair'].some(legacyEnabled)) {
@@ -1087,7 +1080,6 @@ export async function runLoop(client, protocol, {
             isEnabled && enabled('upgrade') ? upgradeAt : Infinity,
             treasureAutomationEnabled(getSettings()) ? treasureAt : Infinity,
             cityWarEnabled(getSettings()) ? cityWarAt : Infinity,
-            forgeEnabled(getSettings()) ? forgeAt : Infinity,
             antiqueEnabled(getSettings()) ? antiqueAt : Infinity, afkAt);
           if (wakeAt > Date.now()) await scheduler.waitUntil(wakeAt);
           if (!scheduler.active() || Date.now() >= waitStartedAt + getEveryMs()) break;
@@ -1115,7 +1107,6 @@ export async function runLoop(client, protocol, {
             dispatchSettingsPending = false;
             await checkDispatch();
           });
-          await scheduler.runDue('forge', () => forgeEnabled(getSettings()) ? forgeAt : Infinity, checkForge);
           await scheduler.runDue('antique', () => antiqueEnabled(getSettings()) ? antiqueAt : Infinity, checkAntique);
           if (afkAt <= Date.now() && enabled('afk')) {
             afkDeadline = undefined;
