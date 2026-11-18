@@ -38,7 +38,7 @@ test('保守默认值与独立开关，不因新增策略开启走商或指针�
 test('旧版导入补齐策略参数，保留走商及领奖的显式开关', () => {
   for (const format of ['crazywaterworld-automation', 'crazywaterword-automation']) {
     for (const enabled of [false, true]) {
-      const document = exportAutomationSettings(defaultSettings());
+      const document = { ...exportAutomationSettings(defaultSettings()), version: 1 };
       document.format = format;
       delete document.settings.merchant;
       document.settings.schedule.merchantTrade = enabled;
@@ -51,7 +51,7 @@ test('旧版导入补齐策略参数，保留走商及领奖的显式开关', ()
       assert.deepEqual(document, before, '迁移不得修改导入对象');
     }
   }
-  const document = exportAutomationSettings(defaultSettings());
+  const document = { ...exportAutomationSettings(defaultSettings()), version: 1 };
   document.settings.merchant = { autoSpeedUp: true, maxLossPercent: 5, keepPointers: 3 };
   assert.deepEqual(importAutomationSettings(document).merchant, {
     enabled: false, ...defaults, autoSpeedUp: true, maxLossPercent: 5, keepPointers: 3

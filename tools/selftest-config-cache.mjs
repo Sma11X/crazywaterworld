@@ -32,7 +32,7 @@ try {
   fs.mkdirSync(path.join(directory, 'src'), { recursive: true });
   fs.mkdirSync(path.join(directory, 'tools'), { recursive: true });
   fs.mkdirSync(path.join(directory, 'src/platform'), { recursive: true });
-  for (const name of ['src/config.mjs', 'src/resource-store.mjs', 'src/platform/client-paths.mjs', 'tools/sync-config.mjs']) {
+  for (const name of ['src/config.mjs', 'src/resource-store.mjs', 'src/resource-version.mjs', 'src/json-store.mjs', 'src/platform/client-paths.mjs', 'tools/wxapkg.mjs', 'tools/sync-config.mjs']) {
     fs.copyFileSync(new URL('../' + name, import.meta.url), path.join(directory, name));
   }
   os.homedir = () => home;

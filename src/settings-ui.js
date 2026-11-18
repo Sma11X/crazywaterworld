@@ -583,6 +583,9 @@ function configVisible() { return !$('tab-settings').classList.contains('hidden'
 function configMessage(text, kind = 'info') {
   const node = $('config-message'); node.textContent = text || ''; node.hidden = !text; node.dataset.kind = kind;
 }
+function configCompatibilityMessage(data) {
+  if (!configEditor.saveError) configMessage(data.compatibility?.error || '', data.compatibility ? 'error' : 'info');
+}
 function configBusy(value) {
   configEditor.busy = value;
   for (const id of ['config-retry', 'config-import', 'config-export', 'config-preview']) $(id).disabled = value || configEditor.loading || !configEditor.draft;
@@ -1263,7 +1266,8 @@ async function configLoad(force = false) {
       (configIsDirty() || (data.revision===configEditor.data?.revision && data.baseRevision===configEditor.data?.baseRevision && JSON.stringify(data.settings)===JSON.stringify(configEditor.baseline) && JSON.stringify(data.catalog)===JSON.stringify(configEditor.data.catalog)))){
       configEditor.runtime=runtime;configEditor.data={...configEditor.data,usage:data.usage,pendingUsage:data.pendingUsage};
       const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
-      configEditor.data={...configEditor.data,rules:data.rules,tasks:data.tasks};
+      configEditor.data={...configEditor.data,rules:data.rules,tasks:data.tasks,compatibility:data.compatibility};
+      configCompatibilityMessage(data);
       // 活动开放状态独立于保存版本；更新入口时保留草稿和原基线，避免覆盖编辑或绕过版本冲突。
       if(displayChanged){configEditor.previewSummary=null;configRender();}else configRenderUsage();
       return;
@@ -1274,7 +1278,7 @@ async function configLoad(force = false) {
     configCancelSaveTimer(); configEditor.saveError = null; configEditor.saveRetries = 0;
     configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = '';
     $('config-account-name').textContent = (accounts.find(row => row.id === account)?.title || '当前账号') + '的挂机配置';
-    configRender();
+    configRender(); configCompatibilityMessage(data);
   } catch (error) { if (account === current && version === configEditor.serial) configMessage(error.message, 'error'); }
   finally {
     if (version === configEditor.serial) { configEditor.loading = false; configBusy(false); configUpdateState(); configWeeklyRankingSync(); }
@@ -1685,6 +1689,7 @@ function configSave(event, { automatic = false } = {}) {
     if(displayChanged || normalized){configEditor.previewSummary=null;configRender();}
     // 常规保存仅更新常驻状态，避免成功提示条反复显隐挤动编辑中的表单。
     configRenderUsage();
+    configCompatibilityMessage(data);
     if (!data.running) {
       const prior=loopFieldDefaults;
       if(!prior||$('loop-every').value===String(prior.seconds))$('loop-every').value=data.settings.loop.everySeconds;
@@ -1739,7 +1744,7 @@ async function configExport() {
   try {
     const data = await call('/api/settings/validate', { method: 'POST', body: JSON.stringify({ settings: draft }) });
     if (account !== current) return;
-    const exported = { format: 'crazywaterworld-automation', version: 1, settings: data.settings };
+    const exported = data.document;
     const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob), link = document.createElement('a');
     link.href = url; link.download = '疯狂水世界-游戏配置.json'; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);

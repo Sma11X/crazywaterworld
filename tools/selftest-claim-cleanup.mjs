@@ -283,6 +283,6 @@ await fishOnce(c,config,()=>true);assert.equal(casts,0);
 await fishOnce(c,config,()=>true,{fishBook:true,dryRun:true});assert.equal(casts,0);
 await fishOnce(c,config,()=>true,{fishBook:true,onBookComplete:()=>closed++});assert.equal(casts,1);assert.equal(closed,1);
 await fishOnce(c,config,()=>true,{fishBook:true,dryRun:true,onBookComplete:()=>closed++});assert.equal(casts,1);assert.equal(closed,1);
-const old=exportAutomationSettings(defaultSettings());delete old.settings.pet.release;delete old.settings.pet.releaseQualities;delete old.settings.forge.decompose;delete old.settings.forge.decomposeQualities;delete old.settings.gather.fishBook;
+const old={...exportAutomationSettings(defaultSettings()),version:1};delete old.settings.pet.release;delete old.settings.pet.releaseQualities;delete old.settings.forge.decompose;delete old.settings.forge.decomposeQualities;delete old.settings.gather.fishBook;
 assert.equal(importAutomationSettings(old).forge.decompose,false);
 console.log('通过：双招募时间、旧配置、满仓开拓及集齐停用、预览只读、精确品质/UID、占用和养成保护、未知结果复核恢复。');

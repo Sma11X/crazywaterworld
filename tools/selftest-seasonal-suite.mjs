@@ -796,7 +796,7 @@ await test('贸易战令、已达利润、联盟任务与商情礼包逐项核�
 });
 await test('旧导出保留显式关闭值，新默认与罗盘阈值入参校验', () => {
   const f = setup(),
-    doc = exportAutomationSettings(f.settings);
+    doc = { ...exportAutomationSettings(f.settings), version: 1 };
   delete doc.settings.eventActions;
   for (const k of [
     'armsRaceRewards',

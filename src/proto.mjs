@@ -1,4 +1,4 @@
-import { readProtocolSource } from './protocol-source.mjs';
+import { readProtocolSource, protocolSourceInfo } from './protocol-source.mjs';
 export { PROTO_BUNDLE } from './protocol-source.mjs';
 import { createRequire } from 'node:module';
 
@@ -96,6 +96,47 @@ export function loadProtocol(bundlePath) {
   const protocol = exports.protocol;
   if (!protocol) throw new Error('protocol table not exported');
   return protocol;
+}
+
+const sourceByProtocol = new WeakMap();
+let latestProtocol = null;
+const REQUIRED_MESSAGES = ['LoginRequest', 'LoginResponse', 'PingRequest', 'PingResponse', 'Ack', 'Nack'];
+
+// The cache is only adopted after the selected file has loaded and its basic
+// codecs have passed validation. Never silently reuse an older protocol when
+// a newly discovered package is corrupt or incompatible.
+export function getProtocol(bundlePath) {
+  let source;
+  try {
+    source = protocolSourceInfo(bundlePath);
+    if (latestProtocol?.source.signature === source.signature) return latestProtocol.protocol;
+    const protocol = loadProtocol(source.file);
+    for (const name of REQUIRED_MESSAGES) {
+      const message = protocol[name];
+      if (typeof message?.encode !== 'function' || typeof message?.decode !== 'function')
+        throw new Error('缺少基础消息编解码：' + name);
+      // Generated protobuf messages may encode required fields unconditionally.
+      // Their defaults live on the constructor's prototype, not on a plain {}.
+      const body = typeof message === 'function' ? new message() : message.create?.() ?? {};
+      const bytes = message.encode(body).finish();
+      message.decode(bytes);
+    }
+    if (protocolSourceInfo(bundlePath).signature !== source.signature)
+      throw new Error('协议文件在加载期间发生变化，请重试连接');
+    sourceByProtocol.set(protocol, source);
+    latestProtocol = { protocol, source };
+    return protocol;
+  } catch (cause) {
+    const error = new Error('无法加载当前协议，已阻止建立新连接：' + cause.message, { cause });
+    error.name = 'ProtocolUpdateError';
+    error.code = 'PROTOCOL_UPDATE_FAILED';
+    error.source = source ?? null;
+    throw error;
+  }
+}
+
+export function getProtocolSource(protocol) {
+  return sourceByProtocol.get(protocol) ?? null;
 }
 
 export function describe(protocol) {

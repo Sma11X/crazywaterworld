@@ -216,10 +216,74 @@ try {
     const unknown = document(); unknown.settings.factory.removedField = true;
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
+  test('版本1升级为版本2后重复迁移保持一致，保留有效的用户值', () => {
+    assert.equal(SETTINGS_SCHEMA_VERSION, 2);
+    const settings = legacySettings();
+    settings.factory.checkEverySeconds = 270;
+    settings.resources.diamondDailyLimit = 1234;
+    const before = structuredClone(settings);
+    const migrated = importAutomationSettings({ format: SETTINGS_FORMAT, version: 1, settings });
+    assert.equal(migrated.factory.checkEverySeconds, 270);
+    assert.equal(migrated.resources.diamondDailyLimit, 1234);
+    assert.deepEqual(settings, before);
+    assert.deepEqual(migrateSettingsVersion(migrated, 2), migrated);
+    const exported = exportAutomationSettings(migrated);
+    assert.equal(exported.version, 2);
+    assert.deepEqual(importAutomationSettings(exported), migrated);
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(importAutomationSettings(exported))), migrated);
+  });
+  test('保存一个账号不会将未迁移的其他账号误标为当前版本', () => {
+    const old = { revision: 8, savedAt: 'legacy-time', settings: legacySettings() };
+    const other = { revision: 12, savedAt: 'other-time', settings: legacySettings() };
+    fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { old, other } }));
+    const otherBefore = loadAutomationSettings('other', { file });
+    const loaded = loadAutomationSettings('old', { file });
+    const saved = saveAutomationSettings('old', loaded.settings, { file, revision: loaded.revision });
+    const store = JSON.parse(fs.readFileSync(file));
+    assert.equal(store.version, 2);
+    assert.equal(store.accounts.old.settingsVersion, 2);
+    assert.equal(store.accounts.old.revision, 9);
+    assert.deepEqual(store.accounts.other, other);
+    assert.deepEqual(loadAutomationSettings('other', { file }), otherBefore);
+    assert.deepEqual(loadAutomationSettings('old', { file }), saved);
+    const bytes = fs.readFileSync(file);
+    assert.throws(() => saveAutomationSettings('old', loaded.settings, { file, revision: 8 }), /其他页面更新/);
+    assert.deepEqual(fs.readFileSync(file), bytes);
+    saveAutomationSettings('other', otherBefore.settings, { file, revision: otherBefore.revision });
+    assert.equal(JSON.parse(fs.readFileSync(file)).accounts.other.settingsVersion, 2);
+  });
+  test('当前版本缺项不能借历史迁移静默补全，旧版部分设置仍兼容', () => {
+    for (const remove of [
+      settings => { delete settings.login; },
+      settings => { delete settings.factory.checkEverySeconds; },
+      settings => { delete settings.cityWar.fleetStrategies; },
+      settings => { delete settings.cityWar.defenceTargetMode; },
+    ]) {
+      const settings = defaultSettings(); remove(settings);
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 2, settings }), /缺少/);
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 2, settings }, { partial: true }), /缺少/);
+      fs.writeFileSync(file, JSON.stringify({ version: 2, accounts: { current: { settingsVersion: 2, revision: 2, settings } } }));
+      const bytes = fs.readFileSync(file);
+      assert.throws(() => loadAutomationSettings('current', { file }), /缺少/);
+      assert.deepEqual(fs.readFileSync(file), bytes);
+    }
+    const settings = { loop: { everySeconds: 37 } };
+    fs.writeFileSync(file, JSON.stringify({ version: 2, accounts: { legacy: { revision: 3, settings } } }));
+    const migrated = loadAutomationSettings('legacy', { file }).settings;
+    assert.equal(migrated.loop.everySeconds, 37);
+    assert.deepEqual(migrated, validateSettings(settings, { partial: true }));
+    assert.equal(migrated.factory.checkEverySeconds, defaultSettings().factory.checkEverySeconds);
+  });
   test('未知版本与损坏文件拒绝写入，保留原文件', () => {
-    assert.throws(() => migrateSettingsVersion(defaultSettings(), 2), /版本不支持/);
-    assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 2, settings: defaultSettings() }), /版本 1/);
-    for (const content of ['{broken', JSON.stringify({ version: 2, accounts: {} })]) {
+    const future = SETTINGS_SCHEMA_VERSION + 1;
+    for (const version of [0, future, '2', null]) {
+      assert.throws(() => migrateSettingsVersion(defaultSettings(), version), /版本不支持/);
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version, settings: defaultSettings() }), /版本/);
+    }
+    for (const content of ['{broken', JSON.stringify({ version: future, accounts: {} }),
+      JSON.stringify({ version: 2, accounts: { old: { settingsVersion: future, revision: 0, settings: defaultSettings() } } }),
+      JSON.stringify({ version: 2, accounts: { other: { settingsVersion: future, revision: 0, settings: defaultSettings() } } }),
+    ]) {
       fs.writeFileSync(file, content);
       assert.throws(() => loadAutomationSettings('old', { file }));
       assert.throws(() => saveAutomationSettings('old', defaultSettings(), { file, revision: 0 }));

@@ -8,7 +8,8 @@
       "tools/selftest-react-client*.mjs",
       "vite.config.ts",
       "tsconfig.ui.json",
-      "biome.json"
+      "biome.json",
+      "!!output"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2 },

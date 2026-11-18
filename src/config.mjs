@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { wechatConfigCandidates } from './platform/client-paths.mjs';
-import { activeResources } from './resource-store.mjs';
+import { activeResources, assertResourcesReady } from './resource-store.mjs';
 
 // 客户端的配置表不在游戏包里，而是运行时从 CDN 拉取的独立 bundle `config_cn`，
 // 整包被 Cocos 打成 JSON。优先读取已验证的远程资源快照，微信缓存作兼容来源。
@@ -103,9 +103,10 @@ export function loadConfig({ file, resources = file ? null : activeResources() }
 }
 
 let cached = null, cachedSource = '';
-export function getConfig() {
+export function getConfig({ allowStale = false } = {}) {
+  if (!allowStale) assertResourcesReady();
   const resources = activeResources(), file = resources?.configFile || findConfigPack();
-  const signature = file ? file + ':' + fs.statSync(file).mtimeMs : '';
+  const signature = file ? JSON.stringify([file, fs.statSync(file).mtimeMs, resources?.version, resources?.bundleVersions]) : '';
   if (!cached || cachedSource !== signature) {
     const next = loadConfig({ file, resources });
     cached = next; cachedSource = signature;

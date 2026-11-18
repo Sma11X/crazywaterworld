@@ -16,7 +16,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 1;
+export const SETTINGS_SCHEMA_VERSION = 2;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -244,8 +244,14 @@ export function settingsUiRules() {
   return { moduleControls: idleAutomationControls, controlFields: idleControlFields, controlGroups: Object.fromEntries(automationControls.flatMap(c=>c.fields.map(path=>[path,c.idleGroup??c.group]))), mappedTasks: [...Object.keys(nativeFields), ...retiredAutomationTasks], numbers: Object.fromEntries(Object.entries(constraints).filter(([, rule]) => rule.kind === 'number').map(([key, rule]) => [key, { min: rule.min, max: rule.max }])) };
 }
 
-export function validateSettings(input, { partial = false, catalog = null } = {}) {
-  if (partial) input = migrateSettingsVersion(input, SETTINGS_SCHEMA_VERSION, { source: 'stored' });
+export function validateSettings(input, options = {}) {
+  // Partial callers are the legacy compatibility API. Current persisted and
+  // imported documents are validated strictly after their version is checked.
+  if (options.partial) input = migrateSettingsVersion(input, 1, { source: 'stored' });
+  return validateCurrentSettings(input, options);
+}
+
+function validateCurrentSettings(input, { partial = false, catalog = null } = {}) {
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   const errors = Object.create(null);
   const output = defaultSettings();
@@ -414,9 +420,14 @@ export function settingsCatalog(config) {
 export function loadAutomationSettings(accountId, { file = settingsFile() } = {}) {
   const key = accountKey(accountId);
   const store = readJson(file, { version: SETTINGS_SCHEMA_VERSION, accounts: {} });
-  if (store.version !== SETTINGS_SCHEMA_VERSION || !plain(store.accounts)) throw new Error('设置文件格式不支持，未覆盖原文件');
+  validateSettingsStore(store);
   const entry = Object.hasOwn(store.accounts, key) ? store.accounts[key] : null;
-  return { settings: entry ? validateSettings(entry.settings, { partial: true }) : defaultSettings(), revision: entry?.revision ?? 0, savedAt: entry?.savedAt ?? null };
+  // The container version cannot identify an untouched account in a mixed
+  // store. Entries written before version 2 did not carry their own version.
+  const version = entry ? entrySettingsVersion(entry) : SETTINGS_SCHEMA_VERSION;
+  const settings = entry ? validateCurrentSettings(migrateSettingsVersion(entry.settings, version, { source: 'stored' }),
+    { partial: version < SETTINGS_SCHEMA_VERSION }) : defaultSettings();
+  return { settings, revision: entry?.revision ?? 0, savedAt: entry?.savedAt ?? null };
 }
 
 export function saveAutomationSettings(accountId, input, { revision, file = settingsFile(), catalog = null } = {}) {
@@ -424,27 +435,50 @@ export function saveAutomationSettings(accountId, input, { revision, file = sett
   const key = accountKey(accountId);
   return withFileLock(file, () => {
     const store = readJson(file, { version: SETTINGS_SCHEMA_VERSION, accounts: {} });
-    if (store.version !== SETTINGS_SCHEMA_VERSION || !plain(store.accounts)) throw new Error('设置文件格式不支持，未覆盖原文件');
+    validateSettingsStore(store);
     const current = Object.hasOwn(store.accounts, key) ? store.accounts[key] : null;
     if (!Number.isSafeInteger(revision) || revision !== (current?.revision ?? 0)) throw new SettingsError({ revision: '设置已在其他页面更新，请重新载入后再保存' });
-    const entry = { revision: revision + 1, savedAt: new Date().toISOString(), settings };
+    const entry = { revision: revision + 1, savedAt: new Date().toISOString(), settingsVersion: SETTINGS_SCHEMA_VERSION, settings };
     Object.defineProperty(store.accounts, key, { value: entry, enumerable: true, configurable: true, writable: true });
+    store.version = SETTINGS_SCHEMA_VERSION;
     atomicJson(file, store);
-    return copy(entry);
+    return { revision: entry.revision, savedAt: entry.savedAt, settings: copy(settings) };
   });
 }
 
 export function exportAutomationSettings(settings) { return { format: SETTINGS_FORMAT, version: SETTINGS_SCHEMA_VERSION, settings: validateSettings(settings) }; }
 export function importAutomationSettings(document, options) {
-  if (!plain(document) || ![SETTINGS_FORMAT, LEGACY_SETTINGS_FORMAT].includes(document.format) || document.version !== SETTINGS_SCHEMA_VERSION || Object.keys(document).some(k => !['format', 'version', 'settings'].includes(k))) throw new SettingsError({ import: '请选择本工具导出的配置文件（版本 1），文件不能包含账号或凭据' });
-  return validateSettings(migrateSettingsVersion(document.settings, document.version), options);
+  if (!plain(document) || ![SETTINGS_FORMAT, LEGACY_SETTINGS_FORMAT].includes(document.format) || !supportedSettingsVersion(document.version) || Object.keys(document).some(k => !['format', 'version', 'settings'].includes(k))) throw new SettingsError({ import: `请选择本工具导出的配置文件（版本 1–${SETTINGS_SCHEMA_VERSION}），文件不能包含账号或凭据` });
+  return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
+}
+
+const settingsMigrations = new Map([[1, migrateVersion1Settings]]);
+const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
+const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
+function validateSettingsStore(store) {
+  if (!plain(store) || !supportedSettingsVersion(store.version) || !plain(store.accounts)
+    || Object.values(store.accounts).some(entry => !plain(entry) || !supportedSettingsVersion(entrySettingsVersion(entry)))) {
+    throw new Error('设置文件格式或版本不支持，未覆盖原文件');
+  }
+}
+
+// Upgrade one version at a time. New semantic changes require a new migration;
+// changing defaults alone must not overwrite a user's valid saved choices.
+export function migrateSettingsVersion(settings, version, { source = 'import' } = {}) {
+  if (!supportedSettingsVersion(version)) throw new SettingsError({ version: '设置文件版本不支持' });
+  if (!['import', 'stored'].includes(source)) throw new TypeError('未知设置迁移来源');
+  let result = settings;
+  for (let current = version; current < SETTINGS_SCHEMA_VERSION; current++) {
+    const migrate = settingsMigrations.get(current);
+    if (!migrate) throw new SettingsError({ version: '缺少设置版本升级规则，已停止读取' });
+    result = migrate(result, { source });
+  }
+  return result;
 }
 
 // Version 1 grew by adding fields. Import permits only the historical additions
 // listed here; stored partial settings retain their original default-fill rules.
-export function migrateSettingsVersion(settings, version, { source = 'import' } = {}) {
-  if (version !== SETTINGS_SCHEMA_VERSION) throw new SettingsError({ version: '设置文件版本不支持' });
-  if (!['import', 'stored'].includes(source)) throw new TypeError('未知设置迁移来源');
+function migrateVersion1Settings(settings, { source }) {
   if (!plain(settings)) return settings;
   const input = { ...settings };
   if (plain(input.weeklyActivity)) input.weeklyActivity = migrateWeeklyActivitySettings(input.weeklyActivity);

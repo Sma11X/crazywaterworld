@@ -201,7 +201,7 @@ try {
     const file = path.join(directory, 'legacy-factory-settings.json');
     const booleanKeys = Object.keys(defaultSettings().factory).filter(key => typeof defaultSettings().factory[key] === 'boolean');
     for (const enabled of [true, false]) {
-      const document = exportAutomationSettings(defaultSettings()); delete document.settings.factory.checkEverySeconds;
+      const document = { ...exportAutomationSettings(defaultSettings()), version: 1 }; delete document.settings.factory.checkEverySeconds;
       for (const key of booleanKeys) document.settings.factory[key] = enabled;
       fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { legacy: { settings: document.settings, revision: 7 } } }));
       const bytes = fs.readFileSync(file), loaded = loadAutomationSettings('legacy', { file });
@@ -254,7 +254,7 @@ try {
     const disabled = structuredClone(custom); disabled.treasure.marchSpeedUp = false;
     saveAutomationSettings('custom', disabled, { file, revision: 1 });
     assert.deepEqual(loadAutomationSettings('custom', { file }).settings.treasure, disabled.treasure);
-    const old = exportAutomationSettings(custom);
+    const old = { ...exportAutomationSettings(custom), version: 1 };
     for (const key of added) delete old.settings.treasure[key];
     fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { old: { revision: 7, settings: old.settings } } }));
     const bytes = fs.readFileSync(file);
@@ -291,7 +291,7 @@ try {
     assert.equal(initial.treasure.fallbackAfter, '21:00');
     assert.equal(initial.treasure.fallbackTargetRewards, 3);
     assert.deepEqual(initial.treasure.fallbackQualities, ['PURPLE', 'BLUE']);
-    const old = exportAutomationSettings(initial);
+    const old = { ...exportAutomationSettings(initial), version: 1 };
     const fallbackFields = Object.keys(old.settings.treasure).filter(key => key.startsWith('fallback'));
     for (const field of fallbackFields) delete old.settings.treasure[field];
     old.settings.treasure.autoRepair = false;
@@ -388,7 +388,7 @@ try {
       assert.equal(taskSettings({ [key]: true })[key], false, '仅有旧任务配置的账号也不能恢复退役任务');
       assert.equal(applyNativeTask(legacy, key, true).schedule[key], false, '旧快捷开关不能重新打开退役任务');
     }
-    const oldDocument = exportAutomationSettings(defaultSettings());
+    const oldDocument = { ...exportAutomationSettings(defaultSettings()), version: 1 };
     for (const key of keys) delete oldDocument.settings.schedule[key];
     const restored = importAutomationSettings(oldDocument);
     for (const key of ['guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft', 'museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'weekLotterySpin', 'weekOrderSubmit', 'merchantTrade', 'beautyVotes', 'compassSpin']) assert.equal(restored.schedule[key], false, key);

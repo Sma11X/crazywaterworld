@@ -19,6 +19,7 @@ const sources = [
   section('function configRevealSection(', 'function configRender()'),
   section('async function configLoad(', 'async function configRefreshPlayers('),
   section('function configSave(', 'async function configExport('),
+  section('async function configExport(', 'async function configPreview('),
 ].join('\n');
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -38,14 +39,17 @@ function fixture({ catalog = {} } = {}) {
   };
   const view = account => ({ ...loadAutomationSettings(account, { file }), catalog, rules: {}, tasks: [], usage: {}, pendingUsage: {}, running: false });
   const env = {
-    node, calls: [], renders: 0, focuses: 0, confirmations: 0, failPosts: 0, inFlight: 0, maxInFlight: 0,
+    node, calls: [], downloads: [], renders: 0, focuses: 0, confirmations: 0, failPosts: 0, inFlight: 0, maxInFlight: 0,
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { at: now + delay, callback }); return id; },
     clearTimeout(id) { timers.delete(id); },
     confirm() { env.confirmations++; return false; },
     async call(account, route, options) {
       const payload = options?.body ? JSON.parse(options.body) : null;
       env.calls.push({ account, route, payload });
-      if (route === '/api/settings/validate') return { settings: payload.document ? importAutomationSettings(payload.document) : validateSettings(payload.settings) };
+      if (route === '/api/settings/validate') {
+        const settings = payload.document ? importAutomationSettings(payload.document) : validateSettings(payload.settings);
+        return { settings, document: exportAutomationSettings(settings) };
+      }
       if (route === '/api/loop') return { controls: [] };
       assert(['/api/settings','/api/settings?fleets=1'].includes(route));
       if (!payload) { const data = view(account); await env.onGet?.(); return data; }
@@ -63,6 +67,8 @@ function fixture({ catalog = {} } = {}) {
   const api = newStateFunction('env', sources + `
     let current = 'a', loopSettingsRevision = 1, loopFieldDefaults = null;
     const accounts = [], $ = env.node, window = { confirm: env.confirm }, loopIntervalSaves = new Map();
+    const document = { body: { append() {} }, createElement: () => ({ click() {}, remove() {} }) };
+    const URL = { createObjectURL(blob) { env.downloads.push(blob); return 'blob:settings-fixture'; }, revokeObjectURL() {} };
     const setTimeout = env.setTimeout, clearTimeout = env.clearTimeout;
     const call = (route, options) => env.call(current, route, options);
     const configRenderUsage = () => {}, configUpdateVisibility = () => env.updateVisibility?.();
@@ -74,7 +80,7 @@ function fixture({ catalog = {} } = {}) {
     const clear = node => node, el = () => ({});
     return {
       editor: configEditor, groups: configGroups, strategyFields: cityWarStrategyFields, set: configSet, load: configLoad, save: configSave, flush: configFlush,
-      dirty: configIsDirty, importFile: configImportFile, mayChange: configMayChangeAccount,
+      dirty: configIsDirty, importFile: configImportFile, exportFile: configExport, mayChange: configMayChangeAccount,
       revision: () => loopSettingsRevision,
       setLoopRevision(revision) { loopSettingsRevision = revision; },
       intervalSaved: configIntervalSaved,
@@ -444,6 +450,19 @@ await test('导入校验通过后自动保存，不需要额外点击按钮', as
   await f.importFile({ target: { value: 'fixture.json', files: [{ size: document.length, text: async () => document }] } });
   await f.tick(600);
   assert.equal(f.posts().length, 1); assert.equal(f.view('a').settings.ads.waitSeconds, 24); assert(!f.dirty());
+});
+
+await test('草稿导出使用后端当前版本且不提前保存用户修改', async () => {
+  const f = fixture(); await f.load(); f.set('factory.keepStock', 129);
+  await f.exportFile();
+  assert.equal(f.env.downloads.length, 1);
+  const document = JSON.parse(await f.env.downloads[0].text());
+  assert.equal(document.version, 2);
+  assert.deepEqual(Object.keys(document), ['format', 'version', 'settings']);
+  assert.equal(document.settings.factory.keepStock, 129);
+  assert.equal(importAutomationSettings(document).factory.keepStock, 129);
+  assert.equal(f.posts().length, 0);
+  assert.equal(f.view('a').settings.factory.keepStock, 50);
 });
 
 await test('三支硅矿舰队独立编辑自动保存，刷新和切号保留各自字段', async () => {

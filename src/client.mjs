@@ -54,6 +54,8 @@ export class GameClient extends EventEmitter {
     this.setMaxListeners(32);
     this.url = url;
     this.login = login;
+    // Keep helpers and the wire codec on the same immutable protocol snapshot.
+    this.protocol = protocol;
     // v71 lacks this unsolicited v74 update. Reward claims read their state
     // from DailyTaskInfoResponse, so they don't need to consume its payload.
     this.codec = createCodec(protocol, { optionalPush: 'SCTierTaskUpdate' });

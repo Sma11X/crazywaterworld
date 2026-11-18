@@ -47,6 +47,7 @@ function validTimestamp(value) {
 // 浏览器仅保留在本次扫码期间，登录凭证由调用方明确保存后再清理。
 export function createAlipayLogin({
   protocol,
+  getProtocol = () => protocol,
   launch = launchBrowser,
   startTimeoutMs = START_TIMEOUT_MS,
   now = Date.now,
@@ -56,7 +57,6 @@ export function createAlipayLogin({
   let current = null;
   let closed = false;
   let previousStart = Promise.resolve();
-  const codec = createCodec(protocol ?? {});
 
   function live(session) {
     return current === session && !closed && ACTIVE_PHASES.has(session.phase);
@@ -135,7 +135,7 @@ export function createAlipayLogin({
     const frame = inspectGameFrame(payload);
     if (frame?.name !== 'LoginRequest') return;
     try {
-      const { body } = codec.decode(payload);
+      const { body } = session.codec.decode(payload);
       const params = body?.eworldParams;
       if (!['openId', 'token', 'sign'].every(key => typeof params?.[key] === 'string' && params[key].trim())
         || !validTimestamp(params?.timestamp)) {
@@ -280,10 +280,12 @@ export function createAlipayLogin({
     await prior;
     if (!live(session)) return snapshot(session);
     try {
+      const protocol = getProtocol();
       if (typeof protocol?.LoginRequest?.decode !== 'function' || typeof protocol?.LoginRequest?.encode !== 'function') {
         finish(session, 'error', '本机游戏协议缺少登录报文，请先更新游戏协议。');
         return snapshot(session);
       }
+      session.codec = createCodec(protocol);
       session.browser = await launch();
       if (!live(session)) {
         await dispose(session);

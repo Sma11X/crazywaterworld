@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import readline from 'node:readline';
 import { parseArgs } from 'node:util';
 import { GameClient } from './client.mjs';
-import { loadProtocol } from './proto.mjs';
+import { getProtocol as loadProtocol } from './proto.mjs';
 import { createConsole, openBrowser } from './server.mjs';
 import { loadStore, saveStore, pickAccount, removeAccount, setActive, describeAccount, revealAccount, upsertAccount, ACCOUNTS_PATH, LEGACY_CREDENTIALS_PATH } from './accounts.mjs';
 import { listWorlds, listGroup, enterWorld, describeRole } from './worlds.mjs';
@@ -19,6 +19,8 @@ import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
 import { runStages, stageFailureLimit } from './stages.mjs';
 import { loadAutomationSettings, createUsageLedger } from './automation-settings.mjs';
 import { createActionGuard } from './automation-policy.mjs';
+import { guardRuntimeActions, validateRuntimeSettings } from './settings-runtime.mjs';
+import { assertResourcesReady } from './resource-store.mjs';
 import { createLineupExecutor, lineupRole } from './lineup-execution.mjs';
 import { readLineupRuntime, recoverLineup } from './lineup-runtime.mjs';
 import { createPhoneLogin } from './phone-login.mjs';
@@ -63,6 +65,7 @@ function loadConfigSafe() {
   try {
     return getConfig();
   } catch (error) {
+    if (error.name === 'ResourceStaleError') throw error;
     console.log(`warn: 未加载配置表 (${error.message})`);
     return null;
   }
@@ -360,6 +363,7 @@ async function heroes({ allowMutate, dryRun, allowUniversal }) {
   try {
     const getSettings = () => {
       const { settings } = loadAutomationSettings(account.id);
+      validateRuntimeSettings(settings, loadConfigSafe());
       if (!allowUniversal) settings.heroes.universal = false;
       return settings;
     };
@@ -375,7 +379,10 @@ async function heroes({ allowMutate, dryRun, allowUniversal }) {
       return;
     }
     const enabled = () => client.connected;
-    const guard = createActionGuard(client, getSettings, createUsageLedger(account.id), { player, enabled });
+    const guard = guardRuntimeActions(createActionGuard(client, getSettings, createUsageLedger(account.id), { player, enabled }), () => {
+      assertResourcesReady({ resources: config?.resources });
+      validateRuntimeSettings(getSettings(), config);
+    });
     await runHeroPlan(client, protocol, plan, {
       allowMutate,
       config, player, getSettings, enabled, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,

@@ -4,7 +4,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { extractTables } from './config.mjs';
 import { validateGameplayConfig } from './config-contracts.mjs';
 import { decodeUuid } from '../tools/sync-art.mjs';
-import { activeResources, resourceDirectory, resourceUpdatePolicy, RESOURCE_SERVER } from './resource-store.mjs';
+import { activeResources, resourceDirectory, resourceUpdatePolicy, selectResourceTarget, RESOURCE_SERVER,
+  readResourceCheck, writeResourceCheck, resourceReadiness } from './resource-store.mjs';
+import { compareResourceVersions, resolveResourceVersion } from './resource-version.mjs';
 
 const digest = data => createHash('sha256').update(data).digest('hex');
 const token = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value);
@@ -55,11 +57,16 @@ function validateMap(raw, tables, id) {
   }
 }
 
-export function createResourceUpdater({ root = resourceDirectory(), policy = resourceUpdatePolicy(), fetchImpl = fetch,
+export function createResourceUpdater({ root = resourceDirectory(), policy, fetchImpl = fetch,
+  resolveVersion = resolveResourceVersion,
   now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, onEvent = () => {} } = {}) {
+  const automaticPolicy = !policy;
+  policy ??= resourceUpdatePolicy(process.env, { root });
   let inFlight = null, timer = null, started = false, stopped = false;
   const controller = new AbortController();
   const state = { enabled: policy.enabled, intervalMinutes: policy.intervalMinutes, appVersion: policy.appVersion,
+    versionSource: policy.versionSource ?? 'provided', sourcePackageVersion: policy.sourcePackageVersion ?? null,
+    updates: ['config_cn', 'world_map'], protocolDownload: false,
     lastCheckedAt: null, nextCheckAt: null, status: 'idle', error: '', version: activeResources({ root })?.version ?? null };
   const notify = (level, message) => { try { Promise.resolve(onEvent({ level, message })).catch(() => {}); } catch {} };
   const ensureActive = () => { if (stopped || controller.signal.aborted) throw new Error('资源更新已停止'); };
@@ -81,12 +88,51 @@ export function createResourceUpdater({ root = resourceDirectory(), policy = res
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   }
   async function update() {
+    if (automaticPolicy) {
+      policy = resourceUpdatePolicy(process.env, { root });
+      if (!process.env.CW_RESOURCE_APP_VERSION) {
+        try {
+          const discovered = await resolveVersion({ fetchJson: getJson });
+          if (discovered) {
+            const target = selectResourceTarget(discovered, policy);
+            policy = { ...policy, appVersion: target.appVersion, versionSource: target.source,
+              sourcePackageVersion: target.packageVersion };
+          }
+        } catch (error) {
+          writeResourceCheck(root, { ...readResourceCheck(root), appVersion: policy.appVersion,
+            blockedReason: '无法确认最新客户端的资源版本：' + error.message });
+          throw error;
+        }
+      }
+      Object.assign(state, { appVersion: policy.appVersion, versionSource: policy.versionSource,
+        sourcePackageVersion: policy.sourcePackageVersion });
+    }
+    const source = { versionSource: policy.versionSource ?? 'provided', sourcePackageVersion: policy.sourcePackageVersion ?? null };
+    const previousCheck = readResourceCheck(root);
+    if (!previousCheck || previousCheck.appVersion !== policy.appVersion) {
+      // Remember a newly discovered client branch even if its manifest is offline.
+      writeResourceCheck(root, { ...source, appVersion: policy.appVersion, verifiedAt: null, required: null,
+        blockedReason: '客户端资源版本已变化，等待匹配的发布清单和资源完成验证' });
+    }
     const manifestUrl = RESOURCE_SERVER + policy.appVersion + '/version.manifest';
     const manifest = await getJson(manifestUrl);
     const configVersion = manifest.bundleVers?.config_cn, mapVersion = manifest.bundleVers?.world_map;
     if (!token(configVersion) || !token(mapVersion) || typeof manifest.version !== 'string'
       || !manifest.version.startsWith(policy.appVersion + '.')) throw new Error('远程版本清单与客户端版本不匹配或缺少配置/地图版本');
     const current = activeResources({ root, honorOverride: false });
+    const pending = readResourceCheck(root)?.required;
+    for (const known of [current, pending]) {
+      if (known?.appVersion === policy.appVersion && compareResourceVersions(manifest.version, known.version) < 0)
+        throw new Error('远程清单版本 ' + manifest.version + ' 低于已知版本 ' + known.version + '，已拒绝自动降级，稍后重试');
+    }
+    const required = { appVersion: policy.appVersion, version: manifest.version, configVersion, mapVersion };
+    // Persist the discovered target before the first bundle request. A failed
+    // download (or process restart) must not make the old snapshot look current.
+    const record = { ...readResourceCheck(root), ...source, appVersion: policy.appVersion, required };
+    delete record.invalid;
+    writeResourceCheck(root, record);
+    const verified = generation => writeResourceCheck(root, { ...source, appVersion: policy.appVersion, required,
+      verifiedAt: new Date(now()).toISOString(), verifiedGeneration: generation, blockedReason: '' });
     const intact = () => {
       const files = ['config.json', ...current.scenarios.map(id => 'world_map' + id + '.json')];
       try { return current.checksums && Object.keys(current.checksums).length === files.length
@@ -103,8 +149,10 @@ export function createResourceUpdater({ root = resourceDirectory(), policy = res
         } finally { fs.rmSync(pointer, { force: true }); }
       }
       state.version = manifest.version;
+      verified(current.generation);
       return { status: 'current', version: manifest.version };
     }
+    writeResourceCheck(root, { ...record, blockedReason: '游戏配置和地图尚未通过完整性验证，等待资源更新' });
     const configIndex = await getJson(RESOURCE_SERVER + 'remote/config_cn/config.' + configVersion + '.json');
     const packIds = Object.keys(configIndex.packs ?? {});
     if (!packIds.length || packIds.length > 16) throw new Error('配置资源索引缺少有效数据包');
@@ -135,6 +183,7 @@ export function createResourceUpdater({ root = resourceDirectory(), policy = res
       fs.renameSync(stage, directory);
       fs.renameSync(pointer, path.join(root, 'active.json'));
       state.version = manifest.version;
+      verified(generation);
       notify('info', '资源更新完成：' + manifest.version + '，' + Object.keys(tables).length + ' 张配置表、' + scenarios.length + ' 张地图；后续任务使用新版本');
       return { status: 'updated', version: manifest.version, tables: Object.keys(tables).length, maps: scenarios.length };
     } finally {
@@ -148,7 +197,11 @@ export function createResourceUpdater({ root = resourceDirectory(), policy = res
     state.status = 'checking'; state.error = '';
     inFlight = update().then(result => { state.status = result.status; return result; }).catch(error => {
       state.status = stopped ? 'stopped' : 'error'; state.error = error.message;
-      if (!stopped) notify('warn', '资源更新失败，继续使用已有资源：' + error.message);
+      if (!stopped) {
+        const readiness = resourceReadiness({ root, policy, now: now() });
+        notify('warn', '资源更新失败：' + error.message + '；' + (readiness.ready
+          ? '暂用最近验证的资源，超过有效期将暂停新操作' : readiness.reason + '，已暂停新操作'));
+      }
       return { status: state.status, error: error.message };
     }).finally(() => { state.lastCheckedAt = new Date(now()).toISOString(); inFlight = null; });
     return inFlight;
@@ -162,11 +215,13 @@ export function createResourceUpdater({ root = resourceDirectory(), policy = res
   }
   return {
     check,
-    view: () => ({ ...state, updating: !!inFlight, disabledReason: policy.disabledReason || '' }),
+    view: () => ({ ...state, ...resourceReadiness({ root, policy, now: now() }), updating: !!inFlight, disabledReason: policy.disabledReason || '' }),
     async start() {
       if (started || stopped) return; started = true;
       if (!policy.enabled) { state.status = 'disabled'; notify('info', '资源自动更新未启动：' + policy.disabledReason); return; }
-      notify('info', '资源自动更新：启动时检查，之后每 ' + policy.intervalMinutes + ' 分钟检查一次（客户端 ' + policy.appVersion + '）');
+      notify('info', '配置表和地图自动更新：启动时检查，之后每 ' + policy.intervalMinutes + ' 分钟检查；'
+        + (automaticPolicy && !process.env.CW_RESOURCE_APP_VERSION ? '自动识别本机微信客户端版本' : '指定客户端 ' + policy.appVersion)
+        + '。协议从本机游戏包读取，不在远程资源下载范围内');
       await check(); schedule();
     },
     async stop() {

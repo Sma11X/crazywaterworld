@@ -22,10 +22,19 @@ export function wechatPackageCandidates(appId, options) {
     const root = path.join(users, user, 'applet', 'packages', appId);
     for (const version of directories(root).filter(name => /^\d+$/.test(name))) {
       const file = path.join(root, version, '_src_chunks_.wxapkg');
-      if (fs.existsSync(file)) candidates.push({ version: Number(version), file });
+      const complete = fs.existsSync(file);
+      // Strict consumers must notice a newer installed main package even if
+      // WeChat has not downloaded its protocol subpackage yet. Empty version
+      // directories alone are not evidence of an installed release.
+      let mainPresent = false;
+      if (options?.includeIncomplete) {
+        try { mainPresent = fs.statSync(path.join(root, version, '__APP__.wxapkg')).isFile(); }
+        catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error; }
+      }
+      if (complete || mainPresent) candidates.push({ version: Number(version), file, complete });
     }
   }
-  return candidates.sort((left, right) => right.version - left.version).map(entry => entry.file);
+  return candidates.sort((left, right) => right.version - left.version || Number(right.complete) - Number(left.complete)).map(entry => entry.file);
 }
 
 export function wechatCacheDirectories(appId, options) {

@@ -65,7 +65,7 @@ try{
 await test('默认关闭、逐队逐项配置、严格校验和导入迁移',async()=>{
   const s=defaultSettings();assert.equal(s.fleetSpeed.enabled,false);assert.equal(s.fleetSpeed.dailyDiamondLimit,0);
   assert(s.fleetSpeed.fleets.every(p=>!p.repair&&!p.march&&p.marchSkipSeconds===60));
-  const exported=exportAutomationSettings(s);delete exported.settings.fleetSpeed;assert.deepEqual(importAutomationSettings(exported).fleetSpeed,s.fleetSpeed);
+  const exported={...exportAutomationSettings(s),version:1};delete exported.settings.fleetSpeed;assert.deepEqual(importAutomationSettings(exported).fleetSpeed,s.fleetSpeed);
   const bad=structuredClone(s);bad.fleetSpeed.fleets[0].marchMaxDiamonds=-1;assert.throws(()=>validateSettings(bad));
   bad.fleetSpeed.fleets[0].marchMaxDiamonds=1;bad.fleetSpeed.fleets[0].id='2远征船';assert.throws(()=>validateSettings(bad));
 });
