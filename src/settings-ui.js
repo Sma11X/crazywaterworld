@@ -206,11 +206,6 @@ const configGroups = [
     configField('eventActions.compassThreshold','铜钱达到多少开始抽取','number',{ parent: 'schedule.compassSpin',unit:'枚',help:'每轮先核对活动、道具单价与库存，默认10枚。'}),
     configField('eventActions.compassDrawCount','每批最多抽取','choice',{ parent: 'schedule.compassSpin',numeric:true,options:[[1,'1次'],[5,'5次'],[10,'10次'],[50,'50次']],help:'按实际铜钱和游戏支持的批次选择，每轮最多一批。'}),
   ]},
-  {id:'side-rewards',title:'漫剧 · 擂台赛 · 赛季宝箱',category:'daily',fields:[
-    configField('schedule.comicDrama','漫剧观看与每日奖励','switch',{help:'默认关闭。已解锁的集数每轮最多处理 10 集，并在每天领取 1 次每日奖励；当天没有新集时重看最后一集以满足领取条件。'}),
-    configField('schedule.tournamentDailyGift','擂台赛每日礼包','switch',{help:'默认关闭。只在擂台赛进行阶段按服务器记录每天领取 1 次，不参与投注和布阵。'}),
-    configField('schedule.seasonChest','赛季宝箱用钥匙开启','switch',{help:'默认关闭。每箱消耗服务器指定的 3 把钥匙，每轮最多 5 箱，钥匙不足时等待，不花钻石，也不发起钥匙交换。钥匙在进入新赛季时清零，建议赛季内开启。'}),
-  ]},
   {id:'beauty-contest',title:'限时 · 海上风采大赛',category:'daily',fields:[
     configField('schedule.beautyVotes','每天投给当前最高票选手','switch',{help:'限时活动，每天投够3票即停；已投票数计入目标，同票按编号升序选择。'}),
     configField('schedule.beautyGift','领取每日投票礼包'),
@@ -464,6 +459,9 @@ const configGroups = [
     configField('tasks.main', '领取主线奖励'), configField('tasks.branch', '领取支线奖励'), configField('tasks.achievements', '领取成就奖励'),
     configField('dailies.enabled', '日常总开关', 'switch', { help: '控制本组每日任务与奖励。基地页的付费点金独立设置。' }), configField('dailies.claimTasks', '领取每日任务奖励'),
     configField('dailies.claimDailyChest', '领取每日活跃宝箱'), configField('dailies.claimWeeklyChest', '领取每周活跃宝箱'), configField('dailies.claimGift', '领取每日免费赠礼'),
+    configField('schedule.comicDrama','漫剧观看与每日奖励','switch',{help:'默认关闭。已解锁的集数每轮最多处理 10 集，并在每天领取 1 次每日奖励；当天没有新集时重看最后一集以满足领取条件。'}),
+    configField('schedule.tournamentDailyGift','擂台赛每日礼包','switch',{help:'默认关闭。只在擂台赛进行阶段按服务器记录每天领取 1 次，不参与投注和布阵。'}),
+    configField('schedule.seasonChest','赛季宝箱用钥匙开启','switch',{help:'默认关闭。每箱消耗服务器指定的 3 把钥匙，每轮最多 5 箱，钥匙不足时等待，不花钻石，也不发起钥匙交换。钥匙在进入新赛季时清零，建议赛季内开启。'}),
   ] },
   { id:'worldBoss',title:'世界Boss',category:'world',fields:[
     configField('worldBoss.enabled','每日首战自动派遣'),
@@ -910,6 +908,7 @@ function configRender() {
   configLegacyGroups.set('equipment-legacy', 'forge');
   configLegacyGroups.set('military-week', 'weekly-activities');
   configLegacyGroups.set('daily-events', 'rewards');
+  configLegacyGroups.set('side-rewards', 'rewards');
   [...new Set(tasks.map(task => task.group))].forEach((name, index) => {
     const [id, title] = destinations[name] || ['daily-other', '其他项目'];
     // 旧版从 33 开始为动态分组生成书签。新增静态分组时仍需解析旧编号。
