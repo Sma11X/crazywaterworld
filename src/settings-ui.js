@@ -108,7 +108,7 @@ const guildShipActivityFields = [
 for (const field of guildShipActivityFields) activityOwnedSettings.add(field.key);
 const weeklyActivityFields = [
   configField('weeklyActivity.enabled','活动总开关','switch',{help:'开启后，已选分项接管对应基础自动化，按服务器当日主题全天参与；选择积分停止时达到目标便等待。关闭总开关恢复原基础设置。各分项沿用基础模块的目标和预算，不修改保存配置。'}),
-  configField('schedule.armsRaceRewards','军备竞赛达标奖励与免费补给','switch',{help:'按本人积分、房间等级、当日主题判断5档奖励；独立补给页只领标价为零的礼包。此领奖开关独立保存。'}),
+  configField('schedule.armsRaceRewards','自动领奖','switch',{help:'按本人积分、房间等级、当日主题判断5档奖励；独立补给页只领标价为零的礼包。此领奖开关独立保存。'}),
   ...[
     ['farm','周一 · 种田发育','种植与收获沿用基地中的种田细项，普通联盟城市募兵按本页次数参与。种田加速仍遵守加速器保留量和消费权限。'],
     ['pet','周二 · 海兽培养','按基地 → 海兽中已选的物种范围和最高品质参与培育，按本页品质顺序选择可执行方案。未选物种时等待。'],
@@ -118,7 +118,7 @@ const weeklyActivityFields = [
     ['hero','周日 · 英雄培养','仅周日参与，执行指定英雄升星。复用英雄名单、升星开关及目标；未选择英雄或未开启升星时等待。开启本分项会暂停原有券招募自动路径。'],
   ].flatMap(([kind, label, help]) => {
     const prefix = 'weeklyActivity.' + kind;
-    const fields = [configField(prefix + 'Enabled',label,'switch',{collapsible:false,help})];
+    const fields = [configField(prefix + 'Enabled',label,'switch',{help})];
     if (kind === 'farm') fields.push(
       configField('weeklyActivity.farmRecruitTimes','临时募兵次数','number',{parent:prefix+'Enabled',unit:'次/日',help:'普通联盟城市募兵，默认10次，0表示不参与。由本活动分项授权，仍遵守服务器次数、材料过滤、资源保留及预算限制。'}),
       configField('weeklyActivity.farmSpeedUp','种田加速','switch',{parent:prefix+'Enabled',help:'默认关闭。只在当日种田主题及积分目标内使用已授权的加速资源。'}),

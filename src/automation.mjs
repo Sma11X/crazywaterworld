@@ -9,7 +9,7 @@ export const maxCompassSpinCount = 999;
 export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft']);
 
 export const automationTasks = [
-  ['armsRaceRewards', '军备竞赛达标奖励与免费补给', '周期活动', false],
+  ['armsRaceRewards', '自动领奖', '周期活动', false],
   ['riverScore', '走江踏浪积分奖励', '限时活动', false],
   ['riverPass', '走江战令已达成奖励', '限时活动', false],
   ['riverHelp', '走江助力免费及免广告礼包', '限时活动', false],

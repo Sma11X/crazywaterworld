@@ -139,7 +139,7 @@ const keys = widgets => widgets.map(widget => widget.spec.key);
 let passed = 0;
 function test(name, run) { run(); passed++; console.log('通过：' + name); }
 
-test('军备竞赛标题唯一且参数直接显示，全天参与与积分模式保留目标', () => {
+test('军备竞赛主项平铺且参数可展开收起，全天参与与积分模式保留目标', () => {
   const f = fixture({ navigation: true }); f.renderPage();
   f.env.hash = '#config-group-weekly-activities'; f.applyHash();
   assert.equal(f.editor.category, 'daily');
@@ -157,13 +157,20 @@ test('军备竞赛标题唯一且参数直接显示，全天参与与积分模�
   const panel = f.env.node('config-group-weekly-activities');
   assert.equal(panel.querySelectorAll('details').length, 0);
   assert.equal(panel.querySelectorAll('.config-field-section').length, 0);
-  assert.equal(panel.querySelectorAll('.config-disclosure').length, 0);
+  assert.equal(panel.querySelectorAll('.config-disclosure').length, 6);
   for (const kind of ['farm','pet','antique','order','forge','hero']) {
     const toggle = f.widget('weeklyActivity.' + kind + 'Enabled');
     assert.equal(panel.querySelectorAll('.config-label').filter(node => node.textContent === toggle.spec.label).length, 1);
-    assert(!toggle.disclosure);
+    assert.equal(toggle.node.parentElement, panel);
+    assert(toggle.disclosure);
     assert(!visible(f.widget('weeklyActivity.' + kind + 'Stop').node));
     f.set('weeklyActivity.' + kind + 'Enabled', true);
+    assert.equal(toggle.disclosure.textContent, '展开设置');
+    assert.equal(toggle.disclosure.getAttribute('aria-expanded'), 'false');
+    assert(!visible(f.widget('weeklyActivity.' + kind + 'Stop').node));
+    f.expand('weeklyActivity.' + kind + 'Enabled');
+    assert.equal(toggle.disclosure.textContent, '收起设置');
+    assert.equal(toggle.disclosure.getAttribute('aria-expanded'), 'true');
     assert(visible(f.widget('weeklyActivity.' + kind + 'Stop').node));
     assert(!f.widget('weeklyActivity.' + kind + 'Stop').disclosure);
   }
@@ -178,6 +185,13 @@ test('军备竞赛标题唯一且参数直接显示，全天参与与积分模�
   f.set('weeklyActivity.petScore', 12000); f.set('weeklyActivity.petStop', 'allDay');
   assert(!visible(score.node)); assert.equal(f.editor.draft.weeklyActivity.petScore, 12000);
   f.set('weeklyActivity.petStop', 'score'); assert(visible(score.node));
+  const beforeCollapse = structuredClone(f.editor.draft), saves = f.env.saves;
+  f.widget('weeklyActivity.petEnabled').disclosure.onclick();
+  assert(!visible(score.node));
+  assert.deepEqual(f.editor.draft, beforeCollapse);
+  assert.equal(f.env.saves, saves, '收起设置不触发配置保存');
+  f.expand('weeklyActivity.petEnabled'); assert(visible(score.node));
+  assert.equal(f.editor.draft.weeklyActivity.petScore, 12000);
   f.set('weeklyActivity.petScore', 12000); f.set('weeklyActivity.petEnabled', false);
   assert(!visible(score.node)); assert.equal(f.editor.draft.weeklyActivity.petScore, 12000);
   f.set('weeklyActivity.petEnabled', true); assert(visible(score.node));

@@ -22,6 +22,7 @@ saveStore({ version: 1, activeId: 'weekly-a', accounts: ['weekly-a', 'weekly-b']
 })) });
 const initial = defaultSettings();
 initial.farm.enabled = false; initial.heroes.heroIds = [];
+initial.schedule.armsRaceRewards = true;
 saveAutomationSettings('weekly-a', initial, { revision: 0 });
 saveAutomationSettings('weekly-b', defaultSettings(), { revision: 0 });
 const original = loadAutomationSettings('weekly-a').settings;
@@ -32,6 +33,14 @@ let browser;
 const errors = [];
 const kinds = ['farm', 'pet', 'antique', 'order', 'forge', 'hero'];
 const field = (page, name) => page.locator('#config-field-weeklyActivity-' + name);
+const branch = (page, kind) => page.locator('[data-config-branch="weeklyActivity.' + kind + 'Enabled"]');
+const disclosure = (page, kind) => branch(page, kind).locator(':scope > .config-row .config-disclosure');
+const expand = async (page, selected = kinds) => {
+  for (const kind of selected) {
+    const button = disclosure(page, kind);
+    if (await button.getAttribute('aria-expanded') !== 'true') await button.click();
+  }
+};
 const saved = async page => {
   try { await page.locator('#config-state').filter({ hasText: '配置已同步' }).waitFor(); }
   catch (error) {
@@ -125,7 +134,13 @@ try {
   const dailyTabs = await page.locator('#config-panel-daily [data-config-group]').evaluateAll(tabs => tabs.map(tab => tab.dataset.configGroup));
   assert.equal(dailyTabs.indexOf('ad-rewards'), dailyTabs.indexOf('daily-actions') + 1);
   const military = page.locator('#config-group-weekly-activities');
-  assert.equal(await military.locator('details, .config-field-section, .config-disclosure').count(), 0, '军备竞赛不再使用折叠层级');
+  assert.equal(await military.locator('details, .config-field-section').count(), 0, '每日主题直接平铺');
+  assert.equal(await military.locator('.config-disclosure').count(), 6, '每个主题只有一个参数展开入口');
+  assert.equal(await military.locator(':scope > .config-branch').evaluateAll(nodes => nodes.length === 6 && nodes.every(node => {
+    const style = getComputedStyle(node);
+    return ['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderRadius', 'paddingLeft', 'paddingRight']
+      .every(property => style[property] === '0px') && style.backgroundColor === 'rgba(0, 0, 0, 0)';
+  })), true, '每日主题复用藏品平铺样式，无独立卡片边框和缩进');
   assert.equal(await military.locator('input[type=time], [data-config-key$="Start"], [data-config-key$="End"]').count(), 0);
   const reward = military.locator('[data-config-key="schedule.armsRaceRewards"]');
   assert.equal(await page.locator('[data-config-key="schedule.armsRaceRewards"]').count(), 1);
@@ -138,7 +153,12 @@ try {
     assert.equal(await field(page, kind + 'Enabled').getAttribute('aria-checked'), 'false');
     assert.equal(await field(page, kind + 'Stop').isVisible(), false);
     await field(page, kind + 'Enabled').click();
-    assert.equal(await field(page, kind + 'Stop').isVisible(), true, kind + ' 开启后直接显示参数');
+    assert.equal(await disclosure(page, kind).textContent(), '展开设置');
+    assert.equal(await disclosure(page, kind).getAttribute('aria-expanded'), 'false');
+    assert.equal(await field(page, kind + 'Stop').isVisible(), false, kind + ' 开启后参数默认收起');
+    await expand(page, [kind]);
+    assert.equal(await disclosure(page, kind).textContent(), '收起设置');
+    assert.equal(await field(page, kind + 'Stop').isVisible(), true, kind + ' 点击展开后显示参数');
   }
   await field(page, 'enabled').click();
   for (const name of ['farmRecruitTimes','farmSpeedUp','petQualityOrder','forgeQualityOrder']) assert(await field(page, name).isVisible());
@@ -157,13 +177,23 @@ try {
   assert.equal(persisted.weeklyActivity.farmSpeedUp, true);
   assert.equal(persisted.weeklyActivity.petStop, 'score'); assert.equal(persisted.weeklyActivity.petScore, 20000);
   assert.equal(persisted.weeklyActivity.petQualityOrder, 'desc');
+  const beforeCollapse = loadAutomationSettings('weekly-a');
+  await disclosure(page, 'pet').click();
+  assert.equal(await field(page, 'petScore').isVisible(), false);
+  assert.equal(await field(page, 'petEnabled').getAttribute('aria-checked'), 'true');
+  await expand(page, ['pet']);
+  assert.equal(await field(page, 'petScore').inputValue(), '20000');
+  assert.deepEqual(loadAutomationSettings('weekly-a'), beforeCollapse, '收起和展开不改配置或保存版本');
   assert.match(await page.locator('#config-usage').textContent(), /已配置 6 项全天活动；执行情况见日志/);
   assert.doesNotMatch(await page.locator('#config-usage').textContent(), /当前未开启具体执行项目/);
   console.log('通过：军备竞赛页签唯一且合并领奖，广告位于日常行动之后，无时间输入并自动保存积分');
 
   await page.reload(); await open(page);
-  assert.equal(await military.locator('details, .config-disclosure').count(), 0);
-  assert(await field(page, 'petScore').isVisible(), '刷新后无需展开积分目标');
+  assert.equal(await military.locator('details').count(), 0);
+  assert.equal(await military.locator('.config-disclosure').count(), 6);
+  assert.equal(await field(page, 'petScore').isVisible(), false, '刷新后参数默认收起');
+  await expand(page);
+  assert(await field(page, 'petScore').isVisible(), '展开后恢复已保存的积分目标');
   assert.equal(await field(page, 'enabled').getAttribute('aria-checked'), 'true');
   assert(await field(page, 'farmStop').getByLabel('全天参与', { exact: true }).isChecked());
   assert.equal(await reward.getAttribute('aria-checked'), 'false');
@@ -210,6 +240,10 @@ try {
   for (const key of ['farm', 'pet', 'antique', 'resident', 'forge', 'heroes', 'alliance']) assert.deepEqual(persisted[key], original[key]);
   assert.deepEqual(loadAutomationSettings('weekly-b'), other);
   await field(page, 'enabled').click(); await saved(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForFunction(() => scrollY === 0);
+  await page.screenshot({ path: path.join(output, 'weekly-activity-collapsed.png'), fullPage: true, animations: 'disabled' });
+  await expand(page, ['farm', 'pet']);
   assert(await field(page, 'farmRecruitTimes').isVisible()); assert(await field(page, 'petScore').isVisible());
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() => scrollY === 0);
@@ -221,12 +255,15 @@ try {
   await mobile.route(url => url.pathname === '/api/activity-ranks/view', mockRank);
   await mobile.goto(base); await open(mobile);
   await mobile.locator('#config-weekly-ranking').getByText('海兽培养', { exact: true }).waitFor();
-  assert.equal(await mobile.locator('#config-group-weekly-activities details, #config-group-weekly-activities .config-disclosure').count(), 0);
+  assert.equal(await mobile.locator('#config-group-weekly-activities details').count(), 0);
+  assert.equal(await mobile.locator('#config-group-weekly-activities .config-disclosure').count(), 6);
+  assert.equal(await field(mobile, 'farmRecruitTimes').isVisible(), false);
+  await expand(mobile);
   assert(await field(mobile, 'farmRecruitTimes').isVisible()); assert(await field(mobile, 'petScore').isVisible());
   for (const width of [320, 360, 390, 768]) {
     await mobile.setViewportSize({ width, height: 844 });
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, width + 'px 页面不能横向溢出');
-    assert.equal(await mobile.locator('#config-group-weekly-activities').evaluate(section => [...section.querySelectorAll('input,button[role=switch],.config-radio')]
+    assert.equal(await mobile.locator('#config-group-weekly-activities').evaluate(section => [...section.querySelectorAll('input,button[role=switch],.config-radio,.config-disclosure')]
       .filter(node => node.getClientRects().length).every(node => { const box = node.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth + 1; })), true, width + 'px 参数控件完整显示');
     if (width === 360) {
       await mobile.evaluate(() => window.scrollTo(0, 0));
