@@ -584,9 +584,11 @@ try {
     try {
       const original = fs.readFileSync(path.join(directory, 'accounts.json'));
       const initial = (await api('巨轮甲', '/api/settings')).body;
-      const s = initial.settings; Object.assign(s.treasure, { enabled: true, follow: true, followNames: ['同行者甲'], fleetIds: ['1远征船'], minDurabilityPercent: 80 });
+      const s = initial.settings; Object.assign(s.treasure, { enabled: true, follow: true, followMode: 'eachTime', repeatAttack: true, followNames: ['同行者甲'], fleetIds: ['1远征船'], minDurabilityPercent: 80 });
       const saved = await api('巨轮甲', '/api/settings', { settings: s, revision: initial.revision, baseRevision: initial.baseRevision }); assert.equal(saved.status, 200);
+      assert.equal((await api('巨轮甲', '/api/settings')).body.settings.treasure.followMode, 'eachTime');
       assert.equal((await api('巨轮乙', '/api/settings')).body.settings.treasure.enabled, false);
+      assert.equal((await api('巨轮乙', '/api/settings')).body.settings.treasure.followMode, 'trigger');
       const f = treasureFixture(), session = app.sessions.get('巨轮甲'); session.client = f.client; session.player = f.player; session.paused = false;
       const response = await api('巨轮甲', '/api/settings/preview', { settings: s, category: 'world' });
       assert.equal(response.status, 200); assert.equal(response.body.scopeLabel, '万吨巨轮'); assert.equal(response.body.actions[0].kind, 'treasureDispatch');
