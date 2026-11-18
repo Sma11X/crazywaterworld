@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, importAutomationSettings, exportAutomationSettings } from '../src/automation-settings.mjs';
+import { SETTINGS_SCHEMA_VERSION, defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, importAutomationSettings, exportAutomationSettings } from '../src/automation-settings.mjs';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-settings-autosave-'));
 const script = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
@@ -457,7 +457,7 @@ await test('草稿导出使用后端当前版本且不提前保存用户修改',
   await f.exportFile();
   assert.equal(f.env.downloads.length, 1);
   const document = JSON.parse(await f.env.downloads[0].text());
-  assert.equal(document.version, 2);
+  assert.equal(document.version, SETTINGS_SCHEMA_VERSION);
   assert.deepEqual(Object.keys(document), ['format', 'version', 'settings']);
   assert.equal(document.settings.factory.keepStock, 129);
   assert.equal(importAutomationSettings(document).factory.keepStock, 129);

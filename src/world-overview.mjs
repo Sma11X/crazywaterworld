@@ -96,11 +96,9 @@ export async function readWorldOverview(client,config,player,settings,ledger,{ma
  const fuelActivities=[['万吨（含维修）','treasurePetrol'],['城战（含维修）','cityWarPetrol'],['联盟情报','radarPetrol'],['海盗首杀','piratePetrol'],['世界Boss','worldBossPetrol'],['硅矿（含维修）','siliconPetrol']].map(([name,key])=>({name,confirmed:confirmed&&Number.isSafeInteger(confirmed[key]??0)?confirmed[key]??0:null,pending:Number.isSafeInteger(pending[key]??0)?pending[key]??0:null}));
  const sum=key=>fuelActivities.every(r=>r[key]!==null)?fuelActivities.reduce((n,r)=>n+r[key],0):null;
  const fuelUsage={day:usage.day,stock:resources.find(r=>r.id==='汽油')?.value??null,confirmed:sum('confirmed'),pending:sum('pending'),activities:fuelActivities};
- const budgets=[['情报','radarPetrol',settings.radar.dailyPetrolLimit],['城战','cityWarPetrol',settings.cityWar.dailyPetrolLimit],['巨轮维修','treasureRepairPetrol',settings.treasure.dailyRepairPetrolLimit]].map(([name,key,limit])=>({name,limit,used:counters[key]??0,pending:pending[key]??0,remaining:limit?Math.max(0,limit-(counters[key]??0)):null}));
- const firstLimit=settings.pirateHunt.fuelBudget;
- budgets.push({name:'首杀本次',limit:firstLimit,used:pirateSpent,pending:pending.piratePetrol??0,remaining:firstLimit?Math.max(0,firstLimit-pirateSpent):null});
- budgets.push({name:'Boss首战今日',limit:0,used:counters.worldBossPetrol??0,pending:pending.worldBossPetrol??0,remaining:null});
- if(settings.silicon)budgets.push({name:'硅矿（含维修）',limit:settings.silicon.dailyPetrolLimit,used:counters.siliconPetrol??0,pending:pending.siliconPetrol??0,remaining:settings.silicon.dailyPetrolLimit?Math.max(0,settings.silicon.dailyPetrolLimit-(counters.siliconPetrol??0)):null});
+ // 旧概览接口保留用量结构；汽油不再设置额外预算。
+ const budgets=[['情报','radarPetrol'],['城战','cityWarPetrol'],['巨轮维修','treasureRepairPetrol'],['首杀本次','piratePetrol'],['Boss首战今日','worldBossPetrol'],['硅矿（含维修）','siliconPetrol']]
+  .map(([name,key])=>({name,limit:0,used:key==='piratePetrol'?pirateSpent:counters[key]??0,pending:pending[key]??0,remaining:null}));
  const targetPoint=(grid,uid,preferred)=>{
   if(uid){const ship=points.find(p=>p.layer==='treasure'&&p.key==='treasure-'+String(uid));if(ship)return ship;}
   for(const layer of [preferred,'boss','radar','treasure','pirates','cities','fields'].filter(Boolean)){const point=points.find(p=>p.layer===layer&&p.grid===grid);if(point)return point;}

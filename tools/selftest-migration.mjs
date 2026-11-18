@@ -126,7 +126,8 @@ for (const settings of [null, defaultSettings()]) {
 
 for (const getSettings of [() => null, legacyServiceSettings]) {
   const f = loopFixture();
-  const keys = ['seasonTasks', 'crossRankDaily', 'passStageRewards', 'guildAidCollect', 'museumRevenue'];
+  const keys = ['seasonTasks', 'crossRankDaily', 'passStageRewards', 'museumRevenue'];
+  const retiredKeys = ['guildAidCollect', 'guildAidHelp'];
   const reward = { reward: { asset: [{ type: 0, id: '木材', num: 1 }] } };
   const responses = {
     MyGuildAidRequest: { aids: [{ helper: { playerId: 2 } }] },
@@ -155,11 +156,13 @@ for (const getSettings of [() => null, legacyServiceSettings]) {
   f.options.config.tables.SeasonTaskCfg = { data: [{ season: 1, stage: 1, personTarget: 10, teamTarget: 100 }] };
   rewardSchedule(f.client);
   f.client.emit('message', { name: 'SCRedPoint', body: { redPoint: [{ type: 33, num: 1 }] } });
-  const options = { ...f.options, getSettings, isEnabled: key => keys.includes(key) };
+  const options = { ...f.options, getSettings, isEnabled: key => keys.includes(key) || retiredKeys.includes(key) };
   await runLoop(f.client, protocol, options);
-  for (const name of ['GotMyGuildAidRequest', 'GotSeasonTaskRequest', 'GetDailyRewardRequest', 'PassStageGotRewardRequest', 'MuseumCollectRevenueRequest']) {
+  for (const name of ['GotSeasonTaskRequest', 'GetDailyRewardRequest', 'PassStageGotRewardRequest', 'MuseumCollectRevenueRequest']) {
     assert(requests.some(([request]) => request === name), '旧领奖开关必须真正进入写协议：' + name);
   }
+  assert(!requests.some(([name]) => name.includes('GuildAid')), '已退役的联盟互助旧开关不能触发读取、领取或赠送');
+  assert(!f.reports.some(entry => retiredKeys.includes(entry.taskKey)), '退役互助入口不应继续执行或报告领取成功');
   assert.deepEqual(requests.filter(([name]) => name === 'PassStageGotRewardRequest').map(([, body]) => body.stage), [1, 2],
     '领取函数提前 defer 后，仍应完成本轮已核对的全部奖励');
   for (const key of keys) assert(f.reports.some(entry => entry.taskKey === key && entry.ok), '成功领取必须带回原开关 key：' + key);

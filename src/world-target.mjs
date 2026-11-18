@@ -9,7 +9,7 @@ import {readWorldBoss} from './world-boss.mjs';
 import {exactAutomationId} from './automation-policy.mjs';
 
 // 目标详情仅使用已保存设置和局部快照；不写预留、设置或用量。
-export async function readWorldTarget(client,protocol,config,player,settings,ledger,{layer,key,pirateSpent=0}){
+export async function readWorldTarget(client,protocol,config,player,settings,ledger,{layer,key}){
  if(!['cities','treasure','radar','pirates','boss','fleets','fields'].includes(layer)||typeof key!=='string'||key.length>100)throw Error('地图目标无效');
  const view={checkedAt:Math.floor(Date.now()/1000),actions:[],notes:[],fleets:[],fuel:null,cost:null};
  const blocked=(task,id)=>fleetRecordReason(ledger.keyRecords(),id,exactAutomationId(player.worldId))||dispatchReservationReason(client,settings,task,id);
@@ -31,7 +31,7 @@ export async function readWorldTarget(client,protocol,config,player,settings,led
   for(const f of state.view.fleets)f.reason||=(!settings.pirateHunt.fleetIds.includes(f.buildingId)?'未选择此舰队':'')||blocked('pirateHunt',f.buildingId)||(reserved.includes(f.buildingId)?'城战时段预留':'');
   view.fleets=state.view.fleets;
   if(!target)view.notes.push('此目标不是当前可首杀的下一等级，或目标已变化');
-  else{const picked=selectPirateAdvance({...state,view:{...state.view,targets:[target]}},settings.pirateHunt,{spent:pirateSpent,pendingFuel:pendingPetrol(ledger)});view.notes.push(picked.reason||'目标符合当前首杀条件；需单独启动首杀');if(!picked.reason)view.actions.push({label:picked.fleet.name+' → '+target.name,costs:[{id:'汽油',num:picked.cost}]});}
+  else{const picked=selectPirateAdvance({...state,view:{...state.view,targets:[target]}},settings.pirateHunt,{pendingFuel:pendingPetrol(ledger)});view.notes.push(picked.reason||'目标符合当前首杀条件；需单独启动首杀');if(!picked.reason)view.actions.push({label:picked.fleet.name+' → '+target.name,costs:[{id:'汽油',num:picked.cost}]});}
   return view;
  }
  if(layer==='radar'){

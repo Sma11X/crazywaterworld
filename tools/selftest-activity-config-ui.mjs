@@ -108,11 +108,12 @@ const loadSource = script.slice(script.indexOf('async function configLoad('), sc
 const saveSource = script.slice(script.indexOf('function configSave('), script.indexOf('async function configImportFile('));
 const clearErrorsSource = script.slice(script.indexOf('function configClearErrors('), script.indexOf('function configSet('));
 const dirtySource = script.slice(script.indexOf('function configIsDirty('), script.indexOf('function configVisible('));
+const compatibilitySource = script.slice(script.indexOf('function configCompatibilityMessage('), script.indexOf('function configBusy('));
 const page = fs.readFileSync(new URL('../src/page.mjs', import.meta.url), 'utf8');
 const toggleSource = page.slice(page.indexOf('async function toggleAutoTask('), page.indexOf('async function saveLoopInterval('));
 function loadFixture(initial = dataFor([])) {
   const state = { next: structuredClone(initial), renders: [], usageRenders: 0, messages: [], calls: [] };
-  const api = newStateFunction('state', 'renderGroups', definitions + '\n' + clearErrorsSource + '\n' + dirtySource + '\n' + loadSource + '\n' + saveSource + '\n' + toggleSource + `
+  const api = newStateFunction('state', 'renderGroups', definitions + '\n' + clearErrorsSource + '\n' + dirtySource + '\n' + compatibilitySource + '\n' + loadSource + '\n' + saveSource + '\n' + toggleSource + `
     const current = 'isolated-account', accounts = [];
     const savingTasks = new Set(), loopIntervalSaves = new Map();
     let loopVersion = 0, loopSettingsRevision = 7;

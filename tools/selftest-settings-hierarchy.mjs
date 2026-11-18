@@ -300,10 +300,16 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['forge.universalReserve', 'forge.universal'], ['museum.matchedFactor', 'museum.materialFactor'],
     ['merchant.autoBuyPointers', 'merchant.autoSpeedUp'], ['merchant.pointerDailyDiamondLimit', 'merchant.autoBuyPointers'],
     ['silicon.fleets.0.huntPlayers', 'silicon.fleets.0.huntEnabled'],
-    ['antique.targetStar', 'antique.star'], ['treasure.maxRepairCost', 'treasure.autoRepair'],
+    ['antique.targetStar', 'antique.star'],
     ['treasure.marchTargetSeconds', 'treasure.marchSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.marchSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
 });
+test('设置页不再出现汽油保留量或消费上限，其他资源约束仍存在', () => {
+  const f=fixture();f.renderPage();
+  for(const key of ['worldBoss.petrolReserve','radar.petrolReserve','radar.dailyPetrolLimit','pirateHunt.petrolReserve','pirateHunt.fuelBudget','treasure.petrolReserve','treasure.maxRepairCost','treasure.dailyRepairPetrolLimit','cityWar.petrolReserve','cityWar.maxRepairCost','cityWar.dailyPetrolLimit','silicon.petrolReserve','silicon.dailyPetrolLimit','silicon.fleets.0.maxRepairCost'])assert.equal(f.widget(key),undefined,key);
+  assert(f.widget('resources.diamondDailyLimit'));assert(f.widget('cityWar.dailyDispatchLimit'));
+});
+
 test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省钻仍各自嵌套',()=>{
   const f=fixture({navigation:true});f.editor.draft.cityWar.enabled=true;
   f.editor.draft.fleetSpeed.enabled=true;Object.assign(f.editor.draft.fleetSpeed.fleets[0],{repair:true,march:true});
@@ -317,7 +323,10 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   global.open=true;global.ontoggle();
   assert(visible(f.widget('cityWar.targetMode').node),'展开后显示全局策略');
   const city=f.env.node('config-group-cityWar');
-  assert(city.children.indexOf(global)>city.children.indexOf(f.widget('fleetSpeed.dailyDiamondLimit').node));
+  assert(city.children.indexOf(global)>city.children.indexOf(f.widget('fleetSpeed.enabled').node));
+  assert.equal(f.widget('fleetSpeed.dailyDiamondLimit'),undefined,'城战加速不再有中间合计上限');
+  assert(f.widget('resources.diamondDailyLimit'));
+  for(const mode of ['repair','march'])for(const suffix of ['MaxDiamonds','DailyDiamonds'])assert(f.widget('fleetSpeed.fleets.0.'+mode+suffix));
   const participants=f.widget('cityWar.fleetIds'),roles=f.widget('cityWar.defenceFleetIds');
   assert.equal(participants.node.parentElement,city,'参与舰队直接展示，不再套分区折叠');
   assert.equal(roles.parentKey,participants.spec.key);

@@ -16,7 +16,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 2;
+export const SETTINGS_SCHEMA_VERSION = 4;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -68,22 +68,22 @@ export const DEFAULT_SETTINGS = {
   lineups: { presets: [], mainlinePresetId: '', trialPresets: [] },
   trials: { paid: false, ads: false, raidIds: ['1','2','3'], paidPerRaidLimit: 1, dailyDiamondBudget: 450, maxSingleCost: 50 },
   fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon'] },
-  fleetSpeed: { enabled: false, dailyDiamondLimit: 0, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
-  worldBoss: { enabled: false, fleetIds: [], minDurabilityPercent: 80, petrolReserve: 0 },
-  radar: { runEnabled:false, enabled:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, petrolReserve:1000, dailyPetrolLimit:10000, checkEverySeconds:30 },
+  fleetSpeed: { enabled: false, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
+  worldBoss: { enabled: false, fleetIds: [], minDurabilityPercent: 80 },
+  radar: { runEnabled:false, enabled:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
-  pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, petrolReserve: 0, fuelBudget: 10000, checkEverySeconds: 15 },
+  pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, checkEverySeconds: 15 },
   treasure: { enabled: false, autoJoin: false, onlyTenThousand: false, follow: false, fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
-    rewardItems: [], avoidNames: [], allowHostile: false, minDurabilityPercent: 80, petrolReserve: 0,
+    rewardItems: [], avoidNames: [], allowHostile: false, minDurabilityPercent: 80,
     maxProgress: 90, personalProgressLimit: 20, dailyDispatchLimit: 0, checkEverySeconds: 15, participationMode: 'untilFull', repeatAttack: false,
-    autoRepair: false, maxRepairCost: 15000, dailyRepairPetrolLimit: 20000,
+    autoRepair: false,
     marchSpeedUp: false, marchTargetSeconds: 60, dailyDiamondLimit: 0,
     fallbackEnabled: false, fallbackAfter: '21:00', fallbackTargetRewards: 3,
     fallbackQualities: ['PURPLE', 'BLUE'], fallbackMediumRewardPriority: [], fallbackSmallRewardPriority: [] },
   // 攻守目标由跟随全局的舰队共用；每队还可独立保存两套策略。
   cityWar: { enabled: false, fleetIds: [], defenceFleetIds: [], targetMode: 'alliance', targetPriority: 'fewestAllied', cityRefs: [],
     defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], fleetStrategies: {}, autoRepair: false,
-    nativeCommissionLimit: -1, repairBelowPercent: 80, petrolReserve: 0, maxRepairCost: 15000, dailyPetrolLimit: 20000,
+    nativeCommissionLimit: -1, repairBelowPercent: 80,
     dailyDispatchLimit: 10, reserveDuringWar: false, checkEverySeconds: 15 },
   forge: { decompose: false, decomposeQualities: [], enabled: false, buildingIds: [], recipeIds: [], universal: false, materialReserve: 0,
     universalReserve: 0, goldReserve: 0, dailyLimit: 5, dailyGoldLimit: 100000, checkEverySeconds: 30 },
@@ -96,7 +96,7 @@ const int = (max = 1_000_000_000, min = 0) => ({ kind: 'number', min, max });
 const strings = (max = 300) => ({ kind: 'list', max });
 const constraints = {
   ...WEEKLY_ACTIVITY_CONSTRAINTS,
-  'fleetSpeed.dailyDiamondLimit': int(1000000), 'fleetSpeed.fleets': { kind: 'fleetSpeeds' },
+  'fleetSpeed.fleets': { kind: 'fleetSpeeds' },
   ...Object.fromEntries([0,1,2].flatMap(index => Object.entries(FLEET_SPEED_NUMBERS).map(([key, rule]) => ['fleetSpeed.fleets.' + index + '.' + key, rule]))),
   ...EXTENDED_CONSTRAINTS,
   ...Object.fromEntries([0, 1, 2].flatMap(index => Object.entries(SILICON_FLEET_NUMBERS).map(([key, rule]) => ['silicon.fleets.' + index + '.' + key, rule]))),
@@ -115,9 +115,9 @@ const constraints = {
   'merchant.upgradeMinReturnPercent': int(10000, 100), 'merchant.upgradeMaxLevel': int(5, 1), 'merchant.upgradeDailyDiamondLimit': int(100000),
   'ads.waitSeconds':int(120,5),
   'fleetDispatch.priority': {...strings(7),values:['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon']},
-  'worldBoss.fleetIds': strings(10), 'worldBoss.minDurabilityPercent': int(100), 'worldBoss.petrolReserve': int(),
+  'worldBoss.fleetIds': strings(10), 'worldBoss.minDurabilityPercent': int(100),
   'events.otherOption': int(2,1), 'radar.fleetIds': strings(10), 'radar.types': {...strings(5),values:['pirate','collect','refugee','spy','fixed']},
-  'radar.minDurabilityPercent':int(100), 'radar.petrolReserve':int(), 'radar.dailyPetrolLimit':int(), 'radar.checkEverySeconds':int(300,10),
+  'radar.minDurabilityPercent':int(100), 'radar.checkEverySeconds':int(300,10),
   'loop.rounds': int(100000), 'loop.everySeconds': int(86400, 1),
   'building.keepBlueprints': int(), 'building.maxBuilds': int(100), 'building.maxUpgrades': int(100),
   'building.disabledTypes': strings(), 'factory.disabledTypes': strings(), 'factory.keepStock': int(100000), 'factory.checkEverySeconds': int(300, 1),
@@ -139,14 +139,13 @@ const constraints = {
   'pirateHunt.maxFailures': int(100, 1),
   'pirateSweep.type': {kind:'choice',values:['1','2','3']},
   'pirateHunt.fleetIds': strings(10), 'pirateHunt.types': strings(20), 'pirateHunt.maxLevel': int(1000),
-  'pirateHunt.minDurabilityPercent': int(100), 'pirateHunt.petrolReserve': int(), 'pirateHunt.fuelBudget': int(), 'pirateHunt.checkEverySeconds': int(60, 5),
+  'pirateHunt.minDurabilityPercent': int(100), 'pirateHunt.checkEverySeconds': int(60, 5),
   'treasure.fleetIds': strings(10), 'treasure.followNames': strings(30), 'treasure.followPlayerIds': strings(30),
   'treasure.rewardItems': strings(100), 'treasure.avoidNames': strings(30),
-  'treasure.minDurabilityPercent': int(100), 'treasure.petrolReserve': int(), 'treasure.maxProgress': int(100, 1),
+  'treasure.minDurabilityPercent': int(100), 'treasure.maxProgress': int(100, 1),
   'treasure.personalProgressLimit': int(100),
   'treasure.dailyDispatchLimit': int(1000), 'treasure.checkEverySeconds': int(300, 5),
   'treasure.avoidPlayerIds': strings(100), 'treasure.participationMode': { kind: 'choice', values: ['untilFull', 'always'] },
-  'treasure.maxRepairCost': int(10000000), 'treasure.dailyRepairPetrolLimit': int(100000000),
   'treasure.marchTargetSeconds': int(3600), 'treasure.dailyDiamondLimit': int(100000000),
   'treasure.fallbackAfter': { kind: 'time' }, 'treasure.fallbackTargetRewards': int(100, 1),
   'treasure.fallbackQualities': { ...strings(2), values: ['PURPLE', 'BLUE'] },
@@ -158,8 +157,7 @@ const constraints = {
   'cityWar.defenceTargetPriority': { kind: 'choice', values: ['fewestAllied', 'original'] },
   'cityWar.defenceCityRefs': strings(100),
   'cityWar.fleetStrategies': { kind: 'cityWarFleetStrategies' },
-  'cityWar.repairBelowPercent': int(100, 1), 'cityWar.petrolReserve': int(),
-  'cityWar.maxRepairCost': int(10000000), 'cityWar.dailyPetrolLimit': int(100000000),
+  'cityWar.repairBelowPercent': int(100, 1),
   'cityWar.dailyDispatchLimit': int(1000, 1), 'cityWar.checkEverySeconds': int(300, 5),
   'forge.buildingIds': strings(10), 'forge.recipeIds': strings(100), 'forge.materialReserve': int(),
   'forge.universalReserve': int(), 'forge.goldReserve': int(), 'forge.dailyLimit': int(1000, 1),
@@ -252,6 +250,9 @@ export function validateSettings(input, options = {}) {
 }
 
 function validateCurrentSettings(input, { partial = false, catalog = null } = {}) {
+  // An already-open settings page can still submit the retired fields.
+  // Ignore only these known fields; every other setting remains strict.
+  input = migrateVersion3Settings(migrateVersion2Settings(input));
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
@@ -431,7 +432,7 @@ export function loadAutomationSettings(accountId, { file = settingsFile() } = {}
   // store. Entries written before version 2 did not carry their own version.
   const version = entry ? entrySettingsVersion(entry) : SETTINGS_SCHEMA_VERSION;
   const settings = entry ? validateCurrentSettings(migrateSettingsVersion(entry.settings, version, { source: 'stored' }),
-    { partial: version < SETTINGS_SCHEMA_VERSION }) : defaultSettings();
+    { partial: version === 1 }) : defaultSettings();
   return { settings, revision: entry?.revision ?? 0, savedAt: entry?.savedAt ?? null };
 }
 
@@ -457,7 +458,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function validateSettingsStore(store) {
@@ -522,7 +523,7 @@ function migrateVersion1Settings(settings, { source }) {
   const addedFields = {
     heroes: ['skillAdvance','exclusiveLevel','exclusiveStar','equipment','badge','showSkillReward'],
     treasure: ['onlyTenThousand', 'avoidPlayerIds', 'participationMode', 'repeatAttack', 'autoRepair',
-      'maxRepairCost', 'dailyRepairPetrolLimit', 'marchSpeedUp', 'marchTargetSeconds', 'dailyDiamondLimit',
+      'marchSpeedUp', 'marchTargetSeconds', 'dailyDiamondLimit',
       'personalProgressLimit', 'fallbackEnabled', 'fallbackAfter',
       'fallbackTargetRewards', 'fallbackQualities', 'fallbackMediumRewardPriority', 'fallbackSmallRewardPriority'],
     cityWar: ['targetPriority', 'nativeCommissionLimit', 'defenceFleetIds'],
@@ -543,5 +544,42 @@ function migrateVersion1Settings(settings, { source }) {
     }
   }
   if (plain(input.schedule)) input.schedule = { ...taskSettings(), worldOnlineRewards: false, ...input.schedule };
+  return input;
+}
+
+// Version 3 retires petrol reserves and spending limits. Dispatch/repair still
+// checks actual stock and keeps its pending-operation accounting at runtime.
+function migrateVersion2Settings(settings) {
+  if (!plain(settings)) return settings;
+  const input = { ...settings };
+  const retired = {
+    worldBoss: ['petrolReserve'], radar: ['petrolReserve', 'dailyPetrolLimit'],
+    pirateHunt: ['petrolReserve', 'fuelBudget'],
+    treasure: ['petrolReserve', 'maxRepairCost', 'dailyRepairPetrolLimit'],
+    cityWar: ['petrolReserve', 'maxRepairCost', 'dailyPetrolLimit'],
+    silicon: ['petrolReserve', 'dailyPetrolLimit'],
+  };
+  for (const [group, fields] of Object.entries(retired)) {
+    if (!plain(input[group])) continue;
+    input[group] = { ...input[group] };
+    for (const field of fields) delete input[group][field];
+  }
+  if (Array.isArray(input.silicon?.fleets)) {
+    input.silicon.fleets = input.silicon.fleets.map(fleet => {
+      if (!plain(fleet)) return fleet;
+      const row = { ...fleet };
+      delete row.maxRepairCost;
+      return row;
+    });
+  }
+  return input;
+}
+
+// Version 4 keeps per-fleet/per-action speed-up budgets and the global diamond
+// budget, retiring only the additional shared city-war speed-up budget.
+function migrateVersion3Settings(settings) {
+  if (!plain(settings) || !plain(settings.fleetSpeed)) return settings;
+  const input = { ...settings, fleetSpeed: { ...settings.fleetSpeed } };
+  delete input.fleetSpeed.dailyDiamondLimit;
   return input;
 }

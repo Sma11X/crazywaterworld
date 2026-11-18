@@ -133,8 +133,8 @@ export function planFleetSpeed(snapshot, config, settings, ledger) {
     if (!settings.resources?.allowDiamonds) { block('全局钻石消费已关闭'); continue; }
     if (!valid(policy[mode+'MaxDiamonds'],1) || spent+cost>policy[mode+'MaxDiamonds']) { block('超过该队本次'+(mode==='repair'?'维修':'整段航程')+'钻石上限'); continue; }
     const counter = 'fleetSpeed'+(mode==='repair'?'Repair':'March')+policy.id.replace('远征船','');
-    const limits = { diamonds:settings.resources.diamondDailyLimit, fleetSpeedDiamonds:settings.fleetSpeed.dailyDiamondLimit, [counter]:policy[mode+'DailyDiamonds'] };
-    if (Object.entries(limits).some(([key,limit])=>!valid(limit,1)||!valid(usage[key]??0)||(usage[key]??0)+cost>limit)) { block('达到该项、舰队加速或全局每日钻石上限'); continue; }
+    const limits = { diamonds:settings.resources.diamondDailyLimit, [counter]:policy[mode+'DailyDiamonds'] };
+    if (Object.entries(limits).some(([key,limit])=>!valid(limit,1)||!valid(usage[key]??0)||(usage[key]??0)+cost>limit)) { block('达到该项或全局每日钻石上限'); continue; }
     if (!valid(settings.resources.diamondThreshold) || !valid(available) || available-cost<settings.resources.diamondThreshold) { block('钻石不足或低于保留量'); continue; }
     const uniqueKey = `fleet-speed:${snapshot.worldId}:${policy.id.replace('远征船','')}:${operation}:${beforeEnd}`;
     if (keys[uniqueKey]) { block('同一结束时间已有加速记录，等待新状态'); continue; }

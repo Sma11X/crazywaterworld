@@ -26,13 +26,13 @@ for (const [key,label] of [['fishing','自动钓鱼'],['floaters','拾取海面�
 for (const [key,label] of [['claimTasks','领取每日任务奖励'],['claimDailyChest','领取每日活跃宝箱'],['claimWeeklyChest','领取每周活跃宝箱'],['claimGift','每日免费赠礼']]) add('dailies.'+key,label,'任务与领奖',{gates:['dailies.enabled']});
 add('worldBoss.enabled','世界Boss每日首战派遣','世界与挑战',{help:'每天仅在服务器计数为0时派出一支空闲舰队；消耗汽油，结果不明确时不重复派遣。'});
 add('radar.runEnabled','联盟情报总开关','世界与挑战',{help:'统一暂停或恢复联盟情报的自动处理、旧规则派遣和旧规则维修，保留配置中的细项选择。请在下方选择执行动作。'});
-add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'逐条领取已完成奖励，并用所选空闲舰队处理新情报。不会开启游戏原生月卡自动功能；消耗遵守情报预算。'});
+add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'逐条领取已完成奖励，并用所选空闲舰队处理新情报。不会开启游戏原生月卡自动功能；派遣前检查实际汽油库存和待确认消费。'});
 add('treasure.enabled','万吨巨轮自动参与','世界与挑战');
 add('cityWar.enabled','联盟城战','世界与挑战');
 add('progression.enabled','推关与试炼总开关','世界与挑战',{help:'按统一配置自动挑战主线（闯关）和所选试炼。每轮继续推进，达到失败停止次数后本次挂机不再挑战该关；暂停后重新开始挂机可重试。扫荡仍按独立开关执行。'});
 add('progression.mainline','主线 / 闯关自动挑战','世界与挑战',{gates:['progression.enabled']});
 add('progression.trials','试炼自动推关','世界与挑战',{gates:['progression.enabled']});
-add('pirateHunt.enabled','海盗讨伐自动推进','世界与挑战',{help:'每轮核对本人首杀和舰队状态，自动挑战下一等级。消耗汽油，达到失败停止次数或本次预算后停止派遣；先在配置中选择舰队。'});
+add('pirateHunt.enabled','海盗讨伐自动推进','世界与挑战',{help:'每轮核对本人首杀和舰队状态，自动挑战下一等级。消耗汽油，达到失败停止次数或实际汽油不足时停止派遣；先在配置中选择舰队。'});
 add('antique.enabled','藏品自动养成','藏品',{
  configLabel:'藏品养成总开关', configuredFields:['antique.activate','antique.star','antique.master','antique.suit'],
  help:'开启后，挂机按下方已选动作培养藏品。关闭会暂停藏品养成，仍可编辑各项设置。养成只使用已有资源。',

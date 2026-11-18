@@ -25,7 +25,7 @@ function fixture(){
   const now=()=>Math.floor((Date.now()+client.serverClockOffsetMs)/1000);
   const player={worldId:1001001,playerId:900001};
   const settings=defaultSettings();settings.resources.allowDiamonds=true;settings.resources.diamondDailyLimit=1000;
-  settings.fleetSpeed.enabled=true;settings.fleetSpeed.dailyDiamondLimit=500;
+  settings.fleetSpeed.enabled=true;
   settings.cityWar.enabled=true;settings.cityWar.autoRepair=false;settings.cityWar.fleetIds=['1远征船','2远征船'];
   Object.assign(settings.fleetSpeed.fleets[0],{repair:true,march:true,repairSmartSave:true,marchSmartSave:true,repairMaxDiamonds:200,marchMaxDiamonds:90,repairDailyDiamonds:300,marchDailyDiamonds:300});
   const config={tables:{WorldParamCfg:{data:[{paramName:'行军加速消耗',paramValue:30}]},SpeedUpRubyCfg:{data:[{minute:0,fleet:10},{minute:60,fleet:11},{minute:80,fleet:20}]}}};
@@ -63,7 +63,7 @@ function fixture(){
 }
 try{
 await test('默认关闭、逐队逐项配置、严格校验和导入迁移',async()=>{
-  const s=defaultSettings();assert.equal(s.fleetSpeed.enabled,false);assert.equal(s.fleetSpeed.dailyDiamondLimit,0);
+  const s=defaultSettings();assert.equal(s.fleetSpeed.enabled,false);assert(!Object.hasOwn(s.fleetSpeed,'dailyDiamondLimit'));
   assert(s.fleetSpeed.fleets.every(p=>!p.repair&&!p.march&&p.marchSkipSeconds===60));
   const exported={...exportAutomationSettings(s),version:1};delete exported.settings.fleetSpeed;assert.deepEqual(importAutomationSettings(exported).fleetSpeed,s.fleetSpeed);
   const bad=structuredClone(s);bad.fleetSpeed.fleets[0].marchMaxDiamonds=-1;assert.throws(()=>validateSettings(bad));
@@ -113,11 +113,28 @@ await test('剩余阈值包含相等；节省时间不足也不发请求',async(
   for(const remaining of [0,30,60]){const f=fixture();f.state.fleets[0].moveEndTs=f.now()+remaining;await f.run();assert.equal(f.writes.length,0);}
   const f=fixture();f.settings.fleetSpeed.fleets[0].marchSkipSeconds=0;f.state.fleets[0].moveEndTs=f.now()+59;await f.run();assert.equal(f.writes.length,0);
 });
-await test('四层预算、全局开关、钻石保留量分别拦截；0禁止',async()=>{
-  for(const mutate of [f=>f.settings.resources.allowDiamonds=false,f=>f.settings.resources.diamondDailyLimit=29,f=>f.settings.fleetSpeed.dailyDiamondLimit=29,
-    f=>f.settings.fleetSpeed.fleets[0].marchDailyDiamonds=29,f=>f.settings.fleetSpeed.fleets[0].marchMaxDiamonds=29,
-    f=>f.settings.fleetSpeed.fleets[0].marchMaxDiamonds=0,f=>f.settings.resources.diamondThreshold=971]){
-    const f=fixture();mutate(f);await f.run();assert.equal(f.writes.length,0);
+await test('旧城战加速每日总上限为零或小额均不阻止维修和行军，历史聚合用量继续统计',async()=>{
+  for(const mode of ['repair','march'])for(const oldLimit of [undefined,0,1]){
+    const f=fixture();if(mode==='repair')f.repair();
+    if(oldLimit!==undefined)f.settings.fleetSpeed.dailyDiamondLimit=oldLimit;
+    f.ledger.confirm(f.ledger.reserve({fleetSpeedDiamonds:50000}));
+    await f.run();assert.equal(f.writes.length,1,mode+': '+oldLimit);
+    const cost=mode==='repair'?40:30;
+    assert.equal(f.ledger.confirmedCounters().fleetSpeedDiamonds,50000+cost);
+    assert.equal(f.ledger.confirmedCounters().diamonds,cost);
+  }
+});
+await test('维修和行军各自本次/每日及全局预算仍拦截；零禁止，库存与待确认费用继续核对',async()=>{
+  for(const mode of ['repair','march']){
+    const cost=mode==='repair'?40:30;
+    for(const mutate of [f=>f.settings.resources.allowDiamonds=false,
+      ...[0,cost-1].flatMap(limit=>[f=>f.settings.resources.diamondDailyLimit=limit,
+        f=>f.settings.fleetSpeed.fleets[0][mode+'DailyDiamonds']=limit,
+        f=>f.settings.fleetSpeed.fleets[0][mode+'MaxDiamonds']=limit]),
+      f=>f.settings.resources.diamondThreshold=1000-cost+1,f=>f.state.diamonds=cost-1,
+      f=>{f.settings.resources.diamondDailyLimit=10000;f.ledger.reserve({diamonds:1000-cost+1});}]){
+      const f=fixture();if(mode==='repair')f.repair();mutate(f);await f.run();assert.equal(f.writes.length,0,mode);
+    }
   }
 });
 await test('不同队伍、维修和派遣的每日预算独立计数',async()=>{

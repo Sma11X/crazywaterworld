@@ -199,7 +199,7 @@ try {
       totalProgress: (f, s) => { f.state.targets[0].progress = s.treasure.maxProgress; },
       avoid: (f, s) => { Object.assign(f.state.targets[0], { ownerGuildIdx: 7, ownerFleetNum: 1 }); f.state.defenders[72] = [{ name: '需要避战', guildIdx: 7, isNpc: false }]; s.treasure.avoidNames = ['需要避战']; },
       hostile: f => { Object.assign(f.state.targets[0], { ownerGuildIdx: 8, ownerFleetNum: 1 }); f.state.defenders[72] = [{ name: '敌方守军', guildIdx: 8, isNpc: false }]; },
-      fuel: (f, s) => { s.treasure.petrolReserve = f.state.fuel; },
+      fuel: f => { f.state.fuel = 499; },
       dailyDispatch: (f, s) => { s.treasure.dailyDispatchLimit = 1; },
       rewardQuota: f => { f.state.stats.todayRewardTimes = 3; },
       durability: (f, s) => { f.state.fleets[0].durability = 1000; s.treasure.autoRepair = false; },

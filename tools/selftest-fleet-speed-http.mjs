@@ -23,6 +23,9 @@ try{
   settings.cityWar.enabled=true;settings.cityWar.fleetIds=['1远征船','2远征船','3远征船'];
   settings.resources.allowDiamonds=true;Object.assign(settings.fleetSpeed.fleets[1],{march:true,marchMaxDiamonds:60,marchDailyDiamonds:90});
   view=ok(await api('settings',{settings,revision:view.revision,baseRevision:view.baseRevision}));
+  assert.equal(Object.hasOwn(view.settings.fleetSpeed,'dailyDiamondLimit'),false,'旧页面提交的合计上限被清理');
+  assert.equal(Object.hasOwn(view.rules.numbers,'fleetSpeed.dailyDiamondLimit'),false);
+  delete settings.fleetSpeed.dailyDiamondLimit;
   assert.deepEqual(loadAutomationSettings('speed-a').settings.fleetSpeed,settings.fleetSpeed);
   assert.equal(ok(await api('settings',undefined,'speed-b')).settings.fleetSpeed.enabled,false);
   assert.equal(app.sessions.get('speed-a').loop.running,false);

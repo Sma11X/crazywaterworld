@@ -38,7 +38,7 @@ export async function readWorldBoss(client,config,player,settings,ledger,{cityRe
    !water.building.some(b=>b.buildingId===f.buildingId&&b.level>0&&b.fleet?.formation?.heroPositions?.some(h=>h.heroId))?'缺少已保存的编队':'')}));
  if(snapshot.count===0&&ledger.hasKey('world-boss:'+exactAutomationId(player.worldId)+':'+day(snapshot.checkedAt)))snapshot.reason||='今日首战已提交，结果待核对，未重复派遣';
  if(snapshot.count>0)snapshot.reason||='今日世界Boss首战已完成派遣';
- if(!snapshot.reason&&snapshot.fuel-pendingPetrol(ledger)-snapshot.cost<p.petrolReserve)snapshot.reason='出征后汽油不足保留量';
+ if(!snapshot.reason&&snapshot.fuel-pendingPetrol(ledger)<snapshot.cost)snapshot.reason='可用汽油不足以出征';
  if(!snapshot.reason&&!snapshot.fleets.some(f=>!f.reason))snapshot.reason='没有空闲且符合条件的舰队';
  return snapshot;
 }

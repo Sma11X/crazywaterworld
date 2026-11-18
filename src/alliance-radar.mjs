@@ -68,9 +68,8 @@ export async function runAllianceRadar(client,config,player,{getSettings,ledger,
   if(!chosen){note('情报材料不足、未允许耗材或前次请求待确认');return;}
   const pending=ledger.pendingCounters(),reserved=(pending.radarPetrol??0)+(pending.piratePetrol??0)+(pending.treasurePetrol??0)+(pending.cityWarPetrol??0) + (pending.worldBossPetrol ?? 0) + (pending.siliconPetrol ?? 0);
   const ownPending=[...sentCosts].reduce((sum,[key,cost])=>sum+(!ledger.keyRecords()[key]?.confirmed?cost:0),0);
-  if(s.fuel-Math.max(0,reserved-ownPending)-s.cost<p.petrolReserve){note('出征后汽油低于保留量');return;}
-  if(p.dailyPetrolLimit>0&&(ledger.snapshot().counters.radarPetrol??0)+s.cost>p.dailyPetrolLimit){note('每日情报汽油预算不足，停止新增派遣');return;}
-  const ticket=ledger.reserve({radarPetrol:s.cost},{radarPetrol:p.dailyPetrolLimit||undefined},{},{uniqueKey:chosen.key,details:{kind:'radarSend',buildingId:fleet.buildingId,eventKey:eventKey(s,chosen.e),active:true,materialCeilings:Object.fromEntries((chosen.e.refugee?.requirements??[]).map(item=>[item.id,(s.stock.get(item.id)??0)-item.num]))}});
+  if(s.fuel-Math.max(0,reserved-ownPending)<s.cost){note('可用汽油不足以出征');return;}
+  const ticket=ledger.reserve({radarPetrol:s.cost},{},{},{uniqueKey:chosen.key,details:{kind:'radarSend',buildingId:fleet.buildingId,eventKey:eventKey(s,chosen.e),active:true,materialCeilings:Object.fromEntries((chosen.e.refugee?.requirements??[]).map(item=>[item.id,(s.stock.get(item.id)??0)-item.num]))}});
   if(!enabled()||settings!==getSettings()||legacyFleetReservationReason(client,fleet.buildingId)){ledger.cancel(ticket);return;}
   const body={...(chosen.e.fixed?{}:{uid:automationWireId(chosen.e.uid)}),fleetBuildingIds:[fleet.buildingId]};
   usedFleets.add(fleet.buildingId);attempted.add(chosen.key);

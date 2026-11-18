@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   SETTINGS_FORMAT, SETTINGS_SCHEMA_VERSION, defaultSettings, migrateSettingsVersion,
   importAutomationSettings, exportAutomationSettings, loadAutomationSettings, saveAutomationSettings,
-  nativeTaskValues, validateSettings,
+  nativeTaskValues, validateSettings, settingsUiRules,
 } from '../src/automation-settings.mjs';
 import { automationTasks, taskSettings } from '../src/automation.mjs';
 import { automationControls } from '../src/automation-controls.mjs';
@@ -46,6 +46,109 @@ function legacySettings() {
 }
 
 try {
+  test('汽油限制从旧文件、导入和旧页面保存中移除，保留其他资源与玩法设置', () => {
+    const expected = defaultSettings();
+    Object.assign(expected.resources, { allowDiamonds: true, diamondDailyLimit: 1234, diamondThreshold: 50 });
+    Object.assign(expected.cityWar, { enabled: true, fleetIds: ['1远征船'], autoRepair: true, dailyDispatchLimit: 7, repairBelowPercent: 65 });
+    Object.assign(expected.treasure, { autoRepair: true, dailyDispatchLimit: 12, dailyDiamondLimit: 321 });
+    Object.assign(expected.pirateHunt, { enabled: true, fleetIds: ['1远征船'], maxFailures: 4 });
+    Object.assign(expected.silicon, { dailyRewardLimit: 5, dailyDiamondLimit: 200 });
+    Object.assign(expected.silicon.fleets[0], { autoRepair: true, dailyAttackLimit: 11 });
+    const legacy = structuredClone(expected);
+    const retired = {
+      worldBoss: { petrolReserve: 999999 },
+      radar: { petrolReserve: 1000, dailyPetrolLimit: 1 },
+      pirateHunt: { petrolReserve: 1234, fuelBudget: 1 },
+      treasure: { petrolReserve: 99999, maxRepairCost: 1, dailyRepairPetrolLimit: 1 },
+      cityWar: { petrolReserve: 99999, maxRepairCost: 1, dailyPetrolLimit: 1 },
+      silicon: { petrolReserve: 99999, dailyPetrolLimit: 1 },
+    };
+    for (const [group, values] of Object.entries(retired)) Object.assign(legacy[group], values);
+    legacy.silicon.fleets.forEach((fleet, index) => { fleet.maxRepairCost = index + 1; });
+    const before = structuredClone(legacy);
+    for (const version of [1, 2, 3, SETTINGS_SCHEMA_VERSION]) {
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: {
+        fuel: { settingsVersion: version, revision: 8, settings: legacy },
+        other: { settingsVersion: version, revision: 3, settings: legacy },
+      } }));
+      const bytes = fs.readFileSync(file);
+      const loaded = loadAutomationSettings('fuel', { file });
+      assert.deepEqual(loaded.settings, expected);
+      assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version, settings: legacy }), expected);
+      assert.deepEqual(validateSettings(legacy), expected, '旧页面仍可保存，其汽油限制不再进入当前配置');
+      assert.deepEqual(fs.readFileSync(file), bytes, '读取不会隐式写盘');
+      assert.deepEqual(legacy, before, '迁移不修改传入对象');
+      const saved = saveAutomationSettings('fuel', legacy, { file, revision: loaded.revision });
+      assert.equal(saved.revision, 9);
+      assert.deepEqual(loadAutomationSettings('fuel', { file }).settings, expected);
+      assert.deepEqual(exportAutomationSettings(legacy).settings, expected);
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings(saved.settings)), expected);
+      const store = JSON.parse(fs.readFileSync(file));
+      assert.equal(store.accounts.fuel.settingsVersion, SETTINGS_SCHEMA_VERSION);
+      assert.deepEqual(store.accounts.other.settings, before, '保存一个账号不改写其他账号');
+    }
+    for (const [group, fields] of Object.entries(retired)) for (const field of Object.keys(fields)) {
+      assert(!Object.hasOwn(defaultSettings()[group], field));
+      assert(!Object.hasOwn(settingsUiRules().numbers, group + '.' + field));
+    }
+    for (let index = 0; index < 3; index++) {
+      assert(!Object.hasOwn(defaultSettings().silicon.fleets[index], 'maxRepairCost'));
+      assert(!Object.hasOwn(settingsUiRules().numbers, 'silicon.fleets.' + index + '.maxRepairCost'));
+    }
+    const unknown = structuredClone(legacy); unknown.radar.unknownPetrolLimit = 1;
+    assert.throws(() => validateSettings(unknown), error => !!error.fields?.['radar.unknownPetrolLimit']);
+    const invalid = structuredClone(legacy); invalid.silicon.fleets[0].dailyAttackLimit = -1;
+    assert.throws(() => validateSettings(invalid), error => !!error.fields?.['silicon.fleets.0.dailyAttackLimit']);
+  });
+
+  test('移除城战加速共享日限额，旧文件及旧页面保留逐队分项和全局钻石设置', () => {
+    const expected = defaultSettings();
+    Object.assign(expected.resources, { allowDiamonds: true, diamondDailyLimit: 1234, diamondThreshold: 80 });
+    expected.fleetSpeed.enabled = true;
+    Object.assign(expected.fleetSpeed.fleets[0], {
+      repair: true, march: false, repairMaxDiamonds: 25, marchMaxDiamonds: 10,
+      repairDailyDiamonds: 200, marchDailyDiamonds: 120, repairSmartSave: true,
+    });
+    Object.assign(expected.fleetSpeed.fleets[1], { march: true, marchMaxDiamonds: 40, marchDailyDiamonds: 300 });
+    assert(!Object.hasOwn(defaultSettings().fleetSpeed, 'dailyDiamondLimit'));
+    assert(!Object.hasOwn(settingsUiRules().numbers, 'fleetSpeed.dailyDiamondLimit'));
+    for (const dailyDiamondLimit of [0, 1, 999999]) for (const version of [1, 2, 3, SETTINGS_SCHEMA_VERSION]) {
+      const legacy = structuredClone(expected);
+      legacy.fleetSpeed.dailyDiamondLimit = dailyDiamondLimit;
+      const before = structuredClone(legacy);
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: {
+        speed: { settingsVersion: version, revision: 8, settings: legacy },
+        other: { settingsVersion: version, revision: 3, settings: legacy },
+      } }));
+      const bytes = fs.readFileSync(file), loaded = loadAutomationSettings('speed', { file });
+      assert.deepEqual(loaded.settings, expected);
+      assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version, settings: legacy }), expected);
+      assert.deepEqual(validateSettings(legacy), expected);
+      assert.deepEqual(fs.readFileSync(file), bytes, '读取只在内存迁移');
+      const saved = saveAutomationSettings('speed', legacy, { file, revision: loaded.revision });
+      assert.equal(saved.revision, 9);
+      assert.deepEqual(loadAutomationSettings('speed', { file }).settings, expected);
+      assert.deepEqual(exportAutomationSettings(legacy).settings, expected);
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings(saved.settings)), expected);
+      assert.deepEqual(migrateSettingsVersion(migrateSettingsVersion(legacy, 3), 3), expected);
+      assert.deepEqual(legacy, before, '规范化不修改输入对象');
+      const store = JSON.parse(fs.readFileSync(file));
+      assert.equal(store.accounts.speed.settingsVersion, SETTINGS_SCHEMA_VERSION);
+      assert.deepEqual(store.accounts.other.settings, before, '不改写其他账号');
+    }
+    const unknown = structuredClone(expected); unknown.fleetSpeed.unknownDiamondLimit = 1;
+    assert.throws(() => validateSettings(unknown), error => !!error.fields?.['fleetSpeed.unknownDiamondLimit']);
+    for (const mutate of [
+      settings => { settings.fleetSpeed.fleets[0].repairDailyDiamonds = -1; },
+      settings => { settings.resources.diamondDailyLimit = -1; },
+      settings => { settings.fleetSpeed.enabled = 'true'; },
+    ]) {
+      const invalid = structuredClone(expected); mutate(invalid);
+      assert.throws(() => validateSettings(invalid));
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 3, settings: invalid }));
+    }
+  });
+
   test('联盟求助次数补全旧配置，保留显式次数并校验边界', () => {
     const settings = defaultSettings();
     Object.assign(settings.alliance, { enabled: true, mutual: true, autoAsk: true, helpDailyLimit: 7 });
@@ -252,8 +355,8 @@ try {
     const unknown = document(); unknown.settings.factory.removedField = true;
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
-  test('版本1升级为版本2后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 2);
+  test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
+    assert.equal(SETTINGS_SCHEMA_VERSION, 4);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
@@ -264,7 +367,7 @@ try {
     assert.deepEqual(settings, before);
     assert.deepEqual(migrateSettingsVersion(migrated, 2), migrated);
     const exported = exportAutomationSettings(migrated);
-    assert.equal(exported.version, 2);
+    assert.equal(exported.version, SETTINGS_SCHEMA_VERSION);
     assert.deepEqual(importAutomationSettings(exported), migrated);
     assert.deepEqual(importAutomationSettings(exportAutomationSettings(importAutomationSettings(exported))), migrated);
   });
@@ -276,8 +379,8 @@ try {
     const loaded = loadAutomationSettings('old', { file });
     const saved = saveAutomationSettings('old', loaded.settings, { file, revision: loaded.revision });
     const store = JSON.parse(fs.readFileSync(file));
-    assert.equal(store.version, 2);
-    assert.equal(store.accounts.old.settingsVersion, 2);
+    assert.equal(store.version, SETTINGS_SCHEMA_VERSION);
+    assert.equal(store.accounts.old.settingsVersion, SETTINGS_SCHEMA_VERSION);
     assert.equal(store.accounts.old.revision, 9);
     assert.deepEqual(store.accounts.other, other);
     assert.deepEqual(loadAutomationSettings('other', { file }), otherBefore);
@@ -286,19 +389,19 @@ try {
     assert.throws(() => saveAutomationSettings('old', loaded.settings, { file, revision: 8 }), /其他页面更新/);
     assert.deepEqual(fs.readFileSync(file), bytes);
     saveAutomationSettings('other', otherBefore.settings, { file, revision: otherBefore.revision });
-    assert.equal(JSON.parse(fs.readFileSync(file)).accounts.other.settingsVersion, 2);
+    assert.equal(JSON.parse(fs.readFileSync(file)).accounts.other.settingsVersion, SETTINGS_SCHEMA_VERSION);
   });
   test('当前版本缺项不能借历史迁移静默补全，旧版部分设置仍兼容', () => {
-    for (const remove of [
+    for (const version of [2, 3, SETTINGS_SCHEMA_VERSION]) for (const remove of [
       settings => { delete settings.login; },
       settings => { delete settings.factory.checkEverySeconds; },
       settings => { delete settings.cityWar.fleetStrategies; },
       settings => { delete settings.cityWar.defenceTargetMode; },
     ]) {
       const settings = defaultSettings(); remove(settings);
-      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 2, settings }), /缺少/);
-      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 2, settings }, { partial: true }), /缺少/);
-      fs.writeFileSync(file, JSON.stringify({ version: 2, accounts: { current: { settingsVersion: 2, revision: 2, settings } } }));
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version, settings }), /缺少/);
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version, settings }, { partial: true }), /缺少/);
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: { current: { settingsVersion: version, revision: 2, settings } } }));
       const bytes = fs.readFileSync(file);
       assert.throws(() => loadAutomationSettings('current', { file }), /缺少/);
       assert.deepEqual(fs.readFileSync(file), bytes);

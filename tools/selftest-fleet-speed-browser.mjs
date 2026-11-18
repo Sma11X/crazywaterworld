@@ -37,12 +37,14 @@ try{
     const city=page.locator('#config-group-cityWar');
     const globals=page.locator('#config-section-cityWar-targetMode');
     const globalSummary=globals.locator(':scope > summary');
+    assert.equal(await page.locator('#config-field-fleetSpeed-dailyDiamondLimit').count(),0,'城战加速合计上限已移除');
+    assert.equal(Object.hasOwn(loadAutomationSettings('speed-browser').settings.fleetSpeed,'dailyDiamondLimit'),false);
     assert.equal(await city.locator('details.config-field-section').count(),1);
     assert.equal(await globals.evaluate(section=>section.tagName),'DETAILS');
     assert.equal(await globalSummary.count(),1);
     assert.equal(await page.locator('#config-field-cityWar-targetMode').isVisible(),false,'全局策略默认收起');
     assert.equal(await page.locator('#config-field-cityWar-defenceTargetMode').isVisible(),false);
-    assert.equal(await globals.evaluate(section=>!!(document.getElementById('config-field-fleetSpeed-dailyDiamondLimit').compareDocumentPosition(section)&Node.DOCUMENT_POSITION_FOLLOWING)),true,'全局策略位于加速总预算之后');
+    assert.equal(await globals.evaluate(section=>!!(document.getElementById('config-field-fleetSpeed-enabled').compareDocumentPosition(section)&Node.DOCUMENT_POSITION_FOLLOWING)),true,'全局策略位于逐队加速总开关之后');
     assert.equal(await page.locator('#config-fields .config-disclosure[aria-expanded=true]').count(),0);
     assert.equal(await page.locator('[id^=config-field-fleetSpeed-fleets-2-]').count(),0);
     await city.screenshot({path:path.resolve('output/fleet-speed/default-levels-'+name+'.png')});

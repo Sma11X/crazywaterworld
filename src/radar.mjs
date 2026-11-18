@@ -2,7 +2,6 @@ import { uidText } from './hero-equipment.mjs';
 import { describeLogError } from './log-errors.mjs';
 import { registerFleetReservations, isFleetReserved, hasOtherFleetReservations } from './fleet-reservations.mjs';
 
-export const radarFuelReserve = 10_000;
 const sessions = new WeakMap();
 const rows = (config, table) => config?.tables?.[table]?.data ?? [];
 const safe = value => {
@@ -158,7 +157,7 @@ function eventPlan(event, config, season, stock) {
   const fuel = rows(config, 'WorldParamCfg').find(r => r.paramName === '情报事件消耗汽油')?.paramValue;
   if (safe(fuel) === null || fuel <= 0) return null;
   costs.set('汽油', (costs.get('汽油') ?? 0) + fuel);
-  for (const [id, n] of costs) if (!Number.isSafeInteger(n) || (stock.get(id) ?? 0) < n + (id === '汽油' ? radarFuelReserve : 0)) return null;
+  for (const [id, n] of costs) if (!Number.isSafeInteger(n) || (stock.get(id) ?? 0) < n) return null;
   return { name, power: Math.ceil(power * 1.2), costs };
 }
 
@@ -292,7 +291,7 @@ export async function serviceRadar(client, protocol, config, {
           defer(180); return entries;
         }
       }
-      if (!entries.some(e => e.key === 'radarAuto')) skip('radarAuto', '当前没有可领取或可安全出征的情报（检查舰队、耐久、战力、材料和汽油保留额）');
+      if (!entries.some(e => e.key === 'radarAuto')) skip('radarAuto', '当前没有可领取或可安全出征的情报（检查舰队、耐久、战力、材料和可用汽油）');
     }
 
     if (allowed('radarRepair')) {
@@ -309,8 +308,8 @@ export async function serviceRadar(client, protocol, config, {
           skip('radarRepair', `${initial.buildingId} 缺少可靠的维修费用和时长`); continue;
         }
         const cost = Math.ceil((fleet.maxDura - fleet.durability) * param.unitRepairCost);
-        if (!Number.isSafeInteger(cost) || cost <= 0 || (budget.get('汽油') ?? 0) - cost < radarFuelReserve) {
-          skip('radarRepair', `${fleet.buildingId} 修满需要 ${cost} 汽油，需另保留 ${radarFuelReserve} 汽油`); continue;
+        if (!Number.isSafeInteger(cost) || cost <= 0 || (budget.get('汽油') ?? 0) < cost) {
+          skip('radarRepair', `${fleet.buildingId} 修满需要 ${cost} 汽油，可用汽油不足或费用未确认`); continue;
         }
         if (otherPending()) return entries;
         if (!allowed('radarRepair')) break;

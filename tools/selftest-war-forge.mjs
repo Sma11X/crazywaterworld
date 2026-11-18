@@ -203,12 +203,13 @@ await check('不抢占行军战斗维修排队巨轮驻外矿场或其他角色�
     f=>{f.state.fleets[0].owner.playerId='9007199254741999';}, f=>{f.state.buildings[0].fleet.formation.heroPositions=[];}];
   for (const change of changes) { const f=warForgeFixture(),s=warForgeSettings();s.cityWar.fleetIds=['1远征船'];change(f);await warRun(f,s);assert.equal(f.client.writes.length,0); }
 });
-await check('完整维修报价、汽油保留、单次与每日预算均生效', async () => {
+await check('完整维修只检查实际汽油，旧保留/单次/每日限制不再拦截', async () => {
   const f=warForgeFixture(),s=warForgeSettings();s.cityWar.fleetIds=['1远征船'];f.state.fleets[0].durability=1000;
   const plan=await warPlan(f,s);assert.equal(plan.actions[0].request,'RepairFleetRequest');assert.equal(plan.actions[0].cost,2000);
-  s.cityWar.maxRepairCost=1999;assert.equal((await warPlan(f,s)).actions.length,0);
-  s.cityWar.maxRepairCost=3000;s.cityWar.dailyPetrolLimit=1999;assert.equal((await warPlan(f,s)).actions.length,0);
-  s.cityWar.dailyPetrolLimit=5000;s.cityWar.petrolReserve=49000;assert.equal((await warPlan(f,s)).actions.length,0);
+  s.cityWar.maxRepairCost=1999;assert.equal((await warPlan(f,s)).actions.length,1);
+  s.cityWar.maxRepairCost=3000;s.cityWar.dailyPetrolLimit=1999;assert.equal((await warPlan(f,s)).actions.length,1);
+  s.cityWar.dailyPetrolLimit=5000;s.cityWar.petrolReserve=49000;assert.equal((await warPlan(f,s)).actions.length,1);
+  f.state.fuel=1999;assert.equal((await warPlan(f,s)).actions.length,0);f.state.fuel=2000;assert.equal((await warPlan(f,s)).actions.length,1);
   s.cityWar.petrolReserve=0;s.cityWar.autoRepair=false;assert.equal((await warPlan(f,s)).actions.length,0);
 });
 await check('城战派遣确认、防重复与返航后继续接续', async () => {
@@ -842,7 +843,7 @@ try {
     assert.equal(war.status,200,JSON.stringify(war.data));assert.equal(forge.status,200,JSON.stringify(forge.data));assert.equal(war.data.cityWar.nativeLimit,4);
     assert.equal(war.data.actions.length,2,'真实场景配置下也应生成两项有效城战计划');assert(forge.data.actions.length);assert(forge.data.forge.factories.length);assert.equal(f.client.writes.length,0);assert.deepEqual(fs.readFileSync(path.join(directory,'accounts.json')),before);
   });
-  await check('真实场景2配置与地图可通过HTTP预览，且遵守真实行军费用预算',async()=>{
+  await check('真实场景2配置与地图可通过HTTP预览，且按真实汽油库存规划行军',async()=>{
     const f=warForgeFixture(),session=app.sessions.get('a');f.player.scenarioId=2;
     f.state.cities=[{id:277,state:1,guildIdx:7},{id:285,state:2,guildIdx:8}];
     f.state.war.declarations=[{attackGuildIdx:7,defenceGuildIdx:8,cityId:285}];
@@ -851,8 +852,8 @@ try {
     const war=await api('settings/preview','a',{category:'cityWar'});
     assert.equal(war.status,200,JSON.stringify(war.data));
     assert(!war.data.notes.some(note=>note.startsWith('城战状态未确认')),JSON.stringify(war.data));
-    assert.equal(war.data.actions.length,1,JSON.stringify(war.data));
-    assert(war.data.notes.some(note=>note.includes('城战汽油预算')),JSON.stringify(war.data));
+    assert.equal(war.data.actions.length,2,JSON.stringify(war.data));
+    assert(war.data.actions.reduce((sum, action)=>sum+action.costs.reduce((cost, item)=>cost+item.num,0),0)<=f.state.fuel);
     assert(war.data.cityWar.targets.every(target=>target.ref==='2:285'&&target.petrol>0));
     assert.equal(f.client.writes.length,0);
   });
