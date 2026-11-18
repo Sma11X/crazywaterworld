@@ -10,6 +10,7 @@ import { activityAutomationDefaults } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
 import { validateLineupSettings } from './saved-lineups.mjs';
 import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
+import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyActivitySettings, migrateWeeklyActivitySettings } from './weekly-activity-settings.mjs';
 
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
@@ -31,6 +32,7 @@ export const DEFAULT_SETTINGS = {
   schedule: taskSettings(),
   eventActions: { compassThreshold: 10, compassDrawCount: 10 },
   activityAutomation: activityAutomationDefaults,
+  weeklyActivity: WEEKLY_ACTIVITY_DEFAULTS,
   weekOrder: { enabled: true, allowDiamonds: false },
   merchant: { enabled: true, autoShareIntel: true, quoteMaxAgeSeconds: 300, estimateDiscountPercent: 10, refreshWaitSeconds: 120, liquidationMinutes: 120,
     maxLossPercent: 0, minExpectedProfit: 1, autoSpeedUp: false, speedUpMinProfit: 1000, keepPointers: 0,
@@ -90,6 +92,7 @@ export const DEFAULT_SETTINGS = {
 const int = (max = 1_000_000_000, min = 0) => ({ kind: 'number', min, max });
 const strings = (max = 300) => ({ kind: 'list', max });
 const constraints = {
+  ...WEEKLY_ACTIVITY_CONSTRAINTS,
   'fleetSpeed.dailyDiamondLimit': int(1000000), 'fleetSpeed.fleets': { kind: 'fleetSpeeds' },
   ...Object.fromEntries([0,1,2].flatMap(index => Object.entries(FLEET_SPEED_NUMBERS).map(([key, rule]) => ['fleetSpeed.fleets.' + index + '.' + key, rule]))),
   ...EXTENDED_CONSTRAINTS,
@@ -222,6 +225,7 @@ export function nativeTaskValues(settings, current) {
 }
 
 export function hasExtraWork(settings) {
+  if (settings?.weeklyActivity?.enabled && ['farm', 'pet', 'antique', 'order', 'forge', 'hero'].some(kind => settings.weeklyActivity[kind + 'Enabled'])) return true;
   if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
   return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && (settings.museum.enabled || settings.museum.upgrade) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
     || (settings.progression?.enabled && (settings.progression.mainline || settings.progression.trials)) || settings.pirateHunt?.enabled);
@@ -237,6 +241,7 @@ export function settingsUiRules() {
 
 export function validateSettings(input, { partial = false, catalog = null } = {}) {
   if (partial) input = migrateSettingsVersion(input, SETTINGS_SCHEMA_VERSION, { source: 'stored' });
+  if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   const errors = Object.create(null);
   const output = defaultSettings();
   if (!plain(input)) throw new SettingsError({ settings: '配置必须是 JSON 对象' });
@@ -291,6 +296,7 @@ export function validateSettings(input, { partial = false, catalog = null } = {}
     }
   }
   output.appointments.priorities = normalizeAppointmentPriorities(output.appointments.priorities);
+  validateWeeklyActivitySettings(output.weeklyActivity, errors);
   if (output.heroes.heroIds.length) output.heroes.needsSelection = false;
   if (output.progression.trials && !output.progression.raidIds.length) errors['progression.raidIds'] = '请选择自动推关的试炼副本';
   if (output.pirateHunt.enabled && !output.pirateHunt.fleetIds.length) errors['pirateHunt.fleetIds'] = '请选择自动讨伐海盗的舰队';
@@ -429,6 +435,7 @@ export function migrateSettingsVersion(settings, version, { source = 'import' } 
   if (!['import', 'stored'].includes(source)) throw new TypeError('未知设置迁移来源');
   if (!plain(settings)) return settings;
   const input = { ...settings };
+  if (plain(input.weeklyActivity)) input.weeklyActivity = migrateWeeklyActivitySettings(input.weeklyActivity);
   if (plain(input.heroes) && !Object.hasOwn(input.heroes, 'needsSelection')) {
     input.heroes = { ...input.heroes, needsSelection: !input.heroes.heroIds?.length };
     if (input.schedule?.heroGrowth && input.heroes.needsSelection && plain(input.loop)) input.loop = { ...input.loop, heroes: true };
@@ -453,11 +460,11 @@ export function migrateSettingsVersion(settings, version, { source = 'import' } 
   if (source === 'stored') return input;
 
   const addedGroups = ['fleetSpeed', 'login', 'treasure', 'cityWar', 'forge', 'antique', 'trials', 'pirateHunt',
-    'radar', 'worldBoss', 'pirateSweep', 'eventActions', 'activityAutomation', 'merchant', 'weekOrder', 'ads', 'appointments', 'lineups', ...Object.keys(EXTENDED_DEFAULTS)];
+    'radar', 'worldBoss', 'pirateSweep', 'eventActions', 'activityAutomation', 'weeklyActivity', 'merchant', 'weekOrder', 'ads', 'appointments', 'lineups', ...Object.keys(EXTENDED_DEFAULTS)];
   for (const group of addedGroups) {
     if (!Object.hasOwn(input, group)) input[group] = copy(DEFAULT_SETTINGS[group]);
   }
-  for (const group of ['login', 'merchant', 'activityAutomation', 'antique', 'pirateHunt', 'appointments', ...Object.keys(EXTENDED_DEFAULTS)]) {
+  for (const group of ['login', 'merchant', 'activityAutomation', 'weeklyActivity', 'antique', 'pirateHunt', 'appointments', ...Object.keys(EXTENDED_DEFAULTS)]) {
     if (plain(input[group])) input[group] = { ...copy(DEFAULT_SETTINGS[group]), ...input[group] };
   }
   const addedFields = {

@@ -26,6 +26,16 @@ const keysOf = groups => groups.flatMap(group => group.fields.map(field => field
 let tests = 0;
 async function test(name, run) { await run(); tests++; console.log('通过：' + name); }
 
+await test('军备竞赛合并为唯一页签，奖励开关唯一且广告紧随日常行动', () => {
+  const data = dataFor(), before = structuredClone(data), groups = renderGroups(data);
+  assert.equal(groups.find(group => group.id === 'weekly-activities').title, '军备竞赛');
+  assert(!groups.some(group => group.id === 'military-week'));
+  assert.equal(keysOf(groups).filter(key => key === 'schedule.armsRaceRewards').length, 1);
+  assert(groups.find(group => group.id === 'weekly-activities').fields.some(field => field.key === 'schedule.armsRaceRewards'));
+  assert.equal(groups.findIndex(group => group.id === 'ad-rewards'), groups.findIndex(group => group.id === 'daily-actions') + 1);
+  assert.deepEqual(data, before);
+});
+
 await test('16 项联动开关及 2 个参数同时隐藏，静态与自动补齐不回流', () => {
   const data = dataFor(), before = structuredClone(data), groups = renderGroups(data), keys = keysOf(groups);
   for (const key of hiddenFields) assert(!keys.includes(key), key);
@@ -119,6 +129,7 @@ function loadFixture(initial = dataFor([])) {
     const configErrors = error => { throw error; };
     const configRenderUsage = () => { state.usageRenders++; };
     const configRender = () => state.renders.push({ groups: renderGroups(configEditor.data), draft: structuredClone(configEditor.draft) });
+    const configWeeklyRankingSync = () => {};
     return { editor: configEditor, load: configLoad, save: configSave, dirty: configIsDirty, toggle: toggleAutoTask };
   `)(state, renderGroups);
   return { state, ...api };

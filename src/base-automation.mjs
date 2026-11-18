@@ -191,7 +191,7 @@ export async function previewNativeAutomation(client, config, player, settings, 
   return { actions, notes };
 }
 
-export function planBaseAutomation(snapshot, config, settings, usage = {}, { diveCompleted = false } = {}) {
+export function planBaseAutomation(snapshot, config, settings, usage = {}, { diveCompleted = false, petQualityOrder = 'asc' } = {}) {
   const actions = [], notes = [...snapshot.notes];
   const notesBySetting = Object.fromEntries(Object.entries(snapshot.notesBySetting ?? {}).map(([key, values]) => [key, [...values]]));
   const note = (setting, text) => addBaseNote(notes, notesBySetting, setting, text);
@@ -333,7 +333,7 @@ export function planBaseAutomation(snapshot, config, settings, usage = {}, { div
         if (!(season > 0)) { note('pet.breed', '海兽培育：无法确认当前赛季，本轮不开始培育'); continue; }
         const quality = ['BLUE', 'PURPLE', 'ORANGE', 'RED'];
         const candidates = rows(config, 'PetBreedCfg').filter(row => pref.species.includes(String(row.spId)) && row.season <= season && quality.includes(row.quality) && quality.indexOf(row.quality) <= quality.indexOf(pref.quality))
-          .sort((a, b) => quality.indexOf(a.quality) - quality.indexOf(b.quality) || pref.species.indexOf(String(a.spId)) - pref.species.indexOf(String(b.spId)));
+          .sort((a, b) => (petQualityOrder === 'desc' ? -1 : 1) * (quality.indexOf(a.quality) - quality.indexOf(b.quality)) || pref.species.indexOf(String(a.spId)) - pref.species.indexOf(String(b.spId)));
         for (const row of candidates) {
           const original = quantities(row.cost);
           if (!validCosts(original)) continue;

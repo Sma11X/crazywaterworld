@@ -2764,6 +2764,20 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if(route==='GET /api/activity-ranks'||route==='GET /api/activity-ranks/view'){
         const {account,session}=scoped_(parsed);
+        if (route.endsWith('/view') && parsed.searchParams.get('key') === 'week-cross') {
+          // The settings page reads this automatically. Never establish a game
+          // connection as a side effect of opening the ranking panel.
+          const client = session.client, generation = session.generation;
+          const current = () => client && session.client === client && client.connected && !session.paused && session.generation === generation;
+          if (!current()) throw new Error('请先连接当前账号，再读取军备竞赛排行');
+          const result = await readJob(session, async () => {
+            if (!current()) throw new Error('账号连接已变化，请刷新排行');
+            const value = await readActivityRanking(client, loadConfigSafe(), session.player, 'week-cross', Number(parsed.searchParams.get('page') || 1));
+            if (!current()) throw new Error('账号连接已变化，请刷新排行');
+            return value;
+          });
+          json(result); return;
+        }
         const result=await progressionJob(session,account,route+':'+(parsed.searchParams.get('key')||'catalog')+':'+(parsed.searchParams.get('page')||1),null,client=>route.endsWith('/view')?readActivityRanking(client,loadConfigSafe(),session.player,parsed.searchParams.get('key'),Number(parsed.searchParams.get('page')||1)):{tabs:activityRankCatalog(client,loadConfigSafe(),session.player).map(({key,label})=>({key,label}))},{read:true});
         json(result);return;
       }

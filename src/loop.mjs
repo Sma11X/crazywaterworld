@@ -72,6 +72,8 @@ import { claimWeekly, runLinkage, weekSchedule, readWeekOrder, runAutomaticWeekO
 import { automationTasks, dailyTaskKey, defaultFishingGoldReserve, defaultCompassSpinCount, worldTaskKey } from './automation.mjs';
 import { automationControls } from './automation-controls.mjs';
 import { activityTimeTasks, isActivityTaskAvailable, nextActivityBoundary } from './activity-availability.mjs';
+import { weeklyManagedSettings, weeklyLegacyTaskAllowed, nextWeeklyActivityBoundary } from './weekly-activity.mjs';
+import { runWeeklyActivity } from './weekly-activity-runner.mjs';
 
 const automationControlLabels = new Map(automationControls.map(control => [control.key, control.label]));
 const defaultSleep = (ms, signal) => pause(ms, undefined, { signal });
@@ -109,6 +111,11 @@ export async function runLoop(client, protocol, {
   onMaintenance,
 } = {}) {
   if (!allowMutate) throw new Error('循环会持续改变账号状态，需要 --yes');
+  const getWeeklySettings = getSettings;
+  const originalHeroSettings = getHeroSettings;
+  getSettings = () => weeklyManagedSettings(getWeeklySettings());
+  // CLI hero-only runs can supply a separate getter without the main settings.
+  getHeroSettings = originalHeroSettings === getWeeklySettings ? getSettings : originalHeroSettings;
   const rejected = { tasks: new Set(), world: new Set() };
   const history = [];
   const rewards = isEnabled ? rewardSchedule(client) : null;
@@ -154,7 +161,7 @@ export async function runLoop(client, protocol, {
   // 海商王走商已有独立时钟，由 merchantNext 接续，不重复提前消耗主轮。
   const activityConfigured = key => key !== 'merchantTrade' && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || isEnabled(key));
   const wakeActivities = () => {
-    if (!activityTimeTasks.some(activityConfigured)) return;
+    if (!activityTimeTasks.some(activityConfigured) && !getWeeklySettings()?.weeklyActivity?.enabled) return;
     activityVersion++;
     scheduler.wake();
   };
@@ -213,7 +220,7 @@ export async function runLoop(client, protocol, {
     const empty = () => ({ planned: 0, results: [] });
     const summary = { round, startedAt: Math.floor(Date.now() / 1000), tasks: empty(), dailies: empty(), world: empty() };
     const settings = getSettings();
-    const enabled = key => !stop.aborted && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || (isEnabled(key) && rewards.due(key)));
+    const enabled = key => !stop.aborted && weeklyLegacyTaskAllowed(getSettings(), key) && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || (isEnabled(key) && rewards.due(key)));
     const guard = createActionGuard(client, getSettings, usageLedger, { player, enabled: () => !stop.aborted && client.connected });
     const usage = () => usageLedger?.snapshot() ?? { counters: {} };
     let extraDemand = [];
@@ -241,7 +248,7 @@ export async function runLoop(client, protocol, {
     const logReward = (entry, category = '领奖') => stepLog('tasks')({ title: entry.label, ...entry, taskKey:entry.taskKey||entry.key, category });
     const allowDaily = (id, action) => !(getSettings() && action.request === 'ClickGoldRequest' && !action.body.free) && enabled(dailyTaskKey(id, action));
     const allowWorld = kind => enabled(worldTaskKey(kind));
-    const active = key => !stop.aborted && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && Boolean(isEnabled?.(key));
+    const active = key => !stop.aborted && weeklyLegacyTaskAllowed(getSettings(), key) && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && Boolean(isEnabled?.(key));
     const aliases = { vipDailyGift:['vipDaily'], worldOnlineRewards:['worldOnline'],
       festivalActiveRewards:['festivalActive'], battleReportRewards:['campaignReports'],
       weekSupplyFree:['weekChipFree','weekUniqueFree'], worldBossRewards:['worldBossDamage'],
@@ -568,6 +575,21 @@ export async function runLoop(client, protocol, {
         lastAntiqueNotes = text;
       } catch (error) { phaseFailure('world', '藏品养成检查', error); }
       finally { rewards?.expect('藏品养成',rewards.now()+(getSettings()?.antique?.checkEverySeconds??60));antiqueAt = Date.now() + (getSettings()?.antique?.checkEverySeconds ?? 60) * 1000; }
+    }
+
+    async function checkWeeklyActivity() {
+      if (stop.aborted || !getWeeklySettings()?.weeklyActivity?.enabled) return;
+      try {
+        await runWeeklyActivity(client, protocol, config, player, {
+          getSettings: getWeeklySettings, ledger: usageLedger,
+          enabled: () => !stop.aborted && client.connected,
+          report(entry) {
+            summary.world.results.push(entry);
+            if (entry.ok && !entry.skipped) summary.world.planned++;
+            stepLog('world')({ ...entry, title: entry.title || entry.label || '军备竞赛', category: '周活动', taskKey: 'weeklyActivity' });
+          },
+        });
+      } catch (error) { phaseFailure('world', '军备竞赛', error); }
     }
 
     const adContext = { ...adChannel, player, getSettings, enabled, ledger: usageLedger, scheduler: rewards };
@@ -1053,6 +1075,7 @@ export async function runLoop(client, protocol, {
       await checkForge();
       await checkFactoryDue({ checkpoint: true });
       await checkAntique();
+      await checkWeeklyActivity();
       await checkExtended();
       await checkDispatch();
       await checkFactoryDue({ checkpoint: true });
@@ -1070,10 +1093,11 @@ export async function runLoop(client, protocol, {
         let upgradeAt = Date.now() + 30_000;
         while (scheduler.active() && Date.now() < waitStartedAt + getEveryMs()) {
           const nextRound = waitStartedAt + getEveryMs();
+          const weeklyAt = nextWeeklyActivityBoundary(client, getWeeklySettings(), roundStartedMs);
           const activityAt = activityVersion !== roundActivityVersion ? 0
             : nextActivityBoundary(client, activityConfigured, roundStartedMs);
           const afkAt = isEnabled && enabled('afk') ? (afkDeadline ?? Date.now() + 60_000) : Infinity;
-          const wakeAt = Math.min(nextRound, activityAt, factorySchedule.nextAt(), siliconNext(), extendedNext(), merchantNext(), appointmentNext(),
+          const wakeAt = Math.min(nextRound, activityAt, weeklyAt, factorySchedule.nextAt(), siliconNext(), extendedNext(), merchantNext(), appointmentNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
             fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
             getSettings()?.radar.runEnabled !== false && getSettings()?.radar.enabled ? radarAt : Infinity,
@@ -1083,7 +1107,7 @@ export async function runLoop(client, protocol, {
             antiqueEnabled(getSettings()) ? antiqueAt : Infinity, afkAt);
           if (wakeAt > Date.now()) await scheduler.waitUntil(wakeAt);
           if (!scheduler.active() || Date.now() >= waitStartedAt + getEveryMs()) break;
-          if (activityVersion !== roundActivityVersion || activityAt <= Date.now()) {
+          if (activityVersion !== roundActivityVersion || activityAt <= Date.now() || weeklyAt <= Date.now()) {
             for (const key of activityTimeTasks) rewards?.clearTask(key);
             break;
           }

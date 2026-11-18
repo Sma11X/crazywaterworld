@@ -139,6 +139,34 @@ const keys = widgets => widgets.map(widget => widget.spec.key);
 let passed = 0;
 function test(name, run) { run(); passed++; console.log('通过：' + name); }
 
+test('军备竞赛在日常分类合并领奖，全天参与与积分模式保留目标', () => {
+  const f = fixture({ navigation: true }); f.renderPage();
+  f.env.hash = '#config-group-weekly-activities'; f.applyHash();
+  assert.equal(f.editor.category, 'daily');
+  assert(visible(f.env.node('config-group-weekly-activities')));
+  const group = f.editor.groups.get('weekly-activities');
+  assert.equal(group.title, '军备竞赛');
+  assert(!f.editor.groups.has('military-week'));
+  assert.deepEqual(new Set(group.fields.map(field => field.key)),
+    new Set([...Object.keys(defaultSettings().weeklyActivity).filter(key => !/(?:Start|End)$/.test(key)).map(key => 'weeklyActivity.' + key), 'schedule.armsRaceRewards']));
+  assert.match(group.description, /周六.*联盟城战/);
+  assert(!group.fields.some(field => /(?:Start|End)$/.test(field.key) || field.kind === 'time'));
+  assert.deepEqual(f.widget('weeklyActivity.petStop').spec.options, [['allDay','全天参与'],['score','达到积分值时']]);
+  const ids = [...f.editor.groups.values()].filter(item => item.category === 'daily').map(item => item.id);
+  assert.equal(ids.indexOf('ad-rewards'), ids.indexOf('daily-actions') + 1);
+  f.set('weeklyActivity.petEnabled', true); f.expand('weeklyActivity.petEnabled');
+  const score = f.widget('weeklyActivity.petScore');
+  assert(!visible(score.node));
+  f.set('weeklyActivity.petStop', 'score'); f.expand('weeklyActivity.petStop');
+  assert(visible(score.node));
+  f.set('weeklyActivity.petScore', 12000); f.set('weeklyActivity.petEnabled', false);
+  assert(!visible(score.node)); assert.equal(f.editor.draft.weeklyActivity.petScore, 12000);
+  f.errors({ message: '目标积分无效', fields: { 'weeklyActivity.petScore': '请填正整数目标积分' } });
+  assert(visible(score.node)); assert.equal(f.env.focused, score.control);
+  f.env.hash = '#config-group-military-week'; f.applyHash();
+  assert.equal(f.editor.selectedGroups.daily, 'weekly-activities');
+});
+
 test('英雄、藏品、装备各有唯一设置入口，原有分组书签指向新分类', () => {
   const f = fixture({ navigation: true }); f.renderPage();
   const categories = {

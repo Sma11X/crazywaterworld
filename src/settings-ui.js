@@ -1,5 +1,7 @@
 // 游戏配置编辑器：按账号合并连续输入，校验后自动保存，预览仍使用独立只读接口。
 const configEditor = { owner: null, data: null, draft: null, baseline: null, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
+// 排行是独立的只读视图，不参与配置草稿、版本和自动保存。
+const configWeeklyRanking = { owner: null, serial: 0, data: null, error: '', pending: null, at: 0 };
 bindConsoleObject('configuration', configEditor, ['owner', 'data', 'draft', 'baseline', 'category', 'busy', 'loading', 'saving', 'saveError', 'saveRetries', 'selectedGroups', 'errors', 'playerData', 'playerError', 'previewSummary']);
 const configCategories = { base: '基地', world: '世界', heroes: '英雄', antique: '藏品', equipment: '装备', daily: '日常与活动' };
 const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
@@ -104,7 +106,35 @@ const guildShipActivityFields = [
     configField('guildShip.redStartTime','红船申请船长时间','time',{ parent: 'guildShip.redStartEnabled',when:d=>d.guildShip.redStartEnabled,help:'北京时间。只控制申请船长的最早时间，满员或准备结束后由游戏服务器开船。'}),
 ];
 for (const field of guildShipActivityFields) activityOwnedSettings.add(field.key);
+const weeklyActivityFields = [
+  configField('weeklyActivity.enabled','活动总开关','switch',{help:'开启后，已选分项接管对应基础自动化，按服务器当日主题全天参与；选择积分停止时达到目标便等待。关闭总开关恢复原基础设置。各分项沿用基础模块的目标和预算，不修改保存配置。'}),
+  configField('schedule.armsRaceRewards','军备竞赛达标奖励与免费补给','switch',{help:'按本人积分、房间等级、当日主题判断5档奖励；独立补给页只领标价为零的礼包。此领奖开关独立保存。'}),
+  ...[
+    ['farm','周一 · 种田发育','种植与收获沿用基地中的种田细项，普通联盟城市募兵按本页次数参与。种田加速仍遵守加速器保留量和消费权限。'],
+    ['pet','周二 · 海兽培养','按基地 → 海兽中已选的物种范围和最高品质参与培育，按本页品质顺序选择可执行方案。未选物种时等待。'],
+    ['antique','周三 · 藏品培养','执行藏品升星和套装经验养成，复用藏品配置中的对应细项、品质和目标，继续遵守金币预算及万能材料权限。'],
+    ['order','周四 · 基地订单','复用基地 → 居民订单的材料过滤、最低奖励及每日次数限制；货船和工厂加速仅按原有开关、目标及预算参与。'],
+    ['forge','周五 · 装备打造','复用装备中已选的工厂、配方、材料保留和每日预算，按本页品质顺序选择可执行配方。未配置配方时等待。'],
+    ['hero','周日 · 英雄培养','仅周日参与，执行指定英雄升星。复用英雄名单、升星开关及目标；未选择英雄或未开启升星时等待。开启本分项会暂停原有券招募自动路径。'],
+  ].flatMap(([kind, label, help]) => {
+    const prefix = 'weeklyActivity.' + kind;
+    const fields = [configField(prefix + 'Enabled',label,'switch',{section:label,help})];
+    if (kind === 'farm') fields.push(
+      configField('weeklyActivity.farmRecruitTimes','临时募兵次数','number',{parent:prefix+'Enabled',unit:'次/日',help:'普通联盟城市募兵，默认10次，0表示不参与。由本活动分项授权，仍遵守服务器次数、材料过滤、资源保留及预算限制。'}),
+      configField('weeklyActivity.farmSpeedUp','种田加速','switch',{parent:prefix+'Enabled',help:'默认关闭。只在当日种田主题及积分目标内使用已授权的加速资源。'}),
+    );
+    if (kind === 'pet' || kind === 'forge') fields.push(configField(prefix+'QualityOrder',kind === 'pet' ? '培育品质顺序' : '打造品质顺序','radio',{
+      parent:prefix+'Enabled',options:[['asc','从低到高'],['desc','从高到低']],help:'只调整已配置且材料充足的候选方案顺序，不扩大可用物种、配方或材料范围。',
+    }));
+    fields.push(
+      configField(prefix+'Stop','停止条件','radio',{parent:prefix+'Enabled',options:[['allDay','全天参与'],['score','达到积分值时']],help:'当日对应主题开放时全天参与；积分模式达到目标后停止新增消耗，积分无法确认时等待。'}),
+      configField(prefix+'Score','目标积分','number',{parent:prefix+'Stop',unit:'分',when:d=>d.weeklyActivity[kind+'Stop']==='score',help:'填写本日活动的累计目标积分，达到后停止新增消耗。单次动作可能使积分超过目标。'}),
+    );
+    return fields;
+  }),
+];
 const configGroups = [
+  {id:'weekly-activities',title:'军备竞赛',category:'daily',description:'北京时间周一种田、周二海兽、周三藏品、周四订单、周五装备、周日英雄；当天主题全天参与，也可设置积分目标。实际执行以服务器当日主题为准。周六城战杀敌沿用「世界 → 联盟城战」配置，本页不会自动发起战争。',fields:weeklyActivityFields},
   {id:'alliance',title:'联盟 · 募兵与互助',category:'world',fields:[
     configField('alliance.enabled','联盟自动化总开关','switch',{help:'开启后接管联盟募兵、互助和福利任务；关闭保留本组细项。原有独立任务开关仍可在原入口管理。'}),
     configField('alliance.recruit','自动在联盟城市募兵'),
@@ -163,9 +193,6 @@ const configGroups = [
     configField('schedule.adSpeedUpProduce','工厂生产广告加速','switch',{help:'每天3次，每次30分钟，优先剩余时间最长的生产队列，只加速已开工的目标，不使用加速器。遵守工厂禁用名单。无免广告权益时按设置的等待时间领取。'}),
     configField('schedule.adSpeedUpBuilding','建筑升级广告加速','switch',{help:'每天3次，与博物馆展柜共用次数，每次30分钟，只加速施工中的建筑。遵守建筑禁用名单。尚未经真实账号验证，回读确认不到次数变化时不重复提交。无免广告权益时按设置的等待时间领取。'}),
     configField('schedule.adSpeedUpMuseum','博物馆展柜广告加速','switch',{help:'与建筑升级共用每天3次，优先剩余时间更长的目标，到期后自动提交展柜完工。尚未经真实账号验证，回读确认不到次数变化时不重复提交。无免广告权益时按设置的等待时间领取。'}),
-  ]},
-  {id:'military-week',title:'周期 · 军备竞赛',category:'daily',fields:[
-    configField('schedule.armsRaceRewards','军备竞赛达标奖励与免费补给','switch',{help:'周期活动。按本人积分、房间等级、当日主题判断5档奖励；独立补给页只领标价为零的礼包。'}),
   ]},
   {id:'river-series',title:'限时 · 联动系列',category:'daily',fields:[
     configField('schedule.riverScore','走江踏浪 · 积分奖励'),configField('schedule.riverPass','走江踏浪 · 走江战令'),
@@ -603,7 +630,99 @@ function configActivateGroup(id, focus = false, writeHash = true, forcePreview =
     $('config-preview-scope').value = 'module:'+id;
   }
   configRenderUsage();
+  configWeeklyRankingSync();
   if (writeHash && configVisible()) history.replaceState(history.state, '', '#config-group-' + id);
+}
+function configWeeklyRankingReset() {
+  configWeeklyRanking.serial++;
+  Object.assign(configWeeklyRanking, { owner: current, data: null, error: '', pending: null, at: 0 });
+  const root = $('config-weekly-ranking');
+  if (!root) return;
+  root.hidden = true;
+  for (const id of ['config-weekly-ranking-summary','config-weekly-ranking-updated','config-weekly-ranking-table']) {
+    const node = $(id); if (node) { clear(node); node.hidden = true; }
+  }
+}
+function configWeeklyRankingVisible() {
+  return configEditor.owner === current && configEditor.category === 'daily'
+    && configEditor.selectedGroups.daily === 'weekly-activities' && configVisible();
+}
+function configWeeklyRankingSync() {
+  const root = $('config-weekly-ranking');
+  if (!root) return;
+  if (configWeeklyRanking.owner !== current) configWeeklyRankingReset();
+  root.hidden = !configWeeklyRankingVisible();
+  if (!root.hidden) { configWeeklyRankingRender(); void configWeeklyRankingLoad(); }
+}
+function configWeeklyRankingNumber(value) {
+  const text = typeof value === 'string' && /^\d+$/.test(value) ? value
+    : Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
+  return text === null ? '未返回' : text.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+function configWeeklyRankingTime(value) {
+  return Number.isFinite(value) && value > 0 && value < 8640000000000
+    ? new Date(value * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未返回';
+}
+function configWeeklyRankingRender() {
+  const root = $('config-weekly-ranking');
+  if (!root || configWeeklyRanking.owner !== current) return;
+  const { data, pending, error } = configWeeklyRanking;
+  root.setAttribute('aria-busy', String(!!pending));
+  $('config-weekly-ranking-refresh').disabled = !!pending;
+  $('config-weekly-ranking-refresh').textContent = pending ? '读取中…' : '刷新榜单';
+  const status = $('config-weekly-ranking-status');
+  status.textContent = error ? '榜单读取失败：' + error + (data ? '。以下为上次成功读取的榜单。' : '')
+    : pending ? '正在读取军备竞赛排行…' : data?.reason || (data ? '仅展示服务器返回的名次，不在返回范围内的排名不会推算。' : '尚未读取榜单。');
+  const summary = clear($('config-weekly-ranking-summary')), updated = $('config-weekly-ranking-updated');
+  const host = clear($('config-weekly-ranking-table'));
+  summary.hidden = updated.hidden = !data; host.hidden = !data?.rows?.length;
+  if (!data) { updated.textContent = ''; return; }
+  const mine = data.mine;
+  const ownRank = Number.isSafeInteger(mine?.rank) && mine.rank > 0 ? '第 ' + mine.rank + ' 名' : '未返回';
+  for (const [label, value] of [
+    ['当前主题', data.subjectName || '等待服务器主题'], ['本人名次', ownRank],
+    ['本人积分', mine?.scoreText ?? configWeeklyRankingNumber(mine?.score)],
+    ['结算时间（北京时间）', configWeeklyRankingTime(data.settleTime ?? data.endTime)],
+  ]) {
+    const item = el('div'); item.append(el('span','',label),el('strong','',value)); summary.append(item);
+  }
+  updated.textContent = '更新时间（北京时间）：' + configWeeklyRankingTime(data.checkedAt)
+    + (data.roomLevel ? ' · 分组等级 ' + data.roomLevel : '') + (error ? ' · 上次榜单，刷新失败' : '');
+  if (!data.rows?.length) return;
+  const board = el('table'), caption = el('caption','sr-only','军备竞赛服务器返回的玩家排行');
+  const head = el('thead'), titles = el('tr'), body = el('tbody');
+  for (const [index, label] of ['名次','玩家','积分','等级'].entries()) {
+    const cell = el('th',index >= 2 ? 'config-ranking-number' : '',label); cell.scope = 'col'; titles.append(cell);
+  }
+  head.append(titles);
+  for (const row of data.rows) {
+    const line = el('tr',row.own ? 'is-own' : '');
+    const values = [Number.isSafeInteger(row.rank) && row.rank > 0 ? String(row.rank) : '未返回',
+      (row.name || '未返回名称') + (row.own ? '（我）' : ''), row.scoreText ?? configWeeklyRankingNumber(row.score), configWeeklyRankingNumber(row.level)];
+    values.forEach((value,index) => line.append(el('td',index >= 2 ? 'config-ranking-number' : '',value)));
+    body.append(line);
+  }
+  board.append(caption,head,body); host.append(board);
+}
+async function configWeeklyRankingLoad(force = false) {
+  if (typeof call !== 'function' || !configWeeklyRankingVisible()) return;
+  if (configWeeklyRanking.owner !== current) configWeeklyRankingReset();
+  const previous = configWeeklyRanking.data, elapsed = (Date.now() - configWeeklyRanking.at) / 1000;
+  const settled = previous?.status === 'active' && Number.isFinite(previous.checkedAt)
+    && Number.isFinite(previous.settleTime ?? previous.endTime) && previous.checkedAt + elapsed >= (previous.settleTime ?? previous.endTime);
+  if (configWeeklyRanking.pending || !force && !settled && configWeeklyRanking.at && Date.now() - configWeeklyRanking.at < 30000) return;
+  const account = current, serial = ++configWeeklyRanking.serial;
+  const active = () => current === account && configWeeklyRanking.owner === account && configWeeklyRanking.serial === serial;
+  const job = { account, serial }; configWeeklyRanking.pending = job; configWeeklyRanking.error = ''; configWeeklyRankingRender();
+  try {
+    const data = await call('/api/activity-ranks/view?key=week-cross&account=' + encodeURIComponent(account));
+    if (!active()) return;
+    if (!data || !Array.isArray(data.rows)) throw new Error('服务器未完整返回榜单，请刷新重试');
+    configWeeklyRanking.data = data;
+  } catch (error) { if (active()) configWeeklyRanking.error = error.message || '暂时无法读取，请稍后刷新'; }
+  finally {
+    if (active()) { configWeeklyRanking.pending = null; configWeeklyRanking.at = Date.now(); configWeeklyRankingRender(); }
+  }
 }
 function configApplyHash() {
   let id;
@@ -754,6 +873,7 @@ function configRender() {
   configLegacyGroups.clear();
   configLegacyGroups.set('daily-collections', 'hero-recruit');
   configLegacyGroups.set('equipment-legacy', 'forge');
+  configLegacyGroups.set('military-week', 'weekly-activities');
   [...new Set(tasks.map(task => task.group))].forEach((name, index) => {
     const [id, title] = destinations[name] || ['daily-other', '其他项目'];
     // 旧版从 33 开始为动态分组生成书签。新增静态分组时仍需解析旧编号。
@@ -773,6 +893,11 @@ function configRender() {
     configField('trials.dailyDiamondBudget', '试炼每日钻石预算', 'number', { parent:'trials.paid', unit:'钻石', help:'三个副本共用，也计入全局每日钻石用量。结果未知仍保留额度，跨日未知请求先核对，不重复发送。' }),
   );
   for (let index = groups.length - 1; index >= 0; index--) if (!groups[index].fields.length) groups.splice(index, 1);
+  const adIndex = groups.findIndex(group => group.id === 'ad-rewards');
+  if (adIndex >= 0 && groups.some(group => group.id === 'daily-actions')) {
+    const [ads] = groups.splice(adIndex, 1);
+    groups.splice(groups.findIndex(group => group.id === 'daily-actions') + 1, 0, ads);
+  }
   const movedFields = new Set(configEditor.data.rules?.controlFields ?? []);
   movedFields.add('loop.everySeconds');
   for (const group of groups) {
@@ -827,6 +952,7 @@ function configRender() {
       const section = el('section', 'config-section'); section.id = 'config-group-' + group.id;
       section.setAttribute('role', direct ? 'group' : 'tabpanel');
       section.setAttribute('aria-labelledby', direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
+      if (group.description) section.append(el('p','config-section-intro',group.description));
       if (['cityWar','silicon','treasure'].includes(group.id)) {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
         section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
@@ -1002,6 +1128,10 @@ function configRenderUsage() {
   let progress=active.length?(unseen===active.length?'尚无执行检查记录':'最近结果：成功 '+success+' 项 · 等待 '+waiting+' 项 · 未确认/失败 '+pending+' 项'+(unseen?' · 未检查 '+unseen+' 项':'')):relevant.length?'当前未开启具体执行项目':'尚无执行记录';
   const actualProgress=usePreview?(preview.notes??[]).find(text=>/今日已用|已领至|已领取至|今日.*已完成|当前进度/.test(text)):null;
   if(actualProgress)progress=actualProgress;else if(active.length===1&&active[0].observation?.checkedAt)progress=active[0].observation.text;
+  if (!usePreview && group?.id === 'weekly-activities' && configEditor.draft?.weeklyActivity?.enabled) {
+    const selected = ['farm','pet','antique','order','forge','hero'].filter(kind => configEditor.draft.weeklyActivity[kind + 'Enabled']).length;
+    if (selected) progress = '已配置 ' + selected + ' 项全天活动；执行情况见日志';
+  }
   const notes=usePreview?[...(preview.notes??[]),...(preview.dispatch?.fleets??[]).map(f=>f.reason).filter(Boolean)]:relevant.flatMap(c=>[...(c.blockedBy?.map(name=>'需开启'+name)??[]),...(['waiting','error','pending'].includes(c.observation?.state)?[c.observation.text]:[])]);
   const reasons=[...new Set(notes.filter(n=>/不足|已达|已用完|未开启|未开放|未同步|待确认|不能|不允许|不在|尚未|禁用|禁止|关闭|缺少|缺料|等待|失败|受限/.test(n)))];
   const root=clear($('config-usage'));
@@ -1035,7 +1165,7 @@ async function configLoad(force = false) {
     configRender();
   } catch (error) { if (account === current && version === configEditor.serial) configMessage(error.message, 'error'); }
   finally {
-    if (version === configEditor.serial) { configEditor.loading = false; configBusy(false); configUpdateState(); }
+    if (version === configEditor.serial) { configEditor.loading = false; configBusy(false); configUpdateState(); configWeeklyRankingSync(); }
   }
 }
 
@@ -1050,6 +1180,7 @@ async function configMayChangeAccount(next) {
 function configAccountChanged() {
   resetWorldMap();
   if (configEditor.owner === current) return;
+  configWeeklyRankingReset();
   configCancelSaveTimer(); configEditor.savePromise = null; configEditor.saving = false; configEditor.saveError = null; configEditor.saveRetries = 0; configEditor.busy = false;
   configEditor.serial++; configEditor.owner = null; configEditor.data = null; configEditor.draft = null; configEditor.baseline = null; configEditor.loading = false; configEditor.errors = {};
   configEditor.runtime=null;configEditor.previewSummary=null;
@@ -1467,7 +1598,7 @@ async function configPreview() {
         data.moduleActions=plan.actions.filter(a=>selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a));
         data.usage=plan.usage;
       }
-      const activityNames={'military-week':['军备竞赛'],'beauty-contest':['海上风采大赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};
+      const activityNames={'weekly-activities':['军备竞赛'],'beauty-contest':['海上风采大赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};
       if(activityNames[selected.id]){
         const stats=await call('/api/activity-statistics?refresh=1');
         data.moduleActivities=stats.items.filter(r=>activityNames[selected.id].includes(r.name));
@@ -1568,6 +1699,7 @@ $('config-import').onclick = () => { if (!configEditor.busy) $('config-file').cl
 $('config-file').onchange = configImportFile;
 $('config-export').onclick = configExport;
 $('config-preview').onclick = configPreview;
+$('config-weekly-ranking-refresh').onclick = () => { void configWeeklyRankingLoad(true); };
 $('config-preview-scope').onchange = () => {const value=$('config-preview-scope').value;if(value.startsWith('module:')){const g=configEditor.groups.get(value.slice(7));if(g){configActivate(g.category,false,false);configActivateGroup(g.id,false,true,true);}}configEditor.previewSummary=null;clear($('config-preview-result'));configRenderUsage();};
 for (const tab of document.querySelectorAll('[data-config-tab]')) {
   tab.onclick = () => configActivate(tab.dataset.configTab);
