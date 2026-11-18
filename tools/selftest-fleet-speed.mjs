@@ -102,6 +102,19 @@ await test('只读预览不改账本，仅允许所选队伍及加速种类',asy
   const f=fixture(),before=f.ledger.snapshot(),plan=await f.plan();assert.equal(plan.actions.length,1);assert.equal(plan.actions[0].buildingId,'1远征船');assert.deepEqual(f.ledger.snapshot(),before);assert.equal(f.writes.length,0);
   f.settings.fleetSpeed.fleets[0].march=false;await f.run();assert.equal(f.writes.length,0);
 });
+await test('逐队开启但总开关关闭时，预览明确说明阻断且不消费钻石',async()=>{
+  for(const mode of ['repair','march']){
+    const f=fixture();if(mode==='repair')f.repair();
+    const before=f.ledger.snapshot();f.settings.fleetSpeed.enabled=false;
+    const plan=planFleetSpeed(null,f.config,f.settings,f.ledger);
+    assert.equal(plan.actions.length,0);assert.match(plan.notes.join('；'),/加速总开关已关闭/);
+    await f.run();assert.equal(f.reads,0);assert.equal(f.writes.length,0);assert.deepEqual(f.ledger.snapshot(),before);
+    f.settings.fleetSpeed.enabled=true;await f.run();assert.equal(f.writes.length,1);
+    assert.equal(f.writes[0].name,mode==='repair'?'SpeedUpRepairRequest':'SpeedUpFleetRequest');
+    f.settings.cityWar.enabled=false;
+    assert.match(planFleetSpeed(null,f.config,f.settings,f.ledger).notes.join('；'),/联盟城战未开启/);
+  }
+});
 await test('逐次回读、到剩余阈值停止，最少三次缩短300秒至60秒内',async()=>{
   const f=fixture();for(let i=0;i<5;i++)await f.run();assert.equal(f.writes.length,3);assert(f.state.fleets[0].moveEndTs-f.now()<=60);
   assert.equal(f.ledger.snapshot().counters.diamonds,90);assert.equal(f.ledger.snapshot().counters.fleetSpeedMarch1,90);

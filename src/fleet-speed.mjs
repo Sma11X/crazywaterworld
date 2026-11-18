@@ -86,7 +86,8 @@ export async function readFleetSpeed(client, player) {
 
 export function planFleetSpeed(snapshot, config, settings, ledger) {
   const plan = { actions:[], notes:[], rows:[], waits:[] };
-  if (!fleetSpeedEnabled(settings)) { plan.notes.push('联盟城战或城战逐队加速未开启'); return plan; }
+  if (!settings?.cityWar?.enabled) { plan.notes.push('联盟城战未开启，维修及派遣钻石加速暂停'); return plan; }
+  if (!settings?.fleetSpeed?.enabled) { plan.notes.push('维修及派遣钻石加速总开关已关闭；逐队开关开启也不会加速'); return plan; }
   if (!snapshot.worldId || !snapshot.playerId) { plan.notes.push('角色或区服未确认'); return plan; }
   const keys = recordsInWorld(ledger.keyRecords(),snapshot.worldId), usage = {...ledger.snapshot().counters};
   if(Object.values(keys).some(r=>r.confirmed && r.details?.kind==='fleetSpeed' && !r.details.balanceObserved &&

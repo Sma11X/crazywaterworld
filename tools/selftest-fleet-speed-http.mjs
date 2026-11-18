@@ -54,6 +54,11 @@ try{
   assert.equal(ok(await api('settings',undefined,'speed-b')).catalog.fleetAvailability.known,false);
   const ledger=createUsageLedger('speed-a'),before=ledger.snapshot();
   const preview=ok(await api('settings/preview',{settings,category:'fleetSpeed'}));assert.equal(preview.viewOnly,true);assert.equal(preview.actions.length,1);assert.match(preview.actions[0].label,/2号舰队/);assert.deepEqual(ledger.snapshot(),before);assert.equal(writes.length,0);
+  const disabled=structuredClone(settings);disabled.fleetSpeed.enabled=false;disabled.schedule.guildWelfare=false;
+  const blocked=ok(await api('settings/preview',{settings:disabled,category:'cityWar'}));
+  assert(blocked.notes.some(note=>note.includes('维修及派遣钻石加速总开关已关闭')),'城战预览不能静默忽略已勾选但未生效的逐队加速');
+  assert.equal(blocked.actions.filter(action=>action.kind==='fleetSpeed').length,0);
+  assert.deepEqual(ledger.snapshot(),before);assert.equal(writes.length,0);
   const invalid=structuredClone(settings);invalid.fleetSpeed.fleets[1].marchDailyDiamonds=-1;
   assert.equal((await api('settings',{settings:invalid,revision:view.revision})).status,400);
   console.log('通过：城战加速 HTTP 持久化、账号隔离、真实两舰队目录、部分推送与解锁、旧选择保存、只读预览和非法预算拒绝，零游戏写入');

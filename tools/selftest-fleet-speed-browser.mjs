@@ -28,6 +28,9 @@ try{
   for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
     const before=loadAutomationSettings('speed-browser');
     Object.assign(before.settings.cityWar,{fleetStrategies:{},defenceFleetIds:['2远征船'],targetMode:'alliance',targetPriority:'fewestAllied',cityRefs:[],defenceTargetMode:'alliance',defenceTargetPriority:'fewestAllied',defenceCityRefs:[]});
+    before.settings.fleetSpeed.enabled=false;before.settings.resources.allowDiamonds=false;
+    before.settings.resources.diamondDailyLimit=2000;
+    Object.assign(before.settings.fleetSpeed.fleets[0],{repair:true,march:true,repairMaxDiamonds:50,marchMaxDiamonds:90,repairDailyDiamonds:0,marchDailyDiamonds:0});
     saveAutomationSettings('speed-browser',before.settings,{revision:before.revision});
     const context=await browser.newContext({viewport,deviceScaleFactor:1}),page=await context.newPage();
     let settingsWrites=0;
@@ -49,6 +52,9 @@ try{
     assert.equal(await page.locator('[id^=config-field-fleetSpeed-fleets-2-]').count(),0);
     await city.screenshot({path:path.resolve('output/fleet-speed/default-levels-'+name+'.png')});
     const participants=city.locator('[data-config-branch="cityWar.fleetIds"]');
+    const speedMaster=page.locator('#config-field-fleetSpeed-enabled');
+    assert.equal(await speedMaster.getAttribute('aria-label'),'维修及派遣钻石加速总开关');
+    assert.equal(await participants.evaluate(node=>!!(document.getElementById('config-field-fleetSpeed-enabled').compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)),true,'加速总开关在逐队配置前展示');
     const participantDisclosure=participants.locator(':scope > .config-row .config-disclosure');
     const fleet=number=>city.locator('.config-war-fleet[data-fleet-id="'+number+'远征船"]');
     const disclosure=number=>fleet(number).locator('.config-war-role .config-disclosure');
@@ -94,6 +100,63 @@ try{
     assert.equal(await strategy(1,'targetMode').isVisible(),false);
     await close(1);assert.equal(await strategy(1,'targetMode').isVisible(),false);
     await page.waitForTimeout(700);assert.equal(settingsWrites,writesBefore,'展开收起不写入配置');
+
+    // 保存的逐队开关不会绕过显式关闭的总开关；每项阻断都可定位到相应配置。
+    await open(1);
+    const speedStatus=mode=>page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'-status');
+    const returnToCity=async()=>{await page.locator('[data-config-tab=world]').click();await page.locator('[data-config-group=cityWar]').click();};
+    for(const mode of ['repair','march'])assert.match(await speedStatus(mode).textContent(),/尚未生效：.*钻石加速总开关已关闭/);
+    await fleet(1).screenshot({path:path.resolve('output/fleet-speed/blocked-'+name+'.png')});
+    await speedStatus('repair').getByRole('button').click();
+    assert.equal(await speedMaster.evaluate(node=>node===document.activeElement),true);
+    assert.equal(await speedMaster.isChecked(),false,'前往设置只定位，不自动授权');
+    await page.waitForTimeout(700);assert.equal(settingsWrites,writesBefore);
+    await speedMaster.check();await saved();
+    assert.match(await speedStatus('repair').textContent(),/全局自动钻石消耗已关闭/);
+    await speedStatus('repair').getByRole('button').click();
+    const globalDiamonds=page.locator('#config-field-resources-allowDiamonds');
+    assert.equal(await globalDiamonds.evaluate(node=>node===document.activeElement),true);
+    assert.equal(await globalDiamonds.isChecked(),false);
+    await globalDiamonds.check();await saved();
+    await returnToCity();
+    // 全局预算与逐队预算各自生效，且修正提示会立即更新。
+    await page.locator('[data-config-tab=base]').click();await page.locator('[data-config-family=foundation]').click();
+    await page.locator('[data-config-group=resources]').click();
+    const globalBudget=page.locator('#config-field-resources-diamondDailyLimit');
+    const resourceDisclosure=page.locator('[data-config-branch="resources.allowDiamonds"] > .config-row .config-disclosure');
+    if(await resourceDisclosure.getAttribute('aria-expanded')!=='true')await resourceDisclosure.click();
+    await globalBudget.fill('0');await globalBudget.blur();await saved();await returnToCity();
+    assert.match(await speedStatus('repair').textContent(),/全局每日钻石预算为 0/);
+    await speedStatus('repair').getByRole('button').click();
+    assert.equal(await globalBudget.evaluate(node=>node===document.activeElement),true);
+    await globalBudget.fill('2000');await globalBudget.blur();await saved();await returnToCity();
+    for(const [mode,max] of [['repair',50],['march',90]]){
+      assert.match(await speedStatus(mode).textContent(),/本项每日钻石上限为 0/);
+      await speedStatus(mode).getByRole('button').click();
+      const daily=page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds');
+      assert.equal(await daily.evaluate(node=>node===document.activeElement),true);
+      await daily.fill('100');await daily.blur();await saved();
+      const limit=page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'MaxDiamonds');
+      await limit.fill('0');await limit.blur();await saved();
+      assert.match(await speedStatus(mode).textContent(),/本项(?:每次维修|整段派遣航程)钻石上限为 0/);
+      await speedStatus(mode).getByRole('button').click();
+      assert.equal(await limit.evaluate(node=>node===document.activeElement),true);
+      await limit.fill(String(max));await limit.blur();await saved();
+      assert.match(await speedStatus(mode).textContent(),/^已允许使用钻石/);
+      assert.equal(await speedStatus(mode).getByRole('button').isVisible(),false);
+      assert.doesNotMatch(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds-help').textContent(),/城战加速日上限/);
+    }
+    const cityMaster=page.locator('#config-field-cityWar-enabled');
+    await cityMaster.uncheck();await saved();
+    for(const mode of ['repair','march'])assert.match(await speedStatus(mode).textContent(),/城战接续总开关已关闭/);
+    await cityMaster.check();await speedMaster.uncheck();await saved();
+    await page.reload();await page.locator('#tabs [data-tab=settings]').click();await returnToCity();await open(1);
+    assert.equal(await speedMaster.isChecked(),false,'刷新保留显式关闭');
+    for(const mode of ['repair','march']){
+      assert.equal(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode).isChecked(),true,'暂停保留逐队选项');
+      assert.match(await speedStatus(mode).textContent(),/钻石加速总开关已关闭/);
+    }
+    await speedMaster.check();await saved();await close(1);
 
     // 每队编辑各自的攻守目标，返回已保存值后立即清理旧错误。
     for(const [number,mode,refs] of [[1,'targetMode','cityRefs'],[2,'defenceTargetMode','defenceCityRefs']]){
