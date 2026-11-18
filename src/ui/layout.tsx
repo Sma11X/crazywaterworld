@@ -1,6 +1,6 @@
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Boxes, Building2, CalendarDays, Check, ChevronDown, CircleUserRound, LayoutDashboard, LogIn, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react"
+import { Boxes, Building2, CalendarDays, Check, ChevronDown, CircleUserRound, LayoutDashboard, Monitor, Moon, MoreHorizontal, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react"
 import { Button } from "./button"
 import { Badge } from "./badge"
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "./card"
@@ -16,7 +16,7 @@ const tabs = [
   ["settings", "挂机配置", "配置", Settings2], ["manual", "建筑一览", "建筑", Building2],
   ["stages", "挑战", "挑战", Swords], ["lineups", "阵容", "阵容", UsersRound],
   ["activities", "活动", "活动", CalendarDays], ["resources", "杂项", "杂项", Boxes],
-  ["account", "账号", "账号", CircleUserRound], ["login-settings", "登录设置", "登录", LogIn],
+  ["account", "账号", "账号", CircleUserRound],
 ] as const
 
 const themes = [["system", "跟随系统", Monitor], ["light", "白天", Sun], ["dark", "黑夜", Moon]] as const
@@ -160,7 +160,7 @@ export function templates() {
             <div><dt>战力</dt><dd data-account-field="power" /></div>
           </dl>
         </CardContent>
-        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-2" data-account-action="loop">开始挂机</Button></div></CardFooter>
+        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-2" data-account-action="loop">开始挂机</Button></div></CardFooter>
       </Card>
     </template>
   </>)

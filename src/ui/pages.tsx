@@ -150,10 +150,18 @@ export function accountPage() {
         <Button id="account-add" type="button" aria-haspopup="dialog" aria-controls="account-add-dialog"><Plus aria-hidden="true" />添加账号</Button>
       </div>
     </div>
-    <p className="dim">新账号默认不挂机，点击账号卡片上的「开始挂机」后才会持续运行；可随时点击「暂停挂机」。</p>
+    <p className="dim">新账号默认不挂机，点击「开始挂机」后才会持续运行；每个账号可通过「登录设置」单独配置自动重连策略。</p>
     <p id="account-add-notice" className="dim" role="status" hidden />
     <p id="account-transfer-notice" className="dim" role="status" aria-live="polite" hidden />
     <div id="accounts" className="account-grid" />
+
+    <dialog id="account-login-dialog" aria-labelledby="account-login-title">
+      <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-login-title" className="leading-snug">登录设置</DialogTitle></DialogHeader><Button id="account-login-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭登录设置"><X aria-hidden="true" /></Button></div>
+      <div id="login-settings-root" data-account="">
+        <p role="status" className="dim">正在载入登录设置…</p>
+        <noscript>请启用 JavaScript 后编辑登录设置。</noscript>
+      </div>
+    </dialog>
 
     <dialog id="account-export-dialog" aria-labelledby="account-export-title" aria-describedby="account-export-scope">
       <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-export-title">导出账号</DialogTitle></DialogHeader><Button id="account-export-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭账号导出"><X aria-hidden="true" /></Button></div>
@@ -266,12 +274,6 @@ export function accountPage() {
 }
 
 // Client-rendered page; its bundle is loaded when the tab is first opened.
-export function loginSettingsPage() {
-  return renderToStaticMarkup(<div id="login-settings-root" data-account="">
-    <p role="status" className="dim">正在载入登录设置…</p>
-    <noscript>请启用 JavaScript 后编辑登录设置。</noscript>
-  </div>)
-}
 
 export function guildPage() {
   return renderToStaticMarkup(<div className="grid gap-3">

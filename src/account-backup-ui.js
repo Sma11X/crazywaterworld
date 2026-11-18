@@ -115,7 +115,6 @@ async function importAccounts(file) {
     renderAccounts();
     if (result.settingsCount) {
       await configLoad();
-      loginSettingsAccountChanged();
       await refreshSavedLineups();
     }
     accountTransferNotice('导入完成：新增 ' + result.created + ' 个账号，更新 ' + result.updated + ' 个账号，恢复 ' + result.settingsCount + ' 份配置。');

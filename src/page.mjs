@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { operationLabels } from './operation-labels.mjs';
 import { LOG_CATEGORIES, LOG_GROUPS, LOG_GROUP_TONES } from './log-categories.mjs';
 import { createLogAccountLabels } from './log-accounts.mjs';
-import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, lineupsPage, guildPage, activitiesPage, accountPage, loginSettingsPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
+import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, lineupsPage, guildPage, activitiesPage, accountPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
 const progressionScript = readFileSync(new URL('./ui/progression.js', import.meta.url), 'utf8');
@@ -86,9 +86,6 @@ ${chrome()}
   </section>
   <section id="tab-account" class="hidden">
     ${accountPage()}
-  </section>
-  <section id="tab-login-settings" class="hidden">
-    ${loginSettingsPage()}
   </section>
 </main></div>
 ${journal()}
@@ -758,7 +755,7 @@ async function loadAccounts(reload) {
   if (previous !== current || reload) refreshProgression();
   if (previous !== current || reload) void refreshSavedLineups();
   if (previous !== current) refreshManualWorld();
-  if (previous !== current) {configAccountChanged();giftAccountChanged();loginSettingsAccountChanged();}
+  if (previous !== current) {configAccountChanged();giftAccountChanged();}
   if (reload) {
     subscribe();
     refreshOverview();
@@ -770,7 +767,6 @@ function selectLoadedAccount(next) {
   if (!stateActions.selectAccount(next)) return;
   giftAccountChanged();
   configAccountChanged();
-  loginSettingsAccountChanged();
   renderAccountSelect();
   refreshProgression();
   void refreshSavedLineups();
@@ -1690,6 +1686,9 @@ function createAccountCard(id) {
   const action = name => card.querySelector('[data-account-action="' + name + '"]');
   action('select').onclick = () => useAccountCard(id);
   action('loop').onclick = () => toggleAccountCardLoop(id);
+  action('login-settings').onclick = () => {
+    if (accounts.some(account => account.id === id)) stateActions.setView({ loginSettingsAccountId: id });
+  };
   action('details').onclick = async () => {
     if (!await useAccountCard(id)) return;
     const account = accounts.find(row => row.id === id);
@@ -2086,11 +2085,6 @@ ${inventoryScript}
 ${productionPlanningScript}
 ${settingsScript}
 ${appointmentsScript}
-// ---- 登录设置 --------------------------------------------------------------
-// Kept for DOM diagnostics; React subscribes directly to the shared store.
-function loginSettingsAccountChanged() {
-  $('login-settings-root').dataset.account = current || '';
-}
 ${giftCodeScript}
 let selectedResource = 'guild';
 consoleStore.subscribe((state, previous) => {
@@ -2158,6 +2152,7 @@ async function boot() {
   const savedView = history.state?.consoleView;
   const initialTab = location.hash.startsWith('#config-group-') ? 'settings'
     : location.hash === '#pirate-first-kill' ? 'stages' : location.hash === '#journal' ? 'overview'
+    : savedView?.tab === 'login-settings' ? 'account'
     : savedView?.tab === 'resources' && savedView.resource === 'activities' ? 'activities' : savedView?.tab;
   const button = [...document.querySelectorAll('#tabs button')].find(tab => tab.dataset.tab === initialTab)
     || document.querySelector('#tabs [data-tab="overview"]');

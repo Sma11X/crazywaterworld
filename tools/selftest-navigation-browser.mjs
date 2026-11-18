@@ -134,6 +134,14 @@ try {
     await main('resources');
     await tab('resources', 'guild');
 
+    // 独立登录设置入口已并入账号，旧页面记录恢复到账号列表。
+    await reloadFrom({ consoleView: { tab: 'login-settings', resource: 'guild' } });
+    await tab('account');
+    assert.equal(await page.locator('#tabs [data-tab="login-settings"]').count(), 0);
+    await page.locator('#accounts [data-account-action="login-settings"]').waitFor();
+    assert.equal(await page.locator('#account-login-dialog').isVisible(), false);
+    await page.waitForFunction(() => history.state?.consoleView?.tab === 'account');
+
     // 显式配置深链优先于原来的主页面；旧版分组链接沿用现有迁移。
     await reloadFrom({ consoleView: { tab: 'overview', resource: 'guild' } }, '#config-group-cityWar');
     await config('world', 'cityWar');
