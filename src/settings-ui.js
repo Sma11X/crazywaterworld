@@ -335,8 +335,9 @@ const configGroups = [
     configField('treasure.onlyTenThousand', '只抢万吨货轮', 'switch', { help: '开启后，普通规则仅参加游戏标记为橙色品质的万吨货轮，常规参加和跟随均遵守。关闭后，普通规则也可参加游戏配置已确认的小型、中型货轮，其他筛选仍有效。另行开启下方中小货轮兜底后，可在设定时刻按兜底规则补足领奖次数。' }),
     configField('treasure.autoJoin', '常规自动参加', 'switch', { when:d=>!d.treasure.follow, help:'仅在未开启指定跟随时生效。开启跟随后，首次出征必须匹配名单，不使用常规自动参加兜底；已确认的跟随按反复攻占设置接续。' }),
     configField('treasure.participationMode', '参与模式', 'radio', { options: [['untilFull', '打满就停'], ['always', '每次参与']], help: '打满就停：达到游戏今日领奖上限后不再派遣或维修。每次参与：领奖已满仍可参加，但不增加奖励次数，其他限制仍有效。' }),
-    configField('treasure.repeatAttack', '反复攻占', 'switch', { help: '已确认出征后，被打回或返航且回到主城空闲时，可再次参与同一货轮。跟随模式下，同一舰队首次跟随出征确认后，维修和再次攻占不再等待跟随玩家；新货轮或未首次跟随成功的舰队仍需匹配名单。请求结果未知时继续等待确认。' }),
-    configField('treasure.follow', '跟随指定玩家', 'switch', { help: '首次出征识别名单中正在前往货轮的舰队，也兼容当前守军。开启反复攻占后，同一舰队对同一货轮首次跟随成功即可继续攻占，不再要求跟随玩家仍在场；重连和重启保留确认记录。收到可识别的出发推送后会提前唤醒检查，每次发送前仍核对目标、汽油库存、避战和舰队占用。历史排名、已返航或过期行军不会触发首次跟随；不能保证同时抵达或必得奖励。' }),
+    configField('treasure.repeatAttack', '反复攻占', 'switch', { help: '已确认出征后，被打回或返航且回到主城空闲时，可再次参与同一货轮。开启跟随后，由“跟随后续出征方式”决定是否重新匹配跟随玩家；关闭反复攻占时，即使重新匹配也不会再次参与同一货轮。请求结果未知时继续等待确认。' }),
+    configField('treasure.follow', '跟随指定玩家', 'switch', { help: '识别名单中正在前往货轮的舰队，也兼容当前守军。开启反复攻占后，可选择首次跟随后自主攻占或每次重新跟随。收到可识别的出发推送后会提前唤醒检查，每次发送前仍核对目标、汽油库存、避战和舰队占用。历史排名、已返航或过期行军不会触发跟随；不能保证同时抵达或必得奖励。' }),
+    configField('treasure.followMode', '跟随后续出征方式', 'radio', { parent: 'treasure.follow', when: d => d.treasure.follow && d.treasure.repeatAttack, options: [['trigger', '首次跟随后自主攻占'], ['eachTime', '每次重新跟随']], help: '默认首次跟随后自主攻占：同一舰队对同一货轮首次跟随确认后，可在跟随玩家离开后继续攻占，重启和换日保留确认。每次重新跟随：每次出征前都重新匹配名单玩家的有效行军或当前守军，没有匹配就等待，历史确认不再放行。两种方式都需要开启反复攻占才能再次参与同一货轮；另行开启的中小货轮兜底仍可独立派遣。' }),
     configField('treasure.fleetIds', '参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与舰队，空选不派遣', help: '只使用已建成、有英雄编队且实际空闲的舰队；行军、战斗、维修和驻外等占用会跳过。游戏自动作战开关开启不等于正在作战。' }),
     configField('treasure.followPlayerIds', '跟随名单', 'players', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '从当前账号的盟友名单搜索多选，按选择顺序优先跟随。使用完整角色 ID 区分同名玩家；也可补充未列出的角色 ID。未列出的已选 ID 仍保留，需要时手动移除。' }),
     configField('treasure.followNames', '补充跟随昵称（可选）', 'names', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '保留原有手填名单。每行一个完整昵称，角色 ID 名单优先；同名无法确认身份时跳过。', placeholder: '每行输入一位其他玩家的完整昵称' }),
@@ -1073,6 +1074,7 @@ function configRenderField(spec) {
   if (spec.moduleControl) row.classList.add('config-module-control');
   const id = 'config-field-' + spec.key.replaceAll('.', '-');
   const name = el('div', 'config-label-line'); const label = el('label', 'config-label', spec.label); label.htmlFor = id; name.append(label);
+  name.hidden = spec.kind === 'cityWarRoles';
   label.id = id + '-label';
   if (spec.help) { const help = el('span', '', spec.help); help.id = id + '-help'; help.hidden = true; name.append(makeHelpTip(spec.label, spec.help), help); }
   const box = el('div', 'config-control'); const error = el('div', 'config-field-error'); error.id = id + '-error'; error.hidden = true;
@@ -1539,8 +1541,7 @@ function configCityWarRoles(spec, id) {
     const panel = el('div', 'config-children config-war-strategy'); panel.id = select.id + '-strategy';
     panel.setAttribute('role', 'group'); panel.setAttribute('aria-labelledby', label.id);
     disclosure.setAttribute('aria-controls', panel.id);
-    const note = el('p', 'config-help config-war-inherited');
-    const entry = { branch, select, disclosure, note, expanded: false, keys: [], speedStates: [] }; entries.set(buildingId, entry);
+    const entry = { branch, select, disclosure, expanded: false, keys: [], speedStates: [] }; entries.set(buildingId, entry);
     const expand = value => {
       if (!value && panel.contains(document.activeElement)) disclosure.focus({ preventScroll: true });
       entry.expanded = value; panel.hidden = !value;
@@ -1567,7 +1568,7 @@ function configCityWarRoles(spec, id) {
           return configGet(mode.key) === 'custom' && defence === isDefence && (!cityList || configGet(prefix + (defence ? 'defenceTargetMode' : 'targetMode')) === 'selected');
         } };
     });
-    configRenderFields([mode, ...fields], panel); panel.append(note);
+    configRenderFields([mode, ...fields], panel);
     const speedFields = (spec.speedFields ?? []).filter(field =>
       availableIds.has(buildingId) && configGet('fleetSpeed.fleets.' + field.fleetIndex + '.id') === buildingId
     ).map(field => ({ ...field, section: undefined, label: field.label.replace(/^舰队\d+ · /, '') }));
@@ -1607,15 +1608,6 @@ function configCityWarRoles(spec, id) {
         }
         entry.mode = mode;
       }
-      const defending = defence.includes(buildingId);
-      const globalMode = configGet('cityWar.' + (defending ? 'defenceTargetMode' : 'targetMode'));
-      const globalPriority = configGet('cityWar.' + (defending ? 'defenceTargetPriority' : 'targetPriority'));
-      const refs = configGet('cityWar.' + (defending ? 'defenceCityRefs' : 'cityRefs'));
-      const names = refs.map(ref => configEditor.data.catalog.cityTargets?.find(city => city.value === ref)?.label || ref);
-      entry.note.hidden = mode !== 'global';
-      entry.note.textContent = '跟随全局' + (defending ? '防守' : '进攻') + '策略：' + (globalMode === 'selected'
-        ? names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 座城市' : '') : '尚未指定城市'
-        : '跟随联盟有效目标') + '；' + (globalPriority === 'original' ? '沿用集结／指定城市顺序' : '按队数与距离选择') + '。';
       for (const state of entry.speedStates) {
         const issues = [];
         if (!configGet('cityWar.enabled')) issues.push(['cityWar.enabled', '城战接续总开关已关闭']);
@@ -1623,9 +1615,9 @@ function configCityWarRoles(spec, id) {
         if (!configGet('resources.allowDiamonds')) issues.push(['resources.allowDiamonds', '全局自动钻石消耗已关闭']);
         if (!(configGet('resources.diamondDailyLimit') > 0)) issues.push(['resources.diamondDailyLimit', '全局每日钻石预算为 0']);
         if (!(configGet(state.key + 'DailyDiamonds') > 0)) issues.push([state.key + 'DailyDiamonds', '本项每日钻石上限为 0']);
-        state.notice.hidden = !configGet(state.key);
+        state.notice.hidden = !configGet(state.key) || !issues.length;
         state.status.textContent = issues.length ? '尚未生效：' + issues.map(([, reason]) => reason).join('；') + '。'
-          : '已允许使用钻石；挂机时仍按剩余时间、实际费用和可用预算检查。';
+          : '';
         state.targetKey = issues[0]?.[0] ?? null; state.fix.hidden = !state.targetKey;
       }
       const hasError = entry.keys.some(key => configEditor.errors[key] || configEditor.widgets.get(key)?.error.hidden === false);

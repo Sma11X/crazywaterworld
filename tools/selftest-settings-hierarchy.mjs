@@ -304,6 +304,31 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['treasure.marchTargetSeconds', 'treasure.marchSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.marchSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
 });
+test('巨轮跟随后续方式仅在跟随与反复攻占同时开启时展示，切换开关保留选项', () => {
+  const f = fixture();
+  f.mount(f.groups.find(group => group.id === 'treasure').fields.filter(field => [
+    'treasure.follow', 'treasure.repeatAttack', 'treasure.followMode',
+  ].includes(field.key)));
+  const mode = f.widget('treasure.followMode');
+  assert.equal(mode.parentKey, 'treasure.follow');
+  assert.equal(mode.spec.kind, 'radio');
+  assert.deepEqual(mode.spec.options.map(option => option[0]), ['trigger', 'eachTime']);
+  assert.equal(f.editor.draft.treasure.followMode, 'trigger');
+  assert(!visible(mode.node));
+  f.set('treasure.follow', true); f.expand('treasure.follow');
+  assert(!visible(mode.node));
+  f.set('treasure.repeatAttack', true);
+  assert(visible(mode.node));
+  f.set('treasure.followMode', 'eachTime');
+  f.set('treasure.repeatAttack', false);
+  assert(!visible(mode.node));
+  f.set('treasure.repeatAttack', true); f.set('treasure.follow', false);
+  assert(!visible(mode.node));
+  f.set('treasure.follow', true);
+  assert(visible(mode.node));
+  assert.equal(f.editor.draft.treasure.followMode, 'eachTime');
+});
+
 test('设置页不再出现汽油保留量或消费上限，其他资源约束仍存在', () => {
   const f=fixture();f.renderPage();
   for(const key of ['worldBoss.petrolReserve','radar.petrolReserve','radar.dailyPetrolLimit','pirateHunt.petrolReserve','pirateHunt.fuelBudget','treasure.petrolReserve','treasure.maxRepairCost','treasure.dailyRepairPetrolLimit','cityWar.petrolReserve','cityWar.maxRepairCost','cityWar.dailyPetrolLimit','silicon.petrolReserve','silicon.dailyPetrolLimit','silicon.fleets.0.maxRepairCost'])assert.equal(f.widget(key),undefined,key);

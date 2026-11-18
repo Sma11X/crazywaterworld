@@ -76,7 +76,7 @@ export const DEFAULT_SETTINGS = {
   radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
   pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, checkEverySeconds: 15 },
-  treasure: { enabled: false, autoJoin: false, onlyTenThousand: false, follow: false, fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
+  treasure: { enabled: false, autoJoin: false, onlyTenThousand: false, follow: false, followMode: 'trigger', fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
     rewardItems: [], avoidNames: [], allowHostile: false, minDurabilityPercent: 80,
     maxProgress: 90, personalProgressLimit: 20, dailyDispatchLimit: 0, checkEverySeconds: 15, participationMode: 'untilFull', repeatAttack: false,
     autoRepair: false,
@@ -155,6 +155,7 @@ const constraints = {
   'treasure.personalProgressLimit': int(100),
   'treasure.dailyDispatchLimit': int(1000), 'treasure.checkEverySeconds': int(300, 5),
   'treasure.avoidPlayerIds': strings(100), 'treasure.participationMode': { kind: 'choice', values: ['untilFull', 'always'] },
+  'treasure.followMode': { kind: 'choice', values: ['trigger', 'eachTime'] },
   'treasure.marchTargetSeconds': int(3600), 'treasure.dailyDiamondLimit': int(100000000),
   'treasure.fallbackAfter': { kind: 'time' }, 'treasure.fallbackTargetRewards': int(100, 1),
   'treasure.fallbackQualities': { ...strings(2), values: ['PURPLE', 'BLUE'] },
@@ -303,6 +304,10 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   // An already-open settings page can still submit the retired fields.
   // Ignore only these known fields; every other setting remains strict.
   input = migrateVersion10Settings(migrateVersion9Settings(migrateVersion8Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input)))))))));
+  // Additive follow preference: keep the existing behavior for older saved files and open pages.
+  if (plain(input) && plain(input.treasure) && !Object.hasOwn(input.treasure, 'followMode')) {
+    input = { ...input, treasure: { ...input.treasure, followMode: DEFAULT_SETTINGS.treasure.followMode } };
+  }
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
