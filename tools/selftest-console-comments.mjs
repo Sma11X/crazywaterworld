@@ -216,6 +216,7 @@ try {
     f.player.worldId = 9001;
     session.client = f.client; session.player = f.player; session.paused = false;
     session.preferences = defaultSettings();
+    session.preferences.loop.world = true;
     session.preferences.building.enabled = session.preferences.factory.enabled = session.preferences.resident.enabled = false;
     session.preferences.factory.demandFirst = false;
     Object.assign(session.preferences.farm, { enabled: true, autoPlant: false, customPlant: true, harvest: false, speedUp: true, crops: [{ id: '小麦', target: 10 }] });

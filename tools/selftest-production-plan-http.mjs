@@ -95,6 +95,11 @@ async function fixture() {
   store.activeId = id;
   saveStore(store);
   const settings = defaultSettings();
+  settings.loop.world = true;
+  Object.assign(settings.factory, { enabled: true, produce: true, demandFirst: true });
+  Object.assign(settings.building, { enabled: true, build: true, upgrade: true });
+  Object.assign(settings.farm, { harvest: true, autoPlant: true });
+  settings.weekOrder.enabled = true;
   settings.factory.keepStock = 0;
   settings.factory.demandPriority = [];
   settings.farm.enabled = true;

@@ -35,6 +35,8 @@ function fixture(route, mode) {
   client.connected = true;
   client.on('diagnostic', event => { if (event.event === 'operation') events.push(event); });
   const settings = defaultSettings();
+  settings.loop.world = settings.gather.enabled = true;
+  settings.dailies.enabled = settings.dailies.claimTasks = true;
   settings.gather.upgradeFishing = settings.gather.upgradeDiving = true;
   settings.resources.allowDiamonds = true;
   const ledger = createUsageLedger('fixture', { file: path.join(directory, ++serial + '.json') });
@@ -90,6 +92,8 @@ function fixture(route, mode) {
 function delayedFixture() {
   const player = { playerId: 99010000 + ++serial, worldId: 9999901, level: 40 };
   const settings = defaultSettings(); settings.pet.enabled = settings.pet.advance = true;
+  settings.loop.world = settings.gather.enabled = true;
+  settings.building.enabled = settings.building.upgrade = true;
   settings.gather.upgradeFishing = true;
   const events = [], client = new EventEmitter(); client.connected = true;
   client.on('diagnostic', event => { if (event.event === 'operation') events.push(event); });

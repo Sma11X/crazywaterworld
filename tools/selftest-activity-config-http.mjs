@@ -175,11 +175,11 @@ try {
 
   await test('商人活动配置在未连接时读取默认值和旧挂机选择', async () => {
     const defaults = ok(await api('week-order/settings', null, 'merchant-default'));
-    assert.deepEqual(defaults.settings, { enabled: true, autoSubmit: false, allowDiamonds: false, autoFinal: true });
+    assert.deepEqual(defaults.settings, { enabled: false, autoSubmit: false, allowDiamonds: false, autoFinal: false });
     assert.equal(defaults.revision, 0);
     assert.equal(typeof defaults.baseRevision, 'string');
     const legacy = ok(await api('week-order/settings', null, 'merchant-legacy'));
-    assert.deepEqual(legacy.settings, { enabled: true, autoSubmit: true, allowDiamonds: false, autoFinal: false });
+    assert.deepEqual(legacy.settings, { enabled: false, autoSubmit: true, allowDiamonds: false, autoFinal: false });
     for (const id of ['merchant-default', 'merchant-legacy']) {
       assert.equal(app.sessions.get(id).client, null);
       assert.equal(app.sessions.get(id).loop.running, false);
@@ -219,7 +219,7 @@ try {
     assert.equal(session.loop.running, false);
   });
 
-  await test('商人活动版本冲突和首存挂机快照冲突均不覆盖当前值', async () => {
+  await test('新账号旧任务入口保存完整配置，版本冲突不覆盖当前值', async () => {
     const stale = ok(await api('week-order/settings', null, 'merchant-default'));
     ok(await api('loop/task', { key: 'weekOrderSubmit', enabled: true, confirm: true }, 'merchant-default'));
     const baseConflict = await api('week-order/settings', {
@@ -228,7 +228,7 @@ try {
     assert.equal(baseConflict.status, 400);
     assert(baseConflict.data.fields.revision);
     let current = ok(await api('week-order/settings', null, 'merchant-default'));
-    assert.equal(current.revision, 0);
+    assert.equal(current.revision, stale.revision + 1);
     assert.equal(current.settings.autoSubmit, true);
     assert.equal(current.settings.allowDiamonds, false);
     const first = ok(await api('week-order/settings', {
@@ -298,13 +298,13 @@ try {
     assert.equal(view.settings['heroRaid.enabled'], false);
     assert.equal(view.settings['guildShip.enabled'], false);
     for (const { key } of activityAutomationFields.filter(control => !['heroRaid.enabled', 'guildShip.enabled'].includes(control.key))) {
-      assert.equal(view.settings[key], true, key);
+      assert.equal(view.settings[key], false, key);
     }
     const legacy = ok(await api('activities/settings', null, 'activity-legacy'));
     assert.equal(legacy.revision, 4);
     assert.equal(legacy.settings['heroRaid.enabled'], true);
-    assert.equal(legacy.settings['merchant.enabled'], true);
-    assert.equal(legacy.settings['weekOrder.enabled'], true);
+    assert.equal(legacy.settings['merchant.enabled'], false);
+    assert.equal(legacy.settings['weekOrder.enabled'], false);
     const all = ok(await api('settings', null, 'activity-legacy'));
     assert.equal(all.settings.schedule.merchantTrade, true);
     assert.equal(all.settings.schedule.weekOrderSubmit, true);

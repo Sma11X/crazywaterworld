@@ -31,6 +31,8 @@ try {
       assert(rules.controlFields.includes(group + '.runEnabled'));
       assert(!rules.controlFields.includes(group + '.enabled'));
       const defaults = defaultSettings();
+      assert.equal(defaults[group].runEnabled, false);
+      defaults[group].runEnabled = true;
       assert.match(automationControlView(defaults).find(c => c.key === group + '.runEnabled').configurationNote, /尚未选择执行动作/);
       defaults.schedule[keys[0]] = true;
       assert.equal(automationControlView(defaults).find(c => c.key === group + '.runEnabled').configurationNote, '');
@@ -38,7 +40,7 @@ try {
   });
   await check('开关往返保留混合细项，旧入口修改不偷偷重开，阻断原因可见', () => {
     for (const [group, keys] of Object.entries(pairs)) {
-      const s = defaultSettings(); s[group].enabled = true; s.schedule[keys[0]] = false; s.schedule[keys[1]] = true;
+      const s = defaultSettings(); s.loop.world = true; s[group].runEnabled = s[group].enabled = true; s.schedule[keys[0]] = false; s.schedule[keys[1]] = true;
       const original = structuredClone(s), off = setAutomationControl(s, group + '.runEnabled', false);
       assert.deepEqual(off, { ...original, [group]: { ...original[group], runEnabled: false } });
       assert.deepEqual(setAutomationControl(off, group + '.runEnabled', true), original);
@@ -52,7 +54,7 @@ try {
         assert(views.find(c => c.key === key).blockedBy.some(label => label.includes('总开关')));
     }
   });
-  await check('旧账号读取、旧导入和原任务迁移保持原行为，显式关闭持久保存', () => {
+  await check('旧账号读取和导入保留任务选择，缺省总开关关闭且显式值持久保存', () => {
     const old = validateSettings(defaultSettings());
     old.schedule.museumExplore = true; old.schedule.museumCollect = false;
     old.schedule.radarAuto = false; old.schedule.radarRepair = true;
@@ -64,17 +66,17 @@ try {
     assert.deepEqual(fs.readFileSync(file), original);
     const imported = importAutomationSettings({ format: 'crazywaterworld-automation', version: 1, settings: old });
     for (const group of Object.keys(pairs)) {
-      assert.deepEqual(loaded.settings[group], { runEnabled: true, ...old[group] });
-      assert.deepEqual(imported[group], { runEnabled: true, ...old[group] });
-      imported[group].runEnabled = false;
-      assert.equal(importAutomationSettings(exportAutomationSettings(imported))[group].runEnabled, false);
+      assert.deepEqual(loaded.settings[group], { runEnabled: false, ...old[group] });
+      assert.deepEqual(imported[group], { runEnabled: false, ...old[group] });
+      imported[group].runEnabled = true;
+      assert.equal(importAutomationSettings(exportAutomationSettings(imported))[group].runEnabled, true);
       const invalid = defaultSettings(); invalid[group].runEnabled = 'false'; assert.throws(() => validateSettings(invalid));
-      assert.equal(settingsFromNative(old.schedule)[group].runEnabled, true);
+      assert.equal(settingsFromNative(old.schedule)[group].runEnabled, false);
     }
     assert.deepEqual(imported.schedule, old.schedule);
   });
   await check('暂停博物馆时无详细计划、补料或旧计划写入，结算后暂停也不继续领奖', async () => {
-    const settings = defaultSettings(); settings.museum.enabled = true;
+    const settings = defaultSettings(); settings.loop.world = settings.museum.runEnabled = settings.museum.enabled = true;
     const config = { tables: { MuseumAchievementCfg: { data: [{ score: 100 }] } } };
     const snapshot = { notes: [], choices: [], raids: [], world: { stock: new Map(), buildings: [], factories: [] }, now: 1000,
       player: { level: 35 }, heroes: [], museum: { popularity: 100, exploreStages: [], exhibitions: [] } };
@@ -88,7 +90,7 @@ try {
     const guard = createActionGuard(client, () => settings);
     await assert.rejects(guard.before(plan.actions[0]), /设置已关闭/);
     assert.deepEqual(await runBaseAutomation(client, { MuseumClaimAchievementRequest: {} }, config, plan, { getSettings: () => settings }), []);
-    const f = pirateAdvanceFixture(); f.settings.museum.enabled = true;
+    const f = pirateAdvanceFixture(); f.settings.loop.world = f.settings.museum.runEnabled = f.settings.museum.enabled = true;
     f.client.request = async name => {
       assert.equal(name, 'MuseumCompleteExploreRequest'); f.settings.museum.runEnabled = false; f.client.writes.push(name); return { grade: 1 };
     };
@@ -118,7 +120,7 @@ try {
   });
   await check('情报预览与调度意向跟随总开关，关闭后保留真实和未知出征占用', () => {
     const f = pirateAdvanceFixture(), settings = f.settings;
-    Object.assign(settings.radar, { enabled: true, fleetIds: ['1远征船'], petrolReserve: 0 });
+    Object.assign(settings.radar, { enabled: true, runEnabled: true, fleetIds: ['1远征船'], petrolReserve: 0 });
     const ledger = createUsageLedger('radar-preview', { file: path.join(directory, 'radar-preview-usage.json') });
     const snapshot = { world: '1001001', fuel: 3000, cost: 500, stock: new Map([['汽油', 3000]]), fleets: [f.fleet], buildings: [f.building],
       events: [{ uid: '9001', eventId: 10001, state: 1, createTime: 10, pirate: { type: 1, level: 1 } }, { uid: '9002', eventId: 10002, state: 4, createTime: 20 }] };

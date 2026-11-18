@@ -205,6 +205,7 @@ await test('广告任务仍独立开关，无权益策略默认开启且兼容�
   closed.loop.world = false;
   for (const key of ['adSpeedUpProduce', 'adSpeedUpBuilding', 'adSpeedUpMuseum']) assert.equal(nativePreferenceEnabled(closed, key), false, key);
   const open = defaultSettings();
+  open.loop.world = true;
   open.factory.enabled = false;
   assert.equal(nativePreferenceEnabled(open, 'adSpeedUpProduce'), false);
   assert.deepEqual(automationControlView(open).find(c => c.key === 'schedule.adSpeedUpProduce').blockedBy, ['工厂总开关']);
@@ -411,7 +412,7 @@ await test('基地阶段先执行广告加速，同轮加速器计划按缩短�
   c.settings.dailies.enabled = false;
   c.settings.resident.rewards = false;
   Object.assign(c.settings.schedule, { adSpeedUpProduce: true, speedUp: true });
-  c.settings.factory.speedUp = true;
+  c.settings.factory.enabled = c.settings.factory.speedUp = true;
   await runLoop(f.client, p, { config, player: c.ctx.player, adChannel: { clientInfo: c.ctx.clientInfo, language: c.ctx.language }, allowMutate: true, rounds: 1, everyMs: 0,
     getSettings: () => c.settings, isEnabled: key => ['adSpeedUpProduce', 'speedUp'].includes(key), usageLedger: c.ledger });
   const speedUps = f.state.writes.filter(row => row.name === 'SpeedUpFactoryProduceRequest');

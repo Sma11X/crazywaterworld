@@ -53,6 +53,11 @@ function survey(stock = {}, buildings = [], orders = []) {
 }
 function quiet() {
   const settings = defaultSettings();
+  // 行为测试显式授权相关模块，具体动作仍由各测试逐项开启。
+  settings.loop.world = settings.loop.dailies = true;
+  settings.building.enabled = settings.factory.enabled = true;
+  settings.factory.demandFirst = true;
+  settings.museum.runEnabled = settings.gather.enabled = true;
   settings.building.build = settings.building.upgrade = settings.building.speedUp = false;
   settings.factory.produce = settings.factory.speedUp = false;
   settings.resident.enabled = false;
@@ -67,7 +72,7 @@ try {
     const initial = defaultSettings(); assert.deepEqual(validateSettings(initial).building, initial.building);
     const a = defaultSettings(); a.resources.diamondDailyLimit = -1; assert.throws(() => validateSettings(a), /整数/);
     const b = defaultSettings(); b.building.enabled = 'false'; assert.throws(() => validateSettings(b), /true 或 false/);
-    const c = defaultSettings(); c.farm.customPlant = true; assert.throws(() => validateSettings(c), /只能开启一种/);
+    const c = defaultSettings(); c.farm.autoPlant = c.farm.customPlant = true; assert.throws(() => validateSettings(c), /只能开启一种/);
     const d = defaultSettings(); d.factory.demandPriority = []; d.factory.speedUpSources = ['cargo']; assert.throws(() => validateSettings(d), /加速来源/);
     assert.throws(() => validateSettings(JSON.parse('{"__proto__":{"polluted":true}}'), { partial: true }), /不支持/);
     assert.equal({}.polluted, undefined);
@@ -282,7 +287,7 @@ try {
   await check('中小货轮兜底设置校验、旧版迁移和奖励顺序持久化', () => {
     const initial = defaultSettings();
     assert.equal(initial.treasure.fallbackEnabled, false);
-    assert.equal(initial.treasure.onlyTenThousand, true);
+    assert.equal(initial.treasure.onlyTenThousand, false);
     assert.equal(initial.treasure.fallbackAfter, '21:00');
     assert.equal(initial.treasure.fallbackTargetRewards, 3);
     assert.deepEqual(initial.treasure.fallbackQualities, ['PURPLE', 'BLUE']);
@@ -385,8 +390,8 @@ try {
     for (const key of keys) delete oldDocument.settings.schedule[key];
     const restored = importAutomationSettings(oldDocument);
     for (const key of ['guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft', 'museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'weekLotterySpin', 'weekOrderSubmit', 'merchantTrade', 'beautyVotes', 'compassSpin']) assert.equal(restored.schedule[key], false, key);
-    assert.equal(restored.schedule.weekOrderFinal, true);
-    assert.equal(restored.schedule.vipDaily, true);
+    assert.equal(restored.schedule.weekOrderFinal, false);
+    assert.equal(restored.schedule.vipDaily, false);
   });
 
   await check('每日额度持久化、跨账号、跨日、未知结果和发送前取消', () => {
@@ -422,6 +427,7 @@ try {
 
   await check('活动总开关关闭后停止不差钱与超凡英雄备料，重新开启沿用需求选择', () => {
     const settings = quiet(); settings.factory.produce = true; settings.factory.keepStock = 0;
+    settings.weekOrder.enabled = true;
     const state = survey({ 木材: 20 }, [building('食品厂', { factory: { factoryQ: [], finishedProducts: [] } })]);
     state.weekOrder.set('产品甲', 2);
     const extraDemand = [{ source: 'heroRaid', requirements: [{ id: '产品乙', num: 2 }] }];
@@ -643,6 +649,7 @@ try {
       HeroUpgradeCfg: table([{ level: 1, reqPlayerLv: 1, exp: 0 }, { level: 2, reqPlayerLv: 1, exp: 20 }, { level: 3, reqPlayerLv: 1, exp: 30 }]),
       HeroStarCfg: table([{ star: 1, consumeBlue: 2, maxSkillLevel: [1, 1, 1, 1] }]), HeroSkillUpCfg: table([]) } };
     const settings = defaultSettings(); settings.heroes.keepExp = 50; settings.heroes.targetLevel = 3; settings.heroes.star = false;
+    settings.heroes.enabled = settings.heroes.level = settings.heroes.skill = true;
     settings.heroes.heroIds = ['甲'];
     const plan = planHeroes({ config: cfg, heroes: [{ heroId: '甲', level: 1, star: 0, skillLevels: [1] }], playerLevel: 10, itemNum: id => id === '英雄经验' ? 70 : 100, settings });
     assert.equal(plan.steps.find(step => step.kind === 'level').to, 2); assert.ok(!plan.steps.some(step => step.kind === 'star'));

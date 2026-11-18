@@ -21,6 +21,7 @@ function fixture() {
   const reports = [];
   let enabled = true;
   f.settings.schedule.merchantTrade = true;
+  f.settings.merchant.enabled = true;
   f.settings.merchant.autoShareIntel = true;
   f.state.markets[10].isReport = false;
   const ctx = {
@@ -297,7 +298,7 @@ try {
       (name, body) => f.client.request(name + 'Request', body, name + 'Response'), f.ctx.ledger, f.settings);
     assert.equal(f.state.writes.length, 0);
   });
-  await test('仅领奖入口不会因默认开启共享而上报商情', async () => {
+  await test('仅领奖入口不会因已开启共享而上报商情', async () => {
     const f = fixture(); f.ctx.key = 'merchantRewards';
     await f.trade();
     assert.equal(f.sent().length, 0);

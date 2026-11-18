@@ -40,6 +40,7 @@ const config = { tables: Object.fromEntries(Object.entries(tables).map(([key, da
 
 function fixture() {
   const settings = defaultSettings();
+  Object.assign(settings.heroes, { enabled: true, level: true, star: true, skill: true });
   settings.heroes.heroIds = ['甲'];
   for (const key of newActions) settings.heroes[key] = true;
   const hero = { heroId: '甲', level: 1, star: 24, skillLevels: [5, 1], exclusive: { level: 1, star: 0 },

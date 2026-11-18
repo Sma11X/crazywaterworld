@@ -19,6 +19,8 @@ const test = async (name, run) => { await run(); passed++; console.log('通过�
 
 async function fixture() {
   const player = { playerId: ++serial, worldId: 1, level: 40 }, settings = defaultSettings();
+  settings.loop.world = true;
+  Object.assign(settings.factory, { enabled: true, produce: true });
   const config = { tables: {
     BuildingCfg: { data: [{ buildingType: '材料厂' }] },
     BuildingProduceCfg: { data: ['旧产品', '新产品'].map(itemId => ({ buildType: '材料厂', itemId, unlockLevel: 1, costItem: [['木材', 1]] })) },

@@ -28,7 +28,7 @@ try {
     const file = path.join(directory, 'legacy.json'); fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { legacy: { settings: old, revision: 17 } } }));
     const original = fs.readFileSync(file), loaded = loadAutomationSettings('legacy', { file });
     assert.equal(loaded.revision, 17); assert.equal(loaded.settings.treasure.minDurabilityPercent, 91); assert.deepEqual(loaded.settings.treasure.followNames, ['原有名单']);
-    assert.equal(loaded.settings.treasure.participationMode, 'untilFull'); assert.equal(loaded.settings.treasure.autoRepair, true); assert.equal(loaded.settings.treasure.repeatAttack, true); assert.deepEqual(fs.readFileSync(file), original);
+    assert.equal(loaded.settings.treasure.participationMode, 'untilFull'); assert.equal(loaded.settings.treasure.autoRepair, false); assert.equal(loaded.settings.treasure.repeatAttack, false); assert.deepEqual(fs.readFileSync(file), original);
     const imported = importAutomationSettings({ format: 'crazywaterword-automation', version: 1, settings: old }); assert.deepEqual(imported, loaded.settings);
     for (const [key, value] of [['participationMode', 'bad'], ['maxRepairCost', -1], ['dailyRepairPetrolLimit', -1], ['avoidPlayerIds', ['9e16']], ['avoidPlayerIds', ['9223372036854775808']]]) {
       const s = defaultSettings(); s.treasure[key] = value; assert.throws(() => validateSettings(s));
@@ -242,7 +242,7 @@ try {
       b.state.members.titleList = [{ guildTitle: 2, members: [{ playerId: '9007199254741099', nickname: '乙账号盟友', guildTitle: 2 }] }]; b.state.members.total = 1;
       for (const [id, f] of [['cycle-a', a], ['cycle-b', b]]) Object.assign(app.sessions.get(id), { client: f.client, player: f.player, paused: false });
       assert.equal((await api('cycle-a', '/api/settings/players')).body.members.length, 3); assert.equal((await api('cycle-b', '/api/settings/players')).body.members[0].name, '乙账号盟友');
-      const s = initial.settings; Object.assign(s.treasure, { enabled: true, follow: true, followPlayerIds: ['9007199254740995'], avoidPlayerIds: ['9007199254740997'], fleetIds: ['1远征船'], participationMode: 'always' });
+      const s = initial.settings; Object.assign(s.treasure, { enabled: true, autoRepair: true, follow: true, followPlayerIds: ['9007199254740995'], avoidPlayerIds: ['9007199254740997'], fleetIds: ['1远征船'], participationMode: 'always' });
       const saved = await api('cycle-a', '/api/settings', { settings: s, revision: initial.revision, baseRevision: initial.baseRevision }); assert.equal(saved.status, 200);
       assert.equal((await api('cycle-b', '/api/settings')).body.settings.treasure.participationMode, 'untilFull');
       assert.deepEqual(importAutomationSettings(exportAutomationSettings(saved.body.settings)).treasure, s.treasure);

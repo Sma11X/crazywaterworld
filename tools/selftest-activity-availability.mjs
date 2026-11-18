@@ -212,6 +212,7 @@ try {
     other.subActivity[0].dailyActive = { checkInId: [] };
     const f = loopFixture([other, row]);
     f.settings.schedule.festivalSign = true;
+    f.settings.activityAutomation.festivalDaily = true;
     f.client.request = async (name, body) => {
       f.calls.push(name);
       assert.equal(name, 'ClaimActivityDailyCheckInRewardRequest');
@@ -236,6 +237,7 @@ try {
     row.subActivity[0].dailyActive = { checkInId: [] };
     const fixture = loopFixture([row]);
     fixture.settings.schedule.festivalSign = true;
+    fixture.settings.activityAutomation.festivalDaily = true;
     const writes = [];
     fixture.client.request = async name => {
       assert.equal(name, 'ClaimActivityDailyCheckInRewardRequest');

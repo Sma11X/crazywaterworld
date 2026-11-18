@@ -404,6 +404,9 @@ try {
   assert.equal(loadStore().accounts[0].automation.autoStart, false);
   assert.equal((await accountApi('loop')).running, false);
   assert.equal(connections.length, beforeSaveConnections, '新账号保存和读取状态不启动挂机连接');
+  const configured = await accountApi('settings');
+  configured.settings.schedule.mail = true;
+  await accountApi('settings', { settings: configured.settings, revision: configured.revision, baseRevision: configured.baseRevision });
   await accountApi('accounts/pause', { paused: false, start: true });
   const initialSession = await waitForLoop('fixture-game-id', 3000000002);
   assert.equal(initialSession.loop.rounds, 0);

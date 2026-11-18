@@ -10,7 +10,11 @@ const config = { tables: {
 
 function fixture() {
   const settings = defaultSettings();
-  settings.farm.enabled = true;
+  settings.loop.world = true;
+  Object.assign(settings.factory, { enabled: true, produce: true, demandFirst: true });
+  Object.assign(settings.farm, { enabled: true, harvest: true, autoPlant: true });
+  Object.assign(settings.building, { enabled: true, build: true, upgrade: true });
+  settings.weekOrder.enabled = true;
   settings.factory.keepStock = 0;
   const snapshot = { serverNow: 1000, complete: true, missingReads: [], config: {},
     inventory: [{ id: '小麦', num: 10 }, { id: '小麦种子', num: 10 }], stockCap: 50,

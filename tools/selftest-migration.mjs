@@ -73,6 +73,11 @@ for (const [name, keys] of wakeups) {
 
 const legacyKeys = ['guildOrders', 'radarAuto', 'radarRepair',
   'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
+function legacyServiceSettings() {
+  const settings = defaultSettings();
+  settings.radar.runEnabled = settings.museum.runEnabled = true;
+  return settings;
+}
 function loopFixture() {
   const client = new EventEmitter(), reads = [], reports = [];
   let queued = false;
@@ -101,7 +106,7 @@ function loopFixture() {
   return { client, reads, reports, options };
 }
 
-for (const getSettings of [() => null, () => defaultSettings()]) {
+for (const getSettings of [() => null, legacyServiceSettings]) {
   const f = loopFixture();
   await runLoop(f.client, {}, { ...f.options, getSettings, isEnabled: key => legacyKeys.includes(key) });
   for (const key of legacyKeys) {
@@ -119,7 +124,7 @@ for (const settings of [null, defaultSettings()]) {
   assert.deepEqual(f.reports, [], '退役装备入口不应继续执行或显示接管状态');
 }
 
-for (const getSettings of [() => null, () => defaultSettings()]) {
+for (const getSettings of [() => null, legacyServiceSettings]) {
   const f = loopFixture();
   const keys = ['seasonTasks', 'crossRankDaily', 'passStageRewards', 'guildAidCollect', 'museumRevenue'];
   const reward = { reward: { asset: [{ type: 0, id: '木材', num: 1 }] } };
@@ -164,7 +169,9 @@ for (const getSettings of [() => null, () => defaultSettings()]) {
 }
 
 {
-  const f = loopFixture(), settings = defaultSettings();
+  const f = loopFixture(), settings = legacyServiceSettings();
+  settings.loop.world = true;
+  settings.heroes.enabled = true;
   const controlled = ['radarAuto', 'radarRepair', 'museumCollect',
     'museumExplore', 'museumAchievements', 'petCollect', 'petBreed', 'treasureLoot', 'heroGrowth'];
   settings.radar.enabled = settings.forge.enabled = settings.museum.enabled = settings.pet.enabled = true;

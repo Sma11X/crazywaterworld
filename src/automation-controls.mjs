@@ -53,7 +53,7 @@ for (const task of automationTasks) {
  const gates = task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
  if (['museumCollect','museumExplore'].includes(task.key)) gates.push('museum.runEnabled');
  if (['radarAuto','radarRepair'].includes(task.key)) gates.push('radar.runEnabled');
- add('schedule.'+task.key,task.label,group,{gates,taskKey:task.key,...(task.key==='pirate'?{help:'在游戏配置 → 世界 → 海盗日常扫荡选择种类。只使用每日免费次数，无需派舰队，不消耗汽油；与首杀配置独立。'}:{}),...(task.key==='guildTitleReward'?{help:'默认开启，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
+ add('schedule.'+task.key,task.label,group,{gates,taskKey:task.key,...(task.key==='pirate'?{help:'在游戏配置 → 世界 → 海盗日常扫荡选择种类。只使用每日免费次数，无需派舰队，不消耗汽油；与首杀配置独立。'}:{}),...(task.key==='guildTitleReward'?{help:'默认关闭，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
 }
 // 模块主控与细项在同一配置分组编辑；主控仍保留独立的保存字段。
 const idleModules = {

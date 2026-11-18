@@ -20,6 +20,9 @@ const config = { tables: {
 
 function fixture() {
   const settings = defaultSettings();
+  settings.loop.world = settings.weekOrder.enabled = true;
+  Object.assign(settings.factory, { enabled: true, produce: true, demandFirst: true });
+  Object.assign(settings.building, { enabled: true, build: true, upgrade: true });
   settings.factory.keepStock = 0;
   settings.factory.demandPriority = ['merchant', 'cargo', 'resident'];
   settings.heroRaid.enabled = true;

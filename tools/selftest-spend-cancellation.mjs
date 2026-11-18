@@ -26,6 +26,10 @@ const asset = (id, num) => ({ type: 0, id, num });
 function fixture(mode, route) {
   const player = { playerId: ++serial, worldId: 1000001, level: 40, guildId: 1 };
   const settings = defaultSettings();
+  settings.loop.world = true;
+  Object.assign(settings.heroes, { enabled: true, level: true, star: true });
+  Object.assign(settings.building, { enabled: true, build: true });
+  settings.resident.enabled = settings.factory.enabled = settings.museum.runEnabled = true;
   settings.heroes.heroIds = ['A'];
   settings.pet.enabled = settings.pet.advance = settings.cargo.enabled = true;
   settings.museum.enabled = settings.museum.useGuide = true;

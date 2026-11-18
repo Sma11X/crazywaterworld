@@ -11,7 +11,7 @@ import {
 import { MERCHANT_DEFAULTS, merchantSettings } from '../src/merchant-planner.mjs';
 
 const defaults = {
-  autoShareIntel: true,
+  autoShareIntel: false,
   quoteMaxAgeSeconds: 300, estimateDiscountPercent: 10, refreshWaitSeconds: 120, liquidationMinutes: 120,
   maxLossPercent: 0, minExpectedProfit: 1, autoSpeedUp: false, speedUpMinProfit: 1000, keepPointers: 0,
   speedUpMode: 'profit', speedUpMaxPerLeg: 4, monitorSeconds: 60,
@@ -24,11 +24,11 @@ const test = (name, run) => { run(); passed++; console.log('通过：' + name); 
 
 test('保守默认值与独立开关，不因新增策略开启走商或指针消费', () => {
   const settings = defaultSettings();
-  assert.deepEqual(settings.merchant, { enabled: true, ...defaults });
+  assert.deepEqual(settings.merchant, { enabled: false, ...defaults });
   assert.deepEqual(MERCHANT_DEFAULTS, defaults);
   assert.deepEqual(merchantSettings(), defaults);
   assert.equal(settings.schedule.merchantTrade, false);
-  assert.equal(settings.merchant.autoShareIntel, true);
+  assert.equal(settings.merchant.autoShareIntel, false);
   assert.equal(settings.merchant.autoSpeedUp, false);
   assert.deepEqual(validateSettings(settings).merchant, settings.merchant);
   settings.merchant.maxLossPercent = 12;
@@ -45,7 +45,7 @@ test('旧版导入补齐策略参数，保留走商及领奖的显式开关', ()
       document.settings.schedule.merchantRewards = !enabled;
       const before = structuredClone(document);
       const restored = importAutomationSettings(document);
-      assert.deepEqual(restored.merchant, { enabled: true, ...defaults });
+      assert.deepEqual(restored.merchant, { enabled: false, ...defaults });
       assert.equal(restored.schedule.merchantTrade, enabled);
       assert.equal(restored.schedule.merchantRewards, !enabled);
       assert.deepEqual(document, before, '迁移不得修改导入对象');
@@ -54,7 +54,7 @@ test('旧版导入补齐策略参数，保留走商及领奖的显式开关', ()
   const document = exportAutomationSettings(defaultSettings());
   document.settings.merchant = { autoSpeedUp: true, maxLossPercent: 5, keepPointers: 3 };
   assert.deepEqual(importAutomationSettings(document).merchant, {
-    enabled: true, ...defaults, autoSpeedUp: true, maxLossPercent: 5, keepPointers: 3
+    enabled: false, ...defaults, autoSpeedUp: true, maxLossPercent: 5, keepPointers: 3
   });
 });
 
@@ -67,7 +67,7 @@ test('旧保存配置补默认，更新参数按账号隔离且导入导出不�
     old.schedule.merchantTrade = true;
     fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { old: { revision: 4, settings: old } } }));
     const loaded = loadAutomationSettings('old', { file });
-    assert.deepEqual(loaded.settings.merchant, { enabled: true, ...defaults });
+    assert.deepEqual(loaded.settings.merchant, { enabled: false, ...defaults });
     assert.equal(loaded.settings.schedule.merchantTrade, true);
     assert.equal(loaded.revision, 4);
     Object.assign(loaded.settings.merchant, {
@@ -81,7 +81,7 @@ test('旧保存配置补默认，更新参数按账号隔离且导入导出不�
     assert.deepEqual(importAutomationSettings(exportAutomationSettings(saved.settings)), loaded.settings);
     assert.equal(saved.settings.merchant.autoShareIntel, false, '显式关闭共享须跨保存和导入保留');
     assert.equal(merchantSettings(saved.settings.merchant).autoShareIntel, false);
-    assert.deepEqual(loadAutomationSettings('new', { file }).settings.merchant, { enabled: true, ...defaults });
+    assert.deepEqual(loadAutomationSettings('new', { file }).settings.merchant, { enabled: false, ...defaults });
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
@@ -135,7 +135,7 @@ test('海商王活动配置完整接线，并说明估算、默认不亏卖和�
   assert.match(byKey.get('merchant.maxLossPercent').help, /不自动亏损/);
   assert.equal(byKey.get('merchant.autoSpeedUp').kind, 'switch');
   assert.equal(byKey.get('merchant.autoShareIntel').kind, 'switch');
-  assert.match(byKey.get('merchant.autoShareIntel').help, /仅随已开启的走商/);
+  assert.match(byKey.get('merchant.autoShareIntel').help, /默认关闭.*随已开启的走商/);
   assert.match(byKey.get('merchant.autoShareIntel').help, /已有共享直接跳过/);
   assert.match(byKey.get('merchant.autoShareIntel').help, /失败不阻塞买卖/);
   for (const key of ['speedUpMinProfit', 'keepPointers']) {

@@ -61,7 +61,7 @@ const configZeroHints={
 const merchantActivityFields = [
     configField('merchant.enabled','开启自动挂机'),
     configField('schedule.merchantTrade','按整船收益自动走商','switch',{help:'周期活动。按批次成本、资金、舱位和本港库存规划多商品组合，比较整船预期收益选港；没有成员共享紧缺货也可选择已知普通港口，本港盈利出售不依赖商情。远端价格可能是估算，到港重新核价；临近结束停止无法及时卖出的采购。'}),
-    configField('merchant.autoShareIntel','到港自动共享情报','switch',{help:'默认开启，仅随已开启的走商及所属分组执行。确认到港后共享本港尚未共享的紧缺情报，已有共享直接跳过；每日紧缺更新后重新检查，不按每次价格刷新重复发送。回读确认后才记为已共享，未知结果保留防重记录，失败不阻塞买卖；达到利润上限仍可共享当前港口。'}),
+    configField('merchant.autoShareIntel','到港自动共享情报','switch',{help:'默认关闭，手动开启后随已开启的走商及所属分组执行。确认到港后共享本港尚未共享的紧缺情报，已有共享直接跳过；每日紧缺更新后重新检查，不按每次价格刷新重复发送。回读确认后才记为已共享，未知结果保留防重记录，失败不阻塞买卖；达到利润上限仍可共享当前港口。'}),
     configField('schedule.tradeTasks','领取海商王联盟任务奖励','switch',{help:'保留原联盟任务领奖开关，按本期联盟任务达成进度自动领取。'}),
     configField('schedule.merchantRewards','领取战令、利润和联盟奖励','switch',{help:'按本期利润、战令分数、联盟任务进度和当日商情贡献领取已达成档。'}),
     configField('merchant.quoteMaxAgeSeconds','报价最长参考时间','number',{unit:'秒',help:'默认300秒。记录采集时间，过期或跨刷新时点的报价不能当作有效报价；到港仍须重新读取当前报价。'}),
@@ -199,15 +199,15 @@ const configGroups = [
     configField('schedule.riverHelp','走江助力 · 免费和广告礼包','switch',{help:'广告档要求当前渠道支持，无免广告权益时按“广告奖励”中的等待时间领取。'}),
     configField('schedule.festivalSign','酆都诡事 · 每日签到'),configField('schedule.festivalFreeGift','酆都诡事 · 免费特惠'),
     configField('schedule.festivalActiveRewards','酆都诡事 · 活跃奖励'),configField('schedule.edict','酆都法旨 · 解符'),configField('schedule.evilExpel','驱邪除祟 · 累计奖励'),
-    configField('schedule.edictPass','酆都法旨 · 法旨战令','switch',{help:'默认开启。只领取积分已达标的档位，不消耗贡品；已购通行证时一并领取对应奖励。'}),
+    configField('schedule.edictPass','酆都法旨 · 法旨战令','switch',{help:'默认关闭。只领取积分已达标的档位，不消耗贡品；已购通行证时一并领取对应奖励。'}),
     configField('schedule.compassDaily','龙王罗盘 · 每日免费礼包'),configField('schedule.compassReward','龙王罗盘 · 积分奖励'),
     configField('schedule.compassSpin','龙王罗盘 · 自动抽取'),
     configField('eventActions.compassThreshold','铜钱达到多少开始抽取','number',{ parent: 'schedule.compassSpin',unit:'枚',help:'每轮先核对活动、道具单价与库存，默认10枚。'}),
     configField('eventActions.compassDrawCount','每批最多抽取','choice',{ parent: 'schedule.compassSpin',numeric:true,options:[[1,'1次'],[5,'5次'],[10,'10次'],[50,'50次']],help:'按实际铜钱和游戏支持的批次选择，每轮最多一批。'}),
   ]},
   {id:'side-rewards',title:'漫剧 · 擂台赛 · 赛季宝箱',category:'daily',fields:[
-    configField('schedule.comicDrama','漫剧观看与每日奖励','switch',{help:'默认开启。已解锁的集数每轮最多处理 10 集，并在每天领取 1 次每日奖励；当天没有新集时重看最后一集以满足领取条件。'}),
-    configField('schedule.tournamentDailyGift','擂台赛每日礼包','switch',{help:'默认开启。只在擂台赛进行阶段按服务器记录每天领取 1 次，不参与投注和布阵。'}),
+    configField('schedule.comicDrama','漫剧观看与每日奖励','switch',{help:'默认关闭。已解锁的集数每轮最多处理 10 集，并在每天领取 1 次每日奖励；当天没有新集时重看最后一集以满足领取条件。'}),
+    configField('schedule.tournamentDailyGift','擂台赛每日礼包','switch',{help:'默认关闭。只在擂台赛进行阶段按服务器记录每天领取 1 次，不参与投注和布阵。'}),
     configField('schedule.seasonChest','赛季宝箱用钥匙开启','switch',{help:'默认关闭。每箱消耗服务器指定的 3 把钥匙，每轮最多 5 箱，钥匙不足时等待，不花钻石，也不发起钥匙交换。钥匙在进入新赛季时清零，建议赛季内开启。'}),
   ]},
   {id:'beauty-contest',title:'限时 · 海上风采大赛',category:'daily',fields:[
@@ -321,7 +321,7 @@ const configGroups = [
   ] },
   { id: 'treasure', title: '万吨巨轮', category: 'world', fields: [
     configField('treasure.enabled', '巨轮自动化总开关', 'switch', { help: '开始挂机后生效，独立于基地自动化。按所选舰队、参与模式和预算出征；耐久不足可先普通维修。不会召回、补油或修改编队。' }),
-    configField('treasure.onlyTenThousand', '只抢万吨货轮', 'switch', { help: '默认开启，普通规则仅参加游戏标记为橙色品质的万吨货轮。常规参加、跟随和旧版自动抢货轮均遵守。关闭后，普通规则也可参加游戏配置已确认的小型、中型货轮，其他筛选仍有效。另行开启下方中小货轮兜底后，可在设定时刻按兜底规则补足领奖次数。' }),
+    configField('treasure.onlyTenThousand', '只抢万吨货轮', 'switch', { help: '开启后，普通规则仅参加游戏标记为橙色品质的万吨货轮。常规参加、跟随和旧版自动抢货轮均遵守。关闭后，普通规则也可参加游戏配置已确认的小型、中型货轮，其他筛选仍有效。另行开启下方中小货轮兜底后，可在设定时刻按兜底规则补足领奖次数。' }),
     configField('treasure.autoJoin', '常规自动参加', 'switch', { when:d=>!d.treasure.follow, help:'仅在未开启指定跟随时生效。开启跟随后，首次出征必须匹配名单，不使用常规自动参加兜底；已确认的跟随按反复攻占设置接续。' }),
     configField('treasure.participationMode', '参与模式', 'radio', { options: [['untilFull', '打满就停'], ['always', '每次参与']], help: '打满就停：达到游戏今日领奖上限后不再派遣或维修。每次参与：领奖已满仍可参加，但不增加奖励次数，其他限制仍有效。' }),
     configField('treasure.repeatAttack', '反复攻占', 'switch', { help: '已确认出征后，被打回或返航且回到主城空闲时，可再次参与同一货轮。跟随模式下，同一舰队首次跟随出征确认后，维修和再次攻占不再等待跟随玩家；新货轮或未首次跟随成功的舰队仍需匹配名单。请求结果未知时继续等待确认。' }),
@@ -392,7 +392,7 @@ const configGroups = [
   ] },
   { id: 'cityWar', title: '联盟城战', category: 'world', fields: [
     configField('schedule.guildWelfare', '领取联盟福利礼包'),
-    configField('schedule.guildTitleReward', '联盟每日职级礼包', 'switch', { help:'默认开启。按服务器提供的可领取职级核对每日礼包，不以当前职位替代；确认奖励回执及当日领取时间后才记为成功。' }),
+    configField('schedule.guildTitleReward', '联盟每日职级礼包', 'switch', { help:'默认关闭。按服务器提供的可领取职级核对每日礼包，不以当前职位替代；确认奖励回执及当日领取时间后才记为成功。' }),
     configField('schedule.worldOnlineRewards', '领取城战在线奖励', 'switch', { help: '在服务器城战时段内，按实际计时逐档领取免费在线奖励。独立于下方城战接续开关；默认关闭，保存后随挂机检查，不自动启动挂机。请求结果未知时等待计数确认，不重复领取。' }),
     configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟城战”；不会宣战或改变集结目标。' }),
     configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队' }),

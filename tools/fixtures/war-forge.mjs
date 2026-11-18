@@ -11,7 +11,8 @@ export function warForgeSettings() {
   for (const key of Object.keys(s.schedule)) s.schedule[key] = false;
   Object.assign(s.loop, { world: false, tasks: false, dailies: false, heroes: false });
   s.resident.rewards = s.dailies.enabled = false;
-  Object.assign(s.cityWar, { enabled: true, fleetIds: ['1远征船', '2远征船'], dailyPetrolLimit: 20000, dailyDispatchLimit: 10 });
+  Object.assign(s.cityWar, { enabled: true, autoRepair: true, reserveDuringWar: true,
+    fleetIds: ['1远征船', '2远征船'], dailyPetrolLimit: 20000, dailyDispatchLimit: 10 });
   Object.assign(s.forge, { enabled: true, buildingIds: ['1装备厂'], recipeIds: ['1001'] });
   return s;
 }

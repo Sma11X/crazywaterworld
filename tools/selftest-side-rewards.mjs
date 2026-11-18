@@ -59,8 +59,8 @@ const writes = (client, ...names) => client.sent.filter((name) => names.includes
 
 const mainTask = { taskId: 1, progress: 0, rewardClaimed: false };
 
-await test('四项都有配置入口，免费项默认开启，消耗钥匙的赛季宝箱默认关闭', () => {
-  const expected = { edictPass: true, comicDrama: true, tournamentDailyGift: true, seasonChest: false };
+await test('四项都有配置入口，免费项与消耗钥匙的赛季宝箱均默认关闭', () => {
+  const expected = { edictPass: false, comicDrama: false, tournamentDailyGift: false, seasonChest: false };
   const settings = defaultSettings();
   for (const [key, initial] of Object.entries(expected)) {
     assert.equal(automationTasks.find((task) => task.key === key)?.initial, initial, key);
@@ -76,8 +76,8 @@ await test('旧账号配置补默认值，已有的显式开关不被覆盖', ()
   const restored = importAutomationSettings({ format: SETTINGS_FORMAT, version: 1, settings: saved });
   assert.equal(restored.schedule.comicDrama, false);
   assert.equal(restored.schedule.seasonChest, true);
-  assert.equal(restored.schedule.edictPass, true);
-  assert.equal(restored.schedule.tournamentDailyGift, true);
+  assert.equal(restored.schedule.edictPass, false);
+  assert.equal(restored.schedule.tournamentDailyGift, false);
 });
 
 const edictConfig = { tables: { LinkageLSREdictBattlePassCfg: { data: [
@@ -500,6 +500,8 @@ await test('四项经过真实整轮入口；赛季宝箱默认关闭时不读�
     ModuleOpenCfg: { data: [{ moduleId: '巅峰擂台赛', playerLevel: 18 }, { moduleId: '漫剧', playerLevel: 12 }] } } };
   const settings = defaultSettings();
   settings.loop.world = settings.loop.dailies = settings.loop.tasks = false;
+  Object.assign(settings.schedule, { edictPass: true, comicDrama: true, tournamentDailyGift: true });
+  settings.activityAutomation.edict = true;
   const entries = [];
   const run = (keys) => runLoop(f.client, protocol, { config, player, rounds: 1, allowMutate: true, isEnabled: (key) => keys.includes(key) && settings.schedule[key] === true, getSettings: () => settings, usageLedger: f.ledger, onStep: (entry) => entries.push(entry) });
   await run(['edictPass', 'comicDrama', 'tournamentDailyGift', 'seasonChest']);

@@ -11,6 +11,9 @@ let serial = 32000000, passed = 0;
 const test = async (name, work) => { await work(); passed++; console.log('通过：' + name); };
 function fixture() {
   const player = { playerId: ++serial, worldId: 1, level: 40, vip: { vipLevel: 0 } }, settings = defaultSettings();
+  settings.loop.world = true;
+  Object.assign(settings.factory, { enabled: true, produce: true, gain: true, demandFirst: true });
+  settings.weekOrder.enabled = true;
   const config = { tables: {
     BuildingCfg: { data: [{ buildingType: '材料厂' }] },
     BuildingProduceCfg: { data: [{ buildType: '材料厂', itemId: '产品甲', unlockLevel: 1, produceTime: 1, costItem: [['木材', 1]] },

@@ -35,6 +35,7 @@ let serial = 981600;
 function fixture() {
   const player = { playerId: ++serial, worldId: 1000001, guildId: 0, level: 30 };
   const settings = defaultSettings(); settings.cargo.enabled = true; settings.museum.enabled = true;
+  settings.loop.world = settings.museum.runEnabled = true;
   const f = {
     player, settings, connected: true, running: true,
     ledger: createUsageLedger(String(player.playerId), { file: path.join(directory, String(player.playerId) + '.json') }),

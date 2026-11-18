@@ -24,6 +24,7 @@ function integration({ mainEveryMs = 3600000 } = {}) {
   const f = seasonalFixture(), stop = { aborted: false }, sleeps = [], reports = [];
   Object.assign(f.settings.loop, { world: false, tasks: false, dailies: false, heroes: false, everySeconds: 3600 });
   f.settings.schedule.merchantTrade = true;
+  f.settings.merchant.enabled = true;
   f.settings.merchant.monitorSeconds = 60;
   const ledger = createUsageLedger('monitor-' + (++serial), { file: path.join(folder, serial + '.json') });
   let scheduled = 0, active = false, sleepHook = null, reportHook = null;

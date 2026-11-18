@@ -33,6 +33,7 @@ function fixture({ master = true, selected = nativeTasks, state = {}, time = '20
   const settings = defaultSettings();
   for (const key of Object.keys(settings.schedule)) settings.schedule[key] = false;
   Object.assign(settings.loop, { tasks: false, world: false, heroes: false, dailies: true });
+  settings.dailies.enabled = true;
   Object.assign(settings.weeklyActivity, { enabled: master, farmEnabled: true, petEnabled: true, heroEnabled: true });
   for (const key of nativeTasks) settings.schedule[key] = true;
   const before = structuredClone(settings);

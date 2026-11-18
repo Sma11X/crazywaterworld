@@ -29,7 +29,7 @@ function giftFixture(){
   return p[response].decode(p[response].encode(value).finish());
  };return {client,player,state};
 }
-await test('职级和限购默认开启，既有手动关闭值仍能正常保存',()=>{const s=defaultSettings();assert.equal(s.schedule.guildTitleReward,true);assert.equal(s.schedule.limitedFreeGifts,true);s.schedule.guildTitleReward=false;s.schedule.limitedFreeGifts=false;const saved=validateSettings(s);assert.equal(saved.schedule.guildTitleReward,false);assert.equal(saved.schedule.limitedFreeGifts,false);});
+await test('职级和限购默认关闭，手动开启值仍能正常保存',()=>{const s=defaultSettings();assert.equal(s.schedule.guildTitleReward,false);assert.equal(s.schedule.limitedFreeGifts,false);s.schedule.guildTitleReward=true;s.schedule.limitedFreeGifts=true;const saved=validateSettings(s);assert.equal(saved.schedule.guildTitleReward,true);assert.equal(saved.schedule.limitedFreeGifts,true);});
 await test('职级按服务器gotTitle领取并回读当日时间，当前myTitle不同不越级，每天一次',async()=>{
  const f=giftFixture(),l=ledger(),out=[],options={player:f.player,enabled:()=>true,ledger:l,report:e=>out.push(e)};
  await claimGuildTitleReward(f.client,config,options);await claimGuildTitleReward(f.client,config,options);assert.equal(f.state.writes.length,1);assert(out.some(e=>e.ok));assert.equal(Object.values(l.keyRecords())[0].details.title,1);

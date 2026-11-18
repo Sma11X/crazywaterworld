@@ -19,7 +19,7 @@ export const config={tables:{
 export function guildShipFixture(protocol,dir,{hour=8,minute=0,worldId='3000001'}={}){
   const now=Math.floor(Date.parse(`2026-11-14T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:00+08:00`)/1000);
   const player={playerId:String(9007199254741000n+BigInt(++serial)),worldId,guildId:'9007199254742000',level:30};
-  const settings=defaultSettings();settings.alliance.enabled=true;Object.assign(settings.guildShip,{enabled:true,crew:true,captain:true});settings.guildFort={enabled:true,materials:['耐火砖'],reserve:0,dailyLimit:0};
+  const settings=defaultSettings();settings.alliance.enabled=true;Object.assign(settings.guildShip,{enabled:true,crew:true,captain:true,coinFilter:true});settings.guildFort={enabled:true,materials:['耐火砖'],reserve:0,dailyLimit:0};
   const state={now,calls:[],writes:[],ships:[],ownRun:[],heroes:[{heroId:'英雄A',star:3,exclusive:{star:2}}],stock:{耐火砖:50,高温合金:50,橡胶圈:50},period:3,enabled:true,hook:async()=>{},writeHook:async()=>{},fort:{cityId:1,type:'挖沙船',state:0,process:[{itemId:'耐火砖',num:0},{itemId:'高温合金',num:0}]},dailyDonateNum:0,
     workerOrder:[],cargo:[],week:{activityTime:[]}};
   function ship({id=1,type=3,captain=true,coins=80,material='橡胶圈',num=5,reward='抽卡券',heroStar=5}={}){

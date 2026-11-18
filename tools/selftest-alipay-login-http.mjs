@@ -317,6 +317,13 @@ try {
   assert.equal(loadStore().accounts.find(row => row.id === idOfAccount).automation.autoStart, false);
   assert.equal(app.sessions.get(idOfAccount).loop.running, false);
   assert.equal(connections.length, beforeSaveConnections, '新账号保存后不启动挂机连接');
+  const settingsUrl = root + '/api/settings?account=' + encodeURIComponent(idOfAccount);
+  const configured = await fetch(settingsUrl).then(response => response.json());
+  configured.settings.schedule.mail = true;
+  const configuredResponse = await fetch(settingsUrl, {
+    method: 'POST', body: JSON.stringify({ settings: configured.settings, revision: configured.revision, baseRevision: configured.baseRevision }),
+  });
+  assert.equal(configuredResponse.status, 200);
   const started = await fetch(root + '/api/accounts/pause?account=' + encodeURIComponent(idOfAccount), {
     method: 'POST', body: JSON.stringify({ confirm: true, paused: false, start: true }),
   });

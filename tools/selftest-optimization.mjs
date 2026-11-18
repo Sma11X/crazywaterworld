@@ -28,6 +28,7 @@ const cfg={materialName:id=>id,tables:{BuildingCfg:{data:[{buildingType:'种子�
 const factory={buildingId:'1种子厂',type:'种子厂',level:1,buildStartTime:0,buildFinishTime:0,factory:{autoProductId:'小麦种子',factoryQ:[{productId:'小麦种子'}],finishedProducts:[]}};
 function survey(){const stock=new Map([['种子',10]]);return{now:100,serverNow:100,player:{level:30},stock,have:id=>stock.get(id)??0,buildings:[structuredClone(factory)],factories:[],orders:[],notes:[],weekOrder:new Map(),cargoOrder:new Map([['番茄',10]]),orderOfTheDay:{orderNum:0,rewardedNum:0},stockCap:50,factorySlots:1,population:1,futurePopulation:1,maxPopulation:10,autoProduceForever:true,autoProduceEndTime:0,cropIds:new Set(['番茄']),floaters:[],fleets:[]};}
 const s=defaultSettings();s.factory.cooperateNative=true;s.factory.demandPriority=['cargo'];s.building.build=s.building.upgrade=s.building.speedUp=s.factory.speedUp=false;s.resident.enabled=false;
+ s.loop.world=true;Object.assign(s.factory,{enabled:true,produce:true,demandFirst:true});
 const needs=[{source:'cargo',requirements:[{id:'番茄',num:10}]}];
 await test('作物缺口换算种子，已在田作物与种子队列扣除，避免重复补料',()=>{
  const v=survey();v.factories=[...v.buildings];
@@ -113,12 +114,12 @@ await test('原生目标必须回读确认；未知不重复；发送前关闭�
 await test('城战时段与高优先级手动首杀预留，过期或释放后可共享',()=>{
  const client={},settings=defaultSettings();reserveDispatch(client,'pirateHunt',['1远征船']);assert.match(dispatchReservationReason(client,settings,'radar','1远征船'),/首杀/);
  settings.fleetDispatch.priority=['radar','pirateHunt','treasure','cityWar'];assert.equal(dispatchReservationReason(client,settings,'radar','1远征船'),'');
- settings.cityWar.enabled=true;settings.cityWar.fleetIds=['1远征船'];reserveDispatch(client,'cityWar',['1远征船']);assert.match(dispatchReservationReason(client,settings,'radar','1远征船'),/城战/);
+ settings.cityWar.enabled=true;settings.cityWar.reserveDuringWar=true;settings.cityWar.fleetIds=['1远征船'];reserveDispatch(client,'cityWar',['1远征船']);assert.match(dispatchReservationReason(client,settings,'radar','1远征船'),/城战/);
  reserveDispatch(client,'cityWar',[]);reserveDispatch(client,'pirateHunt',['1远征船'],0);assert.equal(dispatchReservationReason(client,settings,'radar','1远征船'),'');
 });
 await test('情报0预算仍受实际库存、保留量和统一舰队预留限制，预览不写入',async()=>{
  const f=pirateAdvanceFixture();f.player.guildId='1001007';f.config.tables.ModuleOpenCfg.data.push({moduleId:'联盟情报',playerLevel:18});f.config.tables.WorldParamCfg.data.push({paramName:'情报事件消耗汽油',paramValue:500});
- const settings=f.settings;settings.radar={...settings.radar,enabled:true,fleetIds:['1远征船','2远征船'],dailyPetrolLimit:0,petrolReserve:0,types:['pirate']};
+ const settings=f.settings;settings.radar={...settings.radar,runEnabled:true,enabled:true,fleetIds:['1远征船','2远征船'],dailyPetrolLimit:0,petrolReserve:0,types:['pirate']};
  const fleets=[f.fleet,{...f.fleet,buildingId:'2远征船'}],events=[1,2].map(i=>({uid:String(9000+i),eventId:10001,gridIdx:100+i,state:1,createTime:10,pirate:{type:1,level:1}}));const original=f.client.request;
  f.client.request=async(n,b,r)=>n==='RadarInfoRequest'?{radarInfo:{events}}:n==='MyFleetsRequest'?{fleets}:n==='OnWaterRequest'?{building:fleets.map(v=>({...f.building,buildingId:v.buildingId}))}:n==='AllItemRequest'?{items:[{itemId:'汽油',num:800}]}:original(n,b,r);
  const ledger=createUsageLedger('test',{file:path.join(dir,'radar.json')});const snapshot=await readAllianceRadar(f.client,f.config,f.player);let plan=planRadarPreview(snapshot,settings,ledger,f.client);assert.equal(plan.actions.filter(a=>a.kind==='radarSend').length,1);assert.equal(f.client.writes.length,0);

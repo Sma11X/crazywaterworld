@@ -1,5 +1,5 @@
 // 截图对照新增模块：默认只提供配置，不替用户开启资源消费。
-export const siliconFleetDefaults = id => ({ id, enabled: false, tier: 'ORANGE', emptyOnly: true,
+export const siliconFleetDefaults = id => ({ id, enabled: false, tier: 'ORANGE', emptyOnly: false,
   opponentOrder: 'powerDesc', maxPowerRatio: 100, failureLimit: 1, dailyAttackLimit: 30,
   pursuit: false, huntEnabled: false, huntPlayers: [], huntRetreat: 'never',
   safePlayers: [], safeGuilds: [], autoRepair: false, repairSpeedUp: false,
@@ -9,13 +9,13 @@ export const EXTENDED_DEFAULTS = {
     mutual: false, mutualMode: 'custom', autoHelp: false, autoAsk: false, allowedMaterials: [], blockedMaterials: [],
     requestMaterials: [], memberKeywords: [], stockReserve: 0, helpDailyLimit: 20,
     collectGifts: false, autoTech: false, techIds: [], techDailyLimit: 20 },
-  guildShip: { enabled: false, crew: false, captain: false, coinFilter: true,
+  guildShip: { enabled: false, crew: false, captain: false, coinFilter: false,
     minCoinsSmall: 15, minCoinsMedium: 45, minCoinsLarge: 60, rewardFilter: false, rewardItems: [],
     disabledMaterials: [], mode: 'redFirst', produceMissing: false, redStartEnabled: false, redStartTime: '20:00' },
   guildFort: { enabled: false, materials: [], reserve: 0, dailyLimit: 0 },
   silicon: { enabled: false, dailyRewardLimit: 0, windows: [], petrolReserve: 10000, dailyPetrolLimit: 0,
     dailyDiamondLimit: 0, pursuitMinutes: 10, fleets: [1, 2, 3].map(id => siliconFleetDefaults(id + '远征船')) },
-  heroRaid: { enabled: false, challenge: false, retryTimes: 10, orders: false, lottery: false, rewards: true },
+  heroRaid: { enabled: false, challenge: false, retryTimes: 10, orders: false, lottery: false, rewards: false },
 };
 const int = (max = 1000000000, min = 0) => ({ kind: 'number', min, max });
 const list = (max = 100) => ({ kind: 'list', max });

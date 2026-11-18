@@ -181,22 +181,22 @@ try {
     await run(f, s, usage, { getSettings: () => s }); assert.equal(ranks, 2); assertUnused(f, usage);
   });
 
-  await check('开关默认只抢万吨，旧设置与导入补默认且显式关闭按账号保留', () => {
-    assert.equal(defaultSettings().treasure.onlyTenThousand, true);
+  await check('筛选开关默认关闭，旧设置与导入补默认且显式开启按账号保留', () => {
+    assert.equal(defaultSettings().treasure.onlyTenThousand, false);
     const old = defaultSettings(); delete old.treasure.onlyTenThousand;
     const file = path.join(directory, 'settings.json');
     fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { old: { revision: 4, settings: old } } }));
     const original = fs.readFileSync(file);
-    assert.equal(loadAutomationSettings('old', { file }).settings.treasure.onlyTenThousand, true);
+    assert.equal(loadAutomationSettings('old', { file }).settings.treasure.onlyTenThousand, false);
     assert.deepEqual(fs.readFileSync(file), original, '读取旧设置不改写文件');
     for (const format of ['crazywaterworld-automation', 'crazywaterword-automation']) {
-      assert.equal(importAutomationSettings({ format, version: 1, settings: old }).treasure.onlyTenThousand, true);
+      assert.equal(importAutomationSettings({ format, version: 1, settings: old }).treasure.onlyTenThousand, false);
     }
-    const all = defaultSettings(); all.treasure.onlyTenThousand = false;
+    const all = defaultSettings(); all.treasure.onlyTenThousand = true;
     saveAutomationSettings('all', all, { file, revision: 0 });
-    assert.equal(loadAutomationSettings('all', { file }).settings.treasure.onlyTenThousand, false);
-    assert.equal(loadAutomationSettings('old', { file }).settings.treasure.onlyTenThousand, true);
-    assert.equal(importAutomationSettings(exportAutomationSettings(all)).treasure.onlyTenThousand, false);
+    assert.equal(loadAutomationSettings('all', { file }).settings.treasure.onlyTenThousand, true);
+    assert.equal(loadAutomationSettings('old', { file }).settings.treasure.onlyTenThousand, false);
+    assert.equal(importAutomationSettings(exportAutomationSettings(all)).treasure.onlyTenThousand, true);
     for (const invalid of ['false', 0, null]) {
       all.treasure.onlyTenThousand = invalid; assert.throws(() => validateSettings(all), /开关值/);
     }
@@ -379,10 +379,10 @@ try {
     const api = async (account, route, body) => { const response = await fetch(origin + route + '?account=' + encodeURIComponent(account), body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}); return { status: response.status, body: await response.json() }; };
     try {
       const initial = (await api('货轮筛选甲', '/api/settings')).body, s = initial.settings;
-      Object.assign(s.treasure, { enabled: true, onlyTenThousand: false, fleetIds: ['1远征船'] });
+      Object.assign(s.treasure, { enabled: true, autoJoin: true, onlyTenThousand: false, fleetIds: ['1远征船'] });
       const saved = await api('货轮筛选甲', '/api/settings', { settings: s, revision: initial.revision, baseRevision: initial.baseRevision }); assert.equal(saved.status, 200);
       assert.equal((await api('货轮筛选甲', '/api/settings')).body.settings.treasure.onlyTenThousand, false);
-      assert.equal((await api('货轮筛选乙', '/api/settings')).body.settings.treasure.onlyTenThousand, true);
+      assert.equal((await api('货轮筛选乙', '/api/settings')).body.settings.treasure.onlyTenThousand, false);
       const f = treasureCycleFixture(), session = app.sessions.get('货轮筛选甲'); small(f); session.client = f.client; session.player = f.player; session.paused = false;
       let view = await api('货轮筛选甲', '/api/settings/preview', { settings: s, category: 'world' });
       assert.equal(view.status, 200); assert(view.body.actions.some(a => a.kind === 'treasureDispatch'), JSON.stringify(view.body));

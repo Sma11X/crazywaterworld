@@ -22,6 +22,7 @@ const asset = (id, num) => ({ type: 0, id, num });
 function fixture() {
   const player = { playerId: ++serial, worldId: 1000001, level: 40, guildId: 1 };
   const settings = defaultSettings(); settings.pet.enabled = settings.pet.advance = settings.cargo.enabled = true;
+  settings.loop.world = true;
   const state = { stock: new Map([['fish', 100], ['wood', 100], ['加速器', 100], ['英雄经验', 100]]), income: 1,
     buildings: [], orders: [{ index: 1, workerId: 1, textId: 1, requirements: [asset('fish', 10)] }], orderNum: 0,
     pets: [{ uid: '101', petId: '紫宠物1', grade: 1, profFeed: [{ attrFeed: [{ times: 0 }] }] }],

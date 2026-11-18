@@ -3,7 +3,7 @@ import{radarDispatchConfirmed,runAllianceRadar}from'../src/alliance-radar.mjs';i
 process.on('uncaughtException',e=>{console.error(e.stack);process.exitCode=1;});
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'radar-confirm-'));let n=0;
 for(const mode of ['moving','wrongTarget','delayed','network','rejected']){
- const f=pirateAdvanceFixture(),s=f.settings;s.radar.enabled=true;s.radar.fleetIds=['1远征船'];s.radar.petrolReserve=0;f.player.guildId='1001007';f.config.tables.ModuleOpenCfg.data.push({moduleId:'联盟情报',playerLevel:18});f.config.tables.WorldParamCfg.data.push({paramName:'情报事件消耗汽油',paramValue:500});
+ const f=pirateAdvanceFixture(),s=f.settings;s.radar.runEnabled=s.radar.enabled=true;s.radar.fleetIds=['1远征船'];s.radar.petrolReserve=0;f.player.guildId='1001007';f.config.tables.ModuleOpenCfg.data.push({moduleId:'联盟情报',playerLevel:18});f.config.tables.WorldParamCfg.data.push({paramName:'情报事件消耗汽油',paramValue:500});
  let state=1,reads=f.client.request;f.client.request=async(name,body,response)=>name==='RadarInfoRequest'?{radarInfo:{events:[{uid:'9007199254740995',eventId:10001,state,gridIdx:777,createTime:100,pirate:{type:1,level:1}}]}}:reads(name,body,response);
  f.client.sendWatch=async()=>{f.client.writes.push('sent');if(mode==='network')throw Error('连接暂未返回');if(mode==='rejected')throw Object.assign(Error('服务器拒绝'),{prompt:true,request:'RadarSendFleetsRequest'});state=2;if(mode!=='delayed'){f.fleet.state=2;f.fleet.targetGridIdx=mode==='wrongTarget'?888:777;}};
  const ledger=createUsageLedger('a',{file:path.join(dir,mode+'.json')}),reports=[],args={getSettings:()=>s,enabled:()=>true,ledger,report:e=>reports.push(e)};

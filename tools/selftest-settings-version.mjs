@@ -88,7 +88,7 @@ try {
     assert.equal(migrated.factory.gain, true);
     assert.equal(migrated.gather.fishing, false);
     assert.equal(migrated.factory.checkEverySeconds, 30);
-    assert.deepEqual(migrated.heroRaid, { enabled: false, challenge: false, retryTimes: 10, orders: false, lottery: false, rewards: true });
+    assert.deepEqual(migrated.heroRaid, { enabled: false, challenge: false, retryTimes: 10, orders: false, lottery: false, rewards: false });
     assert.deepEqual(migrated.cityWar.defenceFleetIds, []);
     const once = migrateSettingsVersion(settings, 1);
     assert.deepEqual(migrateSettingsVersion(once, 1), once);

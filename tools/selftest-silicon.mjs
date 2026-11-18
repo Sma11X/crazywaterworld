@@ -83,6 +83,7 @@ try {
   });
   await test('空位优先；只空位与低矿始终不攻击；安全名单和战力过滤有效', async () => {
     const f = siliconFixture(), s = siliconSettings(), ledger = usage(f); f.enemy(0); f.enemy(1, '安全玩家', 800); f.enemy(2, '强者', 2000);
+    s.silicon.fleets[0].emptyOnly = true;
     assert.equal((await plan(f, s, ledger)).actions.length, 0);
     s.silicon.fleets[0].emptyOnly = false; s.silicon.fleets[0].safePlayers = ['敌方船长']; s.silicon.fleets[0].safeGuilds = ['9']; f.state.positions[5000][1].player.guildIdx = 9;
     assert.equal((await plan(f, s, ledger)).actions.length, 0);

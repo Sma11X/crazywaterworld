@@ -47,19 +47,19 @@ try {
     }
   });
 
-  await test('旧配置加载和导入补齐活动总开关，显式关闭及原细项均保留', () => {
+  await test('旧配置缺省活动总开关补为关闭，显式开启及原细项均保留', () => {
     const old = validateSettings(defaultSettings());
     delete old.activityAutomation; delete old.merchant.enabled; delete old.weekOrder.enabled;
     old.schedule.merchantTrade = false; old.schedule.weekOrderSubmit = true; old.heroRaid.enabled = false;
     const snapshot = structuredClone(old);
     for (const restored of [validateSettings(old, { partial: true }), importAutomationSettings({ format: SETTINGS_FORMAT, version: 1, settings: old })]) {
-      assert.equal(restored.merchant.enabled, true); assert.equal(restored.weekOrder.enabled, true);
-      assert(Object.values(restored.activityAutomation).every(Boolean));
+      assert.equal(restored.merchant.enabled, false); assert.equal(restored.weekOrder.enabled, false);
+      assert(Object.values(restored.activityAutomation).every(enabled => enabled === false));
       assert.deepEqual(restored.schedule, old.schedule); assert.equal(restored.heroRaid.enabled, false);
     }
     assert.deepEqual(old, snapshot);
     const explicit = validateSettings(defaultSettings());
-    explicit.activityAutomation.river = explicit.weekOrder.enabled = explicit.merchant.enabled = false;
+    explicit.activityAutomation.river = explicit.weekOrder.enabled = explicit.merchant.enabled = true;
     assert.deepEqual(validateSettings(explicit), explicit);
   });
 
@@ -77,6 +77,7 @@ try {
 
   await test('周补给旧共享开关逐活动执行，关闭其中一期仍可领取其余活动', async () => {
     const settings = defaultSettings();
+    settings.activityAutomation.weekChip = true;
     settings.activityAutomation.weekLottery = settings.activityAutomation.weekUnique = false;
     assert.equal(activityTaskEnabled(settings, 'weekSupplyFree'), true);
     assert.equal(weeklyActivityEnabled(settings, 4), false);
@@ -99,6 +100,7 @@ try {
   await test('海商王读取商船状态期间关闭总开关，随后停止买入走商和领取', async () => {
     for (const key of ['merchantTrade', 'merchantRewards']) {
       const settings = defaultSettings(), now = Math.floor(Date.now() / 1000), calls = [], output = [];
+      settings.merchant.enabled = true;
       const client = new EventEmitter(); client.connected = true;
       client.tradeWindow = { period: 1, startTime: now - 30, endTime: now + 300 };
       client.request = async name => {
@@ -115,6 +117,7 @@ try {
 
   await test('周补给读取期间关闭总开关后阻断待发送领奖', async () => {
     const settings = defaultSettings(), now = Math.floor(Date.now() / 1000), calls = [];
+    settings.activityAutomation.weekChip = true;
     const client = { async request(name) {
       calls.push(name);
       if (name === 'WeekInfoRequest') return { activityTime: [{ type: 6, period: 1, startTime: now - 30, endTime: now + 300 }] };
@@ -130,6 +133,7 @@ try {
 
   await test('已排计划的活动备料随总开关暂停，共用的其它需求仍可执行', () => {
     const settings = defaultSettings();
+    settings.loop.world = settings.factory.enabled = settings.factory.produce = settings.weekOrder.enabled = true;
     const step = { kind: 'startProduce', request: 'StartFactoryProduceRequest', body: {}, demandSources: ['merchant'] };
     assert.equal(worldActionAllowed(settings, step, {}), true);
     settings.weekOrder.enabled = false;
@@ -155,6 +159,7 @@ try {
 
   await test('每日礼包总开关统一覆盖旧罗盘礼包路径，罗盘玩法保持独立', async () => {
     const settings = defaultSettings();
+    settings.activityAutomation.compass = true;
     settings.activityAutomation.festivalGifts = false;
     settings.loop.world = settings.loop.dailies = settings.loop.tasks = false;
     assert.equal(activityTaskEnabled(settings, 'compassSpin'), true);

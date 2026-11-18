@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import { automationTasks, defaultFishingGoldReserve } from '../src/automation.mjs';
+import { automationTasks, taskSettings, defaultFishingGoldReserve } from '../src/automation.mjs';
 import { surveyDailies, runDailies } from '../src/dailies.mjs';
 import { runWorld } from '../src/world.mjs';
 import { runLoop } from '../src/loop.mjs';
@@ -67,6 +67,11 @@ async function api(id, route, payload) {
   return res.json();
 }
 try {
+  assert(automationTasks.every(task => task.initial === false), '所有新账号任务默认关闭');
+  assert(Object.values(taskSettings()).every(enabled => enabled === false));
+  assert(Object.values(taskSettings(null)).every(enabled => enabled === false));
+  assert.deepEqual(Object.entries(taskSettings({ mail: true, collect: false, build: 'true' }))
+    .filter(([, enabled]) => enabled).map(([key]) => key), ['mail'], '只保留用户明确开启的任务');
   await open();
   assert.equal((await api('a', '')).running, true);
   assert.equal(finishedLogins, logins);

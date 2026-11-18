@@ -986,6 +986,10 @@ roundTrip(Buffer.from('RequestResponse'.repeat(200)), 'text');
   assert.deepEqual(planFactory().actions.map(a => a.kind), ['upgrade'], '商人配方所需工厂使用普通升级动作并优先预留建材');
   const { defaultSettings } = await import('./automation-settings.mjs');
   const factorySettings = defaultSettings();
+  factorySettings.loop.world = true;
+  Object.assign(factorySettings.building, { enabled: true, build: true, upgrade: true });
+  Object.assign(factorySettings.factory, { enabled: true, produce: true, demandFirst: true });
+  factorySettings.weekOrder.enabled = true;
   assert.deepEqual(planFactory(factorySettings).actions.map(a => a.kind), ['upgrade']);
   for (const change of [
     s => { s.building.upgrade = false; },

@@ -44,7 +44,7 @@ function radarFixture({ unknown = false } = {}) {
     WorldPirateCfg: [{ season: '2', type: 1, level: 1, power: 1000 }],
   }).map(([key, rows]) => [key, { data: rows }])) };
   const settings = defaultSettings();
-  Object.assign(settings.radar, { enabled: true, fleetIds: [id], types: ['pirate'], petrolReserve: 0 });
+  Object.assign(settings.radar, { runEnabled: true, enabled: true, fleetIds: [id], types: ['pirate'], petrolReserve: 0 });
   const client = { connected: true, writes: [], async request(name, body = {}, response) {
     assert(protocol[name], name); assert(protocol[response], response);
     protocol[name].decode(protocol[name].encode(body).finish());

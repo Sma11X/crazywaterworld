@@ -45,6 +45,7 @@ try {
 
   await check('海兽品质排序遵守所选物种及最高品质，不影响原有默认排序', () => {
     const settings = defaultSettings(); settings.factory.demandFirst = false;
+    settings.loop.world = true;
     Object.assign(settings.pet, { enabled: true, breed: true, species: ['1'], quality: 'PURPLE' });
     const config = { tables: {
       PetBreedCfg: { data: ['BLUE', 'PURPLE', 'ORANGE'].map((quality, index) => ({ petId: quality, spId: 1, season: 1, quality, cost: [['gene', index + 1]] })) },

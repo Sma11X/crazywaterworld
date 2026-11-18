@@ -39,7 +39,7 @@ const change = (view, key, value) => ({ key: 'heroRaid.' + key, value, revision:
 try {
   await test('未连接时可读取完整默认项，旧账号设置自动兼容', async () => {
     const defaults = ok(await api('hero-raid/settings'));
-    assert.deepEqual(defaults.settings, { enabled: false, challenge: false, retryTimes: 10, orders: false, lottery: false, rewards: true });
+    assert.deepEqual(defaults.settings, { enabled: false, challenge: false, retryTimes: 10, orders: false, lottery: false, rewards: false });
     assert.equal(defaults.revision, 0);
     assert.equal(typeof defaults.baseRevision, 'string');
     const previous = ok(await api('hero-raid/settings', undefined, 'raid-old'));

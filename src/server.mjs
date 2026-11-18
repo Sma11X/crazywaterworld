@@ -483,7 +483,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     rememberLogAccounts(accounts);
     const saved = accounts.find(account => account.id === id)?.automation;
     const detailed = loadAutomationSettings(id);
-    const preferences = detailed.revision ? detailed.settings : null;
+    // 新账号首次保存前也使用完整的关闭配置，避免旧任务接口绕过模块和细项开关。
+    // 只有已保存原生任务的旧账号继续沿用原有兼容执行路径。
+    const preferences = detailed.revision ? detailed.settings
+      : !saved?.tasks ? settingsFromNative(undefined, saved ?? {}) : null;
     return {
       id,
       preferences,

@@ -14,6 +14,7 @@ const f = seasonalFixture();
 saveStore({ activeId: 'merchant-http', accounts: [{ id: 'merchant-http', label: '海商王HTTP离线',
   url: 'ws://invalid.invalid', login: {}, automation: { enabled: false } }] });
 f.settings.schedule.merchantTrade = true;
+f.settings.merchant.enabled = true;
 saveAutomationSettings('merchant-http', f.settings, { revision: 0 });
 const app = createConsole({ port: 0 }), root = await app.listen();
 const api = async (route, body) => {

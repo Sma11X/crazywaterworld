@@ -120,6 +120,8 @@ try {
   assert.equal(reportReads, 0);
   assert.equal(reportWrites, 0);
   session.loop.running = true;
+  session.loop.tasks.campaignReports = true;
+  session.preferences.activityAutomation.pirates = true;
   pushReport();
   assert(session.reportClaim, '新战报应进入账号的串行领奖队列');
   await session.reportClaim;
@@ -258,6 +260,8 @@ try {
   const duplicateManual = manualReport();
   session.loop.tasks.campaignReports = true;
   session.loop.running = true;
+  session.loop.tasks.campaignReports = true;
+  session.preferences.activityAutomation.pirates = true;
   pushReport();
   const queuedPush = session.reportClaim;
   assert(queuedPush, '手动领取期间，推送应进入同账号队列');
@@ -319,6 +323,7 @@ try {
       return protocol.GotRewardResponse.decode(protocol.GotRewardResponse.encode({ reward: { asset: [{ id: 'RUBY', num: 1 }] } }).finish());
     };
     const settings = detailed ? defaultSettings() : null;
+    if (settings) settings.activityAutomation.pirates = true;
     const ledger = createUsageLedger('loop-reports-' + detailed, { file: path.join(dir, 'loop-reports-' + detailed + '.json') });
     for (const keys of [['campaignReports'], ['battleReportRewards'], ['campaignReports', 'battleReportRewards']]) {
       records.push(unclaimed(records.length + 1));

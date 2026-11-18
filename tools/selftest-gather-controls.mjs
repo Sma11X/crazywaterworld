@@ -26,7 +26,7 @@ try {
     for (const [, field] of pairs) assert.ok(!rules.controlFields.includes('gather.' + field));
   });
   await check('总开关只修改自身，开关往返保留混合选择及全部参数', () => {
-    const s = defaultSettings(); s.gather.diving = s.gather.salvage = s.gather.keyOpen = true;
+    const s = defaultSettings(); s.gather.enabled = s.gather.diving = s.gather.salvage = s.gather.keyOpen = true;
     s.gather.targetLevel = 5; const original = structuredClone(s);
     const off = setAutomationControl(s, 'gather.enabled', false);
     assert.deepEqual(off, { ...original, gather: { ...original.gather, enabled: false } });
@@ -36,6 +36,7 @@ try {
   });
   await check('总开关拦截八项采集及养成，打开只执行选中的项目', () => {
     const s = defaultSettings();
+    s.loop.world = s.gather.enabled = true;
     for (const [task, field] of pairs) {
       s.gather[field] = true; assert.equal(nativePreferenceEnabled(s, task), true);
       s.gather.enabled = false; assert.equal(nativePreferenceEnabled(s, task), false);
@@ -47,27 +48,27 @@ try {
     for (const [task] of pairs) assert.equal(nativePreferenceEnabled(s, task), false);
   });
   await check('总览准确标记采集总开关阻断，重新开启解除', () => {
-    const s = defaultSettings(); s.gather.diving = true; s.gather.enabled = false;
+    const s = defaultSettings(); s.loop.world = s.gather.diving = true; s.gather.enabled = false;
     const row = automationControlView(s).find(c => c.key === 'gather.diving');
     assert.equal(row.enabled, true); assert.ok(row.blockedBy.includes('采集总开关'));
     s.gather.enabled = true;
     assert.deepEqual(automationControlView(s).find(c => c.key === 'gather.diving').blockedBy, []);
   });
-  await check('旧配置读取与旧版导入保留原选择，显式关闭值也保留', () => {
+  await check('旧配置读取与导入保留细项，缺省总开关关闭且显式开启可保存', () => {
     const old = validateSettings(defaultSettings()); old.gather.diving = true; old.gather.salvage = false;
     delete old.gather.enabled;
     const file = path.join(directory, 'legacy.json');
     fs.writeFileSync(file, JSON.stringify({ version: 1, accounts: { legacy: { settings: old, revision: 8 } } }));
     const bytes = fs.readFileSync(file);
     const loaded = loadAutomationSettings('legacy', { file });
-    assert.equal(loaded.settings.gather.enabled, true); assert.equal(loaded.settings.gather.diving, true);
+    assert.equal(loaded.settings.gather.enabled, false); assert.equal(loaded.settings.gather.diving, true);
     assert.equal(loaded.settings.gather.salvage, false); assert.deepEqual(fs.readFileSync(file), bytes);
     const imported = importAutomationSettings({ format: 'crazywaterworld-automation', version: 1, settings: old });
-    assert.deepEqual(imported.gather, { enabled: true, ...old.gather });
-    imported.gather.enabled = false;
-    assert.equal(importAutomationSettings(exportAutomationSettings(imported)).gather.enabled, false);
+    assert.deepEqual(imported.gather, { enabled: false, ...old.gather });
+    imported.gather.enabled = true;
+    assert.equal(importAutomationSettings(exportAutomationSettings(imported)).gather.enabled, true);
     assert.equal(settingsFromNative({ autoDive: true, autoSalvage: false }).gather.diving, true);
-    assert.equal(settingsFromNative({ autoDive: true, autoSalvage: false }).gather.enabled, true);
+    assert.equal(settingsFromNative({ autoDive: true, autoSalvage: false }).gather.enabled, false);
     const invalid = defaultSettings(); invalid.gather.enabled = 'true'; assert.throws(() => validateSettings(invalid));
   });
   await check('总开关关闭时预览无采集计划、无读取或写入', async () => {
@@ -79,7 +80,7 @@ try {
     assert.deepEqual(preview.actions, []);
   });
   await check('钥匙开箱随总开关暂停，旧计划和消费保护也不能绕过', async () => {
-    const s = defaultSettings(); s.gather.diving = s.gather.keyOpen = true;
+    const s = defaultSettings(); s.loop.world = s.gather.enabled = s.gather.diving = s.gather.keyOpen = true;
     const snapshot = { notes: [], raids: [], world: { stock: new Map([['保险箱钥匙', 2]]), buildings: [], factories: [] }, now: 1000, player: { level: 24 } };
     const plan = planBaseAutomation(snapshot, { tables: {} }, s, {}, { diveCompleted: true });
     assert.equal(plan.actions.filter(a => a.kind === 'diveKey').length, 1); assert.equal(hasExtraWork(s), true);

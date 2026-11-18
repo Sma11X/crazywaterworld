@@ -22,6 +22,7 @@ function fixture(kind) {
   const now = Math.floor(Date.now() / 1000);
   const player = { playerId: ++serial, worldId: 1000001, level: 40, guildId: 1 };
   const settings = defaultSettings(); settings.pet.enabled = settings.pet.feed = settings.pet.breed = true;
+  settings.loop.world = true;
   const original = { idx: 7, petId: 'wanted', startTime: now - 100, finishTime: now + 300 };
   const room = { buildingId: '1宠物培育室', level: 3, petBreed: { maxQLength: 3,
     breedQ: kind === 'petFeed' ? [structuredClone(original)] : [], maturePets: [] } };

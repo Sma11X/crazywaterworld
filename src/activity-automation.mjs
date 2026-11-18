@@ -25,7 +25,7 @@ export const activityAutomationFields = [
 ];
 
 export const activityAutomationDefaults = Object.fromEntries(activityAutomationFields
-  .filter(field => field.key.startsWith('activityAutomation.')).map(field => [field.key.split('.')[1], true]));
+  .filter(field => field.key.startsWith('activityAutomation.')).map(field => [field.key.split('.')[1], false]));
 
 const controls = new Map(activityAutomationFields.map(field => [field.key, field]));
 const taskControls = new Map(activityAutomationFields.flatMap(field => field.taskKeys.map(key => [key, field])));

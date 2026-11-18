@@ -204,6 +204,7 @@ try {
   await check('真实挂机入口同时触发两种采集，并上报对应任务', async () => {
     const f = fixture(), events = [], settings = defaultSettings();
     settings.building.enabled = settings.factory.enabled = settings.resident.enabled = false;
+    settings.loop.world = settings.gather.enabled = true;
     settings.gather.diving = settings.gather.salvage = true;
     await runLoop(f.client, protocol, { config, player: { level: 24 }, allowMutate: true, rounds: 1,
       isEnabled: key => collectKeys.includes(key), getSettings: () => settings, onStep: event => events.push(event) });
@@ -214,7 +215,8 @@ try {
     for (const closeAfter of [0, 1]) {
       const f = fixture({ stock: 3200 }), events = [], settings = defaultSettings();
       settings.building.enabled = settings.factory.enabled = settings.resident.enabled = false;
-      settings.gather.diving = settings.gather.salvage = true;
+      settings.loop.world = settings.gather.enabled = true;
+    settings.gather.diving = settings.gather.salvage = true;
       await runLoop(f.client, protocol, { config, player: { level: 24 }, allowMutate: true, rounds: 3, everyMs: 0,
         isEnabled: key => collectKeys.includes(key), getSettings: () => settings, onStep: e => events.push(e),
         onRound: round => { if (round.round === closeAfter) settings.gather.diving = settings.gather.salvage = false; } });
@@ -237,6 +239,7 @@ try {
   await check('采集总开关在读取中关闭立即拦截，重开后保留原选项继续搜索', async () => {
     const f = fixture({ stock: 3200 }), settings = defaultSettings(), events = [];
     settings.building.enabled = settings.factory.enabled = settings.resident.enabled = false;
+    settings.loop.world = settings.gather.enabled = true;
     settings.gather.diving = settings.gather.salvage = true;
     f.afterRead = name => { if (name === 'AllItemRequest') settings.gather.enabled = false; };
     const options = { config, player: { level: 24 }, allowMutate: true, rounds: 1,

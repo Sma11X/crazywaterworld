@@ -27,7 +27,7 @@ function fixture(){
   const settings=defaultSettings();settings.resources.allowDiamonds=true;settings.resources.diamondDailyLimit=1000;
   settings.fleetSpeed.enabled=true;settings.fleetSpeed.dailyDiamondLimit=500;
   settings.cityWar.enabled=true;settings.cityWar.autoRepair=false;settings.cityWar.fleetIds=['1远征船','2远征船'];
-  Object.assign(settings.fleetSpeed.fleets[0],{repair:true,march:true,repairMaxDiamonds:200,marchMaxDiamonds:90,repairDailyDiamonds:300,marchDailyDiamonds:300});
+  Object.assign(settings.fleetSpeed.fleets[0],{repair:true,march:true,repairSmartSave:true,marchSmartSave:true,repairMaxDiamonds:200,marchMaxDiamonds:90,repairDailyDiamonds:300,marchDailyDiamonds:300});
   const config={tables:{WorldParamCfg:{data:[{paramName:'行军加速消耗',paramValue:30}]},SpeedUpRubyCfg:{data:[{minute:0,fleet:10},{minute:60,fleet:11},{minute:80,fleet:20}]}}};
   const state={diamonds:1000,repairMinutes:0,fleets:[1,2,3].map(id=>({buildingId:id+'远征船',owner:{playerId:900001},state:2,durability:100,maxDura:100,curGridIdx:0,targetGridIdx:42,targetCityId:7,treasureLootUid:0,moveStartTs:now()-10,moveEndTs:now()+300}))};
   const file=path.join(root,String(++sequence)+'.json'),ledger=createUsageLedger('虚构加速',{file,now:()=>now()*1000});

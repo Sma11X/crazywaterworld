@@ -315,6 +315,7 @@ await test('数字输入为空时不提交、不抢焦点，补齐后自动保�
 
 await test('跨字段校验失败不会循环提交，修正后自动重试', async () => {
   const f = fixture(); await f.load();
+  f.set('treasure.autoJoin', true);
   f.set('treasure.enabled', true); await f.tick(10000);
   assert.equal(f.posts().length, 1); assert.match(f.node('config-state').textContent, /请修正/);
   assert.equal(f.env.focuses, 0); assert.equal(f.view('a').settings.treasure.enabled, false);
@@ -335,7 +336,7 @@ const conditionalCases = [
   ['藏品套装', {'antique.suit':false,'antique.suitQualities':[]}, 'antique.suit', true, 'antique.suitQualities'],
   ['试炼副本', {'progression.raidIds':[]}, 'progression.trials', true, 'progression.raidIds'],
   ['海盗舰队', {}, 'pirateHunt.enabled', true, 'pirateHunt.fleetIds'],
-  ['巨轮舰队', {}, 'treasure.enabled', true, 'treasure.fleetIds'],
+  ['巨轮舰队', {'treasure.autoJoin':true}, 'treasure.enabled', true, 'treasure.fleetIds'],
   ['城战舰队', {}, 'cityWar.enabled', true, 'cityWar.fleetIds'],
   ['锻造配方', {}, 'forge.enabled', true, 'forge.recipeIds'],
 ];

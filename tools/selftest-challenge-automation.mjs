@@ -27,6 +27,7 @@ function fixture() {
   client.connected = true;
   settings.loop.world = settings.loop.dailies = settings.loop.tasks = settings.loop.heroes = false;
   settings.dailies.enabled = false;
+  settings.progression.enabled = true;
   const player = { playerId: '123', level: 37, mainlineStage: 1, worldId: 1001001, scenarioId: 1 };
   const table = data => ({ data });
   const config = { tables: {

@@ -996,7 +996,7 @@ await test('海商王迟到读取不会覆盖新保存，保存回复丢失后�
 await test('不差钱和海商王的自动挂机总开关独立保存，关闭后保留执行细项', async () => {
   const f = fixture();
   f.saved.set('merchant-a', f.settings({ autoSubmit: true, allowDiamonds: true, autoFinal: false }));
-  f.seaSaved.set('merchant-a', f.seaSettings({ autoShareIntel: false, profitLimit: 300 },
+  f.seaSaved.set('merchant-a', f.seaSettings({ enabled: true, autoShareIntel: false, profitLimit: 300 },
     { merchantTrade: true, merchantRewards: false, tradeTasks: true }));
   await f.api.refresh(); f.api.selectMerchant();
   const merchantBefore = clone(f.saved.get('merchant-a').settings);
@@ -1021,6 +1021,7 @@ await test('不差钱和海商王的自动挂机总开关独立保存，关闭�
 
 function lotteryFixture() {
   const f = fixture(), now = Math.floor(f.state.now / 1000);
+  f.automationSaved.set('merchant-a', f.automationSettings({ 'activityAutomation.weekLottery': true }));
   f.activities.activities = [{ id: 'weekly:4:1001:1', name: '幸运转盘', kind: 'weekly', weekType: 4,
     startTime: now - 100, endTime: now + 3600,
     taskKeys: ['weekGift', 'weekTimes', 'weekLotterySpin'],
@@ -1041,7 +1042,7 @@ await test('普通活动每期复用一个总开关，保存只修改所选活�
   const key = 'activityAutomation.weekLottery';
   assert.equal(f.automationInput(key).getAttribute('aria-label'), '开启自动挂机');
   const tasks = clone(f.activities.eventTasks), before = clone(f.automationSaved.get('merchant-a').settings);
-  f.automationSaved.set('merchant-a', f.automationSettings({ 'activityAutomation.beauty': false }, 9));
+  f.automationSaved.set('merchant-a', f.automationSettings({ 'activityAutomation.weekLottery': true, 'activityAutomation.beauty': false }, 9));
   await f.clickAutomation(key);
   assert.equal(f.automationInput(key).getAttribute('aria-checked'), 'false');
   assert.deepEqual(f.automationSaved.get('merchant-a').settings,
@@ -1206,6 +1207,7 @@ await test('商船策略、条件参数和材料多选沿用原字段，未知�
   assert(f.shipInput('guildShip.rewardItems'));
   const time = f.shipInput('guildShip.redStartTime');
   time.value = '23:25'; await time.onchange();
+  await f.shipInput('guildShip.coinFilter').onclick();
   const coins = f.shipInput('guildShip.minCoinsSmall');
   coins.value = '-1'; await coins.onchange();
   assert(f.state.errors.some(error => error.message.includes('整数')));

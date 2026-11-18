@@ -15,6 +15,10 @@ function fixture() {
     ]),
   } };
   const settings = defaultSettings();
+  settings.loop.world = true;
+  Object.assign(settings.factory, { enabled: true, produce: true });
+  Object.assign(settings.building, { enabled: true, build: true, upgrade: true });
+  settings.weekOrder.enabled = true;
   settings.factory.keepStock = 6; settings.factory.demandFirst = false;
   settings.factory.speedUp = settings.building.speedUp = false;
   const stock = new Map([['木材', 100], ['短时品', 2]]);
@@ -138,6 +142,7 @@ test('禁用需求工厂时整单停止备料，重新启用后恢复', () => {
 
 test('不可生产商人单的现货可供居民直接交单', () => {
   const f = fixture();
+  f.settings.resident.enabled = true;
   f.config.tables.BuildingProduceCfg.data[1].unlockLevel = 2;
   f.survey.weekOrder = new Map([['短时品', 2], ['长时品', 1]]);
   f.survey.orders = [{ index: 1, requirements: [{ id: '短时品', num: 2 }], rewardExp: 1000, rewardGold: 1000 }];
@@ -215,6 +220,7 @@ test('旧无设置入口和空优先级仍释放重复占用现货的货单材�
 
 test('居民和额外需求的上游工厂未解锁时跳过整条备料', () => {
   const f = fixture();
+  f.settings.resident.enabled = true;
   f.settings.factory.keepStock = 0;
   f.settings.factory.demandFirst = true;
   f.config.tables.BuildingProduceCfg.data[1].unlockLevel = 2;

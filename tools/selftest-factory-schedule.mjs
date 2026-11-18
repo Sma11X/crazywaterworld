@@ -15,6 +15,8 @@ function fixture() {
   const client = new EventEmitter(); client.connected = true; client.serverClockOffsetMs = 2000;
   client.request = client.sendWatch = () => { throw new Error('调度器不得发送任何请求'); };
   const settings = defaultSettings(); settings.factory.checkEverySeconds = 30;
+  settings.loop.world = true;
+  Object.assign(settings.factory, { enabled: true, gain: true, produce: true });
   const config = { tables: { BuildingCfg: { data: [{ buildingType: '材料厂' }, { buildingType: '民居' }] },
     BuildingProduceCfg: { data: [{ buildType: '材料厂' }] }, BuildingProduceParamCfg: { data: [{ paramName: '制造位上限', paramValue: 6 }] } } };
   const state = { now: 1_000_000, enabled: true, wakes: 0 };

@@ -32,7 +32,7 @@ function fixture() {
   const settings = defaultSettings();
   settings.loop.world = settings.loop.dailies = settings.loop.tasks = settings.loop.heroes = false;
   settings.dailies.enabled = false;
-  settings.progression.mainline = settings.progression.trials = true;
+  settings.progression.enabled = settings.progression.mainline = settings.progression.trials = true;
   settings.progression.raidIds = ['1'];
   const f = {
     client, player, config, settings, events: [], contexts: [], confirmed: [], writes: [],

@@ -1,6 +1,6 @@
 // 每队、每种加速独立预算；0 一律禁止花钻，新增功能默认关闭。
 export const fleetSpeedDefaults = id => ({ id, repair: false, march: false,
-  repairSmartSave: true, marchSmartSave: true,
+  repairSmartSave: false, marchSmartSave: false,
   repairSmartWaitSeconds: 5, marchSmartWaitSeconds: 5,
   repairSkipSeconds: 60, marchSkipSeconds: 60, marchMinSavedSeconds: 30,
   repairMaxDiamonds: 0, marchMaxDiamonds: 0,

@@ -9,6 +9,8 @@ export function seasonalFixture() {
   const protocol = loadProtocol(),
     config = getConfig(),
     settings = defaultSettings();
+  settings.merchant.enabled = true;
+  settings.activityAutomation.beauty = true;
   const now = Math.floor(Date.UTC(2026, 10, 5, 4) / 1000);
   const client = new EventEmitter();
   client.connected = true;
