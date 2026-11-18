@@ -12,8 +12,10 @@ fs.writeFileSync(process.env.CW_CONFIG_PACK, JSON.stringify([
   [1, 'FarmlandPlantCfg', { data: [{ id: '小麦', material: ['小麦种子', 1], time: 60, produceNum: 5 }] }],
 ]));
 const { idleAutomationControls, automationControlView, setAutomationControl } = await import('../src/automation-controls.mjs');
-const { defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, settingsUiRules } = await import('../src/automation-settings.mjs');
-const { automationTasks } = await import('../src/automation.mjs');
+const { defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, settingsUiRules,
+  exportAutomationSettings, importAutomationSettings, nativeTaskValues, applyNativeTask, settingsFromNative } = await import('../src/automation-settings.mjs');
+const { automationTasks, taskSettings } = await import('../src/automation.mjs');
+const { nativePreferenceEnabled } = await import('../src/automation-policy.mjs');
 const { activityAutomationFields } = await import('../src/activity-automation.mjs');
 const script = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
 const definitions = script.slice(0, script.indexOf('function configGet('));
@@ -75,6 +77,46 @@ try {
       assert(!configKeys.has(key), '动态配置不能重新生成旧开关');
       assert(!automationControlView(after).some(control => control.key === key));
       assert.throws(() => setAutomationControl(after, key, true), /无效/);
+    }
+  });
+
+  await check('万吨巨轮只保留世界配置，旧派遣开关不能在导入或关闭主控后恢复', () => {
+    assert(!configKeys.has('schedule.treasureLoot'), '真实分组组装不能补回旧派遣入口');
+    assert(!configGroups.some(group => group.id === 'daily-other'), '旧派遣移除后不保留其他项目空组');
+    const treasureGroups = configGroups.filter(group => group.id === 'treasure');
+    assert.equal(treasureGroups.length, 1);
+    assert.equal(treasureGroups[0].category, 'world');
+    assert.equal(configFields.filter(field => field.key === 'treasure.enabled').length, 1);
+    assert.equal(taskSettings({ treasureLoot: true }).treasureLoot, false, '旧任务配置不能重开派遣');
+    assert.equal(nativePreferenceEnabled(null, 'treasureLoot'), false, '无详细配置时旧入口也停用');
+    const nativeOnly = settingsFromNative({ treasureLoot: true });
+    assert.equal(nativeOnly.schedule.treasureLoot, false);
+    assert.equal(nativeOnly.treasure.enabled, false, '旧开关不擅自启用世界主控');
+
+    for (const enabled of [false, true]) {
+      const before = defaultSettings();
+      Object.assign(before.treasure, { enabled, autoJoin: true, onlyTenThousand: true, follow: true,
+        fleetIds: ['2远征船', '1远征船'], followNames: ['跟随玩家'], followPlayerIds: ['9007199254740993'],
+        avoidNames: ['避战玩家'], avoidPlayerIds: ['9007199254740995'], rewardItems: ['测试奖励'],
+        participationMode: 'always', repeatAttack: true, minDurabilityPercent: 73, maxProgress: 85,
+        personalProgressLimit: 15, dailyDispatchLimit: 9, checkEverySeconds: 23, autoRepair: true,
+        marchSpeedUp: true, marchTargetSeconds: 35, dailyDiamondLimit: 123,
+        fallbackEnabled: true, fallbackAfter: '22:15', fallbackTargetRewards: 4,
+        fallbackQualities: ['BLUE', 'PURPLE'], fallbackMediumRewardPriority: ['中型奖励'], fallbackSmallRewardPriority: ['小型奖励'] });
+      before.schedule.treasureLoot = true;
+      const frozen = structuredClone(before);
+      const document = exportAutomationSettings(before);
+      assert.equal(document.settings.schedule.treasureLoot, false, '导出时清除旧派遣授权');
+      document.settings.schedule.treasureLoot = true; // 模拟尚未更新的备份重新导入。
+      for (const result of [validateSettings(before), importAutomationSettings(document), applyNativeTask(before, 'treasureLoot', true)]) {
+        assert.equal(result.schedule.treasureLoot, false, '校验、导入和旧快捷开关均不能激活派遣');
+        assert.deepEqual(result.treasure, frozen.treasure, '世界主控与所有派遣参数完整保留');
+      }
+      assert.equal(nativeTaskValues(before, { treasureLoot: true }).treasureLoot, false);
+      assert.equal(nativePreferenceEnabled(before, 'treasureLoot'), false);
+      assert(!automationControlView(before).some(control => control.key === 'schedule.treasureLoot'));
+      assert.throws(() => setAutomationControl(before, 'schedule.treasureLoot', true), /无效/);
+      assert.deepEqual(before, frozen, '移除旧入口不能修改调用者保存的设置');
     }
   });
 

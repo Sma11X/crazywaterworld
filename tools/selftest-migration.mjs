@@ -186,7 +186,7 @@ for (const getSettings of [() => null, legacyServiceSettings]) {
   await runLoop(f.client, {}, { ...f.options, getSettings: () => settings, isEnabled: key => controlled.includes(key) });
   for (const key of controlled) {
     const entries = f.reports.filter(entry => entry.key === key);
-    if (['radarAuto', 'radarRepair', 'museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements', 'petCollect', 'petBreed'].includes(key)) {
+    if (['radarAuto', 'radarRepair', 'museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements', 'petCollect', 'petBreed', 'treasureLoot'].includes(key)) {
       assert.equal(entries.length, 0, '已迁移动作不再报告旧入口或接管状态：' + key);
       continue;
     }

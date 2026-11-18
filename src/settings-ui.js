@@ -331,7 +331,7 @@ const configGroups = [
   ] },
   { id: 'treasure', title: '万吨巨轮', category: 'world', fields: [
     configField('treasure.enabled', '巨轮自动化总开关', 'switch', { help: '开始挂机后生效，独立于基地自动化。按所选舰队、参与模式和实际汽油库存出征；耐久不足可先普通维修。不会召回、补油或修改编队。' }),
-    configField('treasure.onlyTenThousand', '只抢万吨货轮', 'switch', { help: '开启后，普通规则仅参加游戏标记为橙色品质的万吨货轮。常规参加、跟随和旧版自动抢货轮均遵守。关闭后，普通规则也可参加游戏配置已确认的小型、中型货轮，其他筛选仍有效。另行开启下方中小货轮兜底后，可在设定时刻按兜底规则补足领奖次数。' }),
+    configField('treasure.onlyTenThousand', '只抢万吨货轮', 'switch', { help: '开启后，普通规则仅参加游戏标记为橙色品质的万吨货轮，常规参加和跟随均遵守。关闭后，普通规则也可参加游戏配置已确认的小型、中型货轮，其他筛选仍有效。另行开启下方中小货轮兜底后，可在设定时刻按兜底规则补足领奖次数。' }),
     configField('treasure.autoJoin', '常规自动参加', 'switch', { when:d=>!d.treasure.follow, help:'仅在未开启指定跟随时生效。开启跟随后，首次出征必须匹配名单，不使用常规自动参加兜底；已确认的跟随按反复攻占设置接续。' }),
     configField('treasure.participationMode', '参与模式', 'radio', { options: [['untilFull', '打满就停'], ['always', '每次参与']], help: '打满就停：达到游戏今日领奖上限后不再派遣或维修。每次参与：领奖已满仍可参加，但不增加奖励次数，其他限制仍有效。' }),
     configField('treasure.repeatAttack', '反复攻占', 'switch', { help: '已确认出征后，被打回或返航且回到主城空闲时，可再次参与同一货轮。跟随模式下，同一舰队首次跟随出征确认后，维修和再次攻占不再等待跟随玩家；新货轮或未首次跟随成功的舰队仍需匹配名单。请求结果未知时继续等待确认。' }),
@@ -933,6 +933,14 @@ function configRender() {
   if (adIndex >= 0 && groups.some(group => group.id === 'daily-actions')) {
     const [ads] = groups.splice(adIndex, 1);
     groups.splice(groups.findIndex(group => group.id === 'daily-actions') + 1, 0, ads);
+  }
+  const firstDaily = groups.findIndex(group => group.category === 'daily');
+  for (const id of ['daily-weekly', 'rewards']) {
+    const index = groups.findIndex(group => group.id === id);
+    if (index >= 0) {
+      const [group] = groups.splice(index, 1);
+      groups.splice(firstDaily, 0, group);
+    }
   }
   const movedFields = new Set(configEditor.data.rules?.controlFields ?? []);
   movedFields.add('loop.everySeconds');

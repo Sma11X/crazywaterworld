@@ -61,7 +61,6 @@ import { serviceGuildOrders } from './guild-orders.mjs';
 import { serviceGuildAid } from './guild-aid.mjs';
 import { serviceStageAuto } from './progress-automation.mjs';
 import { createChallengeRun, runChallengeRound } from './challenge-automation.mjs';
-import { serviceTreasureLoot } from './treasure-loot.mjs';
 import { claimFestivalRewards, claimWeeklyRewards, claimVipDaily as claimLegacyVipDaily, festivalRewardKeys, weeklyRewardKeys } from './free-rewards.mjs';
 import { claimOpenRanks } from './pirate-board.mjs';
 import { claimExtraRewards, extraRewardKeys } from './extra-rewards.mjs';
@@ -284,8 +283,6 @@ export async function runLoop(client, protocol, {
     const serviceActive = key => isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key)
       && (active(key) || Boolean((getSettings() || key === 'battleReportRewards') && aliases[key]?.some(active)));
     const takeoverReason = key => {
-      const s = getSettings();
-      if (s?.treasure?.enabled && key === 'treasureLoot') return '巨轮';
       if (key === 'heroGrowth') return '指定英雄养成';
       return null;
     };
@@ -814,11 +811,11 @@ export async function runLoop(client, protocol, {
             ...(error.code==='AUTOMATION_SKIP'?{skipped:true,reason:error.message}:{}),error:error.message}); }
         }
       }
-      for (const key of ['treasureLoot','heroGrowth']) {
+      for (const key of ['heroGrowth']) {
         const reason = takeoverReason(key);
         if (enabled(key) && reason) serviceReport('dailies', reason)({key, skipped:true, reason:'由游戏配置中的' + reason + '接管'});
       }
-      // 兼容主分支原有的联盟、博物馆、海兽、成长和巨轮服务。
+      // 兼容原有联盟服务；巨轮只由世界分类中的详细配置控制。
       // 新版调度服务与这些入口共享同一个账号队列；只有显式开启旧开关时才执行，避免重复请求。
       await checkFactoryDue({ checkpoint: true });
       if (isEnabled && legacyEnabled('guildOrders')) {
@@ -829,14 +826,6 @@ export async function runLoop(client, protocol, {
         try { await serviceGuildAid(client, protocol, config, { player, getSettings, enabled: () => legacyActive('guildAidHelp'), scheduler: rewards, report: serviceReport('dailies', '联盟互助') }); }
         catch (error) { phaseFailure('dailies', '联盟互助检查', error); }
       }
-      await checkFactoryDue({ checkpoint: true });
-
-      if (isEnabled && legacyEnabled('treasureLoot')) {
-        try { await serviceTreasureLoot(client, config, { player, protocol, getSettings, enabled: () => legacyActive('treasureLoot'), scheduler: rewards, report: serviceReport('dailies', '世界宝藏') }); }
-        catch (error) { phaseFailure('dailies', '世界宝藏检查', error); }
-      }
-
-
       await checkFactoryDue({ checkpoint: true });
       await runChallengeRound(client, config, { ...challengeOptions, mode: 'progression', report: serviceReport('dailies', '推关与试炼') });
       await checkFactoryDue({ checkpoint: true });

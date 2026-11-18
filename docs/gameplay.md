@@ -660,7 +660,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 - **赛季任务：** `GotSeasonTaskRequest` 没有字段，一次领取所有已达标档位。
 - **红点：** `SCRedPoint` 带 `num` 表示有待处理事项，不带表示已清除。33 跨服排行、41 世界宝藏、42 收到互助、43 新求助、53 海商王任务、64 联盟职级、65 博物馆。
 - **联盟互助：** 每轮只响应一次，下一轮读到库存已扣减后才继续。
-- **世界宝藏：** 需要 `GuildTitleCfg.treasureLoot` 为 1，每日奖励次数读 `TreasureLootParamCfg`，每队消耗 `进攻宝藏消耗汽油`。工具避开 20:00 到 21:00，不去其他联盟占领的宝藏，舰队返回前不再派下一队。
+- **世界宝藏：** 需要 `GuildTitleCfg.treasureLoot` 为 1，每日奖励次数读 `TreasureLootParamCfg`，每队消耗 `进攻宝藏消耗汽油`。旧 `schedule.treasureLoot` 派遣入口已停用，自动参与统一由“世界 → 万吨巨轮”的 `treasure.enabled` 及其舰队、跟随、筛选和争夺权限设置控制。
 
 ### 13.6 玩法结果如何确认
 
