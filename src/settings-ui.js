@@ -959,9 +959,8 @@ function configRender() {
       section.setAttribute('role', direct ? 'group' : 'tabpanel');
       section.setAttribute('aria-labelledby', singleGroup ? 'config-tab-' + category : direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
       if (group.description) section.append(el('p','config-section-intro',group.description));
-      if (['cityWar','silicon','treasure'].includes(group.id)) {
-        const known=configEditor.data.catalog?.fleetAvailability?.known;
-        section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
+      if (['cityWar','silicon','treasure'].includes(group.id) && !configEditor.data.catalog?.fleetAvailability?.known) {
+        section.append(el('p','config-section-intro','舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
       }
       const fields = group.fields.map(spec => ({ ...spec, category, groupId: group.id }));
       configRenderFields(fields, section);
