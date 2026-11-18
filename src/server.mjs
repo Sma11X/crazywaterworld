@@ -1,5 +1,6 @@
 import { serveClientAsset } from './ui-assets.mjs';
 import { createTraceLog, traceJson, redactLog } from './trace-log.mjs';
+import { createProtocolDiagnostics } from './protocol-diagnostics.mjs';
 import { createResourceUpdater } from './resource-updater.mjs';
 import {checkFleetSettlement,invalidateFleetReports} from './fleet-settlement.mjs';
 import { recoverPirateHunts } from './pirate-recovery.mjs';
@@ -153,6 +154,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   let pendingAlipayLogin = null;
   let cancelledAlipayLoginId = null;
   const traceLog = createTraceLog(TRACE_PATH, { maxBytes: TRACE_MAX_BYTES });
+  const protocolDiagnostics = createProtocolDiagnostics(path.join(DATA_DIR, 'protocol-errors'));
   const globalLog = [];
   const streams = new Set();
   const sessions = new Map();
@@ -972,7 +974,18 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       } catch { /* 记录失败不影响回包处理。 */ }
     });
     instance.on('diagnostic', data => {
-      if (data.event === 'operation' || data.event === 'ad-path') {
+      if (data.event === 'protocol-decode-error') {
+        const saved = protocolDiagnostics.save(data, { account: session.id, runtimeStartedAt: RUN_VERSION,
+          protocolTypeCount: Object.keys(protocol).length });
+        const name = saved.header?.name ?? '未知消息';
+        const requests = (data.pending ?? []).map(item => item.name).concat((data.watchers ?? []).map(item => item.name));
+        const message = saved.file ? `协议解码异常 ${name}，诊断快照已保存：${saved.file}`
+          : `协议解码异常，诊断快照保存失败：${saved.error}`;
+        emit(session, 'warn', message, { diagnostic: [data.error,
+          `当时等待请求：${requests.join('、') || '无'}；发送序号 ${data.sendSeqNo}，接收序号 ${data.recvSeqNo}`,
+          !saved.file ? '本次错误快照未保存' : saved.rawOmitted || (saved.truncated ? '原始报文超过 256 KiB，快照已标记截断' : '原始报文以 frameHex 保存在本机快照中')].join('\n'),
+          protocolSnapshot: saved.file, messageName: saved.header?.name, seq: saved.header?.seq });
+      } else if (data.event === 'operation' || data.event === 'ad-path') {
         const phases = { reserved: '已预留', sent: '已发送，等待确认', confirmed: '已确认', unknown: '结果待确认', cancelled: '已释放预留' };
         const message = data.message ?? `${data.label || data.request} · ${phases[data.phase] ?? data.phase}`;
         emit(session, data.phase === 'unknown' ? 'warn' : 'info', message, data);

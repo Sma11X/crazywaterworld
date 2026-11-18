@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EventEmitter } from 'node:events';
 import { createCodec } from './codec.mjs';
+import { inspectGameFrame } from './frame-header.mjs';
+import { emitDiagnostic } from './trace-log.mjs';
 
 export const MAX_SEQ = 2147483647;
 const HALF_SEQ = (MAX_SEQ - 1) / 2;
@@ -80,6 +82,7 @@ export class GameClient extends EventEmitter {
     this.connectionEpoch = 0;
     this.readGate = null;
     this.readTail = null;
+    this.recentFrames = [];
   }
 
   get connected() {
@@ -97,6 +100,7 @@ export class GameClient extends EventEmitter {
     this.discardSocket('replaced');
     this.stopping = false;
     this.closeReason = null;
+    this.recentFrames = [];
     const epoch = ++this.connectionEpoch;
     this.setState('CONNECTING', this.url);
 
@@ -125,6 +129,7 @@ export class GameClient extends EventEmitter {
         try {
           this.emit('frame', { dir: 'out', name: 'LoginRequest', seq: this.sendSeqNo, bytes: frame });
           socket.send(frame);
+          this.rememberFrame('out', frame);
         } catch (error) { cleanup(); reject(error); }
       };
       socket.onerror = () => {
@@ -136,10 +141,12 @@ export class GameClient extends EventEmitter {
         reject(new Error(`socket closed during login: ${event.code} ${event.reason || ''}`));
       };
       socket.onmessage = (event) => {
+        this.rememberFrame('in', event.data);
         let decoded;
         try {
           decoded = this.codec.decode(event.data);
         } catch (error) {
+          this.diagnoseDecodeError(event.data, error, 'login');
           cleanup();
           error.recoverable = false;
           reject(error);
@@ -205,6 +212,7 @@ export class GameClient extends EventEmitter {
     const frame = this.codec.encode(name, seq, body || {});
     this.emit('frame', { dir: 'out', name, seq, bytes: frame, body });
     this.socket.send(frame);
+    this.rememberFrame('out', frame);
     try { this.emit('sent', { dir: 'out', name, seq }); } catch { /* 诊断观察者不能改变已发送请求的结果。 */ }
     return seq;
   }
@@ -214,6 +222,7 @@ export class GameClient extends EventEmitter {
     const frame = this.codec.encode(name, 0, body || {});
     this.emit('frame', { dir: 'out', name, seq: 0, bytes: frame, body });
     this.socket.send(frame);
+    this.rememberFrame('out', frame);
     try { this.emit('sent', { dir: 'out', name, seq: 0 }); } catch { /* 诊断观察者不能中断连接。 */ }
     return true;
   }
@@ -339,11 +348,41 @@ export class GameClient extends EventEmitter {
     return true;
   }
 
+  // Only envelope metadata stays in memory; request bodies and login credentials
+  // must never be copied into the recent-message context.
+  rememberFrame(direction, data) {
+    try {
+      const header = inspectGameFrame(data);
+      if (['PingRequest', 'PingResponse', 'Ack', 'Nack'].includes(header?.name)) return;
+      this.recentFrames.push({ direction, name: header?.name ?? null, seq: header?.seq ?? null,
+        bytes: data?.byteLength ?? 0 });
+      if (this.recentFrames.length > 20) this.recentFrames.shift();
+    } catch { /* Diagnostics must not change transport behavior. */ }
+  }
+
+  diagnoseDecodeError(data, error, phase) {
+    try {
+      const bytes = data instanceof Uint8Array ? data : data instanceof ArrayBuffer ? new Uint8Array(data) : null;
+      emitDiagnostic(this, 'protocol-decode-error', {
+        phase, error: error.message, frameBytes: bytes?.byteLength ?? 0,
+        header: inspectGameFrame(data),
+        ...(phase === 'login' || !bytes ? {} : { frame: Uint8Array.from(bytes) }),
+        pending: this.pending.map(({ name, responseName }) => ({ name,
+          responseName: Array.isArray(responseName) ? [...responseName] : responseName })),
+        watchers: this.watchers.map(({ name }) => ({ name })),
+        sendSeqNo: this.sendSeqNo, recvSeqNo: this.recvSeqNo,
+        recentFrames: this.recentFrames.map(frame => ({ ...frame })),
+      });
+    } catch { /* Capturing an error must not prevent disconnect or rejection. */ }
+  }
+
   onMessage(data) {
+    this.rememberFrame('in', data);
     let decoded;
     try {
       decoded = this.codec.decode(data);
     } catch (error) {
+      this.diagnoseDecodeError(data, error, 'message');
       this.failConnection(`服务器消息解码失败：${error.message}`, 'protocol');
       return;
     }

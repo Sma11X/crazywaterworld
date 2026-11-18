@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createTraceLog, emitDiagnostic, traceJson } from '../src/trace-log.mjs';
+import { createProtocolDiagnostics } from '../src/protocol-diagnostics.mjs';
 import { createOperationLog } from '../src/operation-log.mjs';
 import { formatConsoleLog } from '../src/console-log.mjs';
 import { classifyLog } from '../src/log-categories.mjs';
@@ -11,6 +12,64 @@ import { prepareAd } from '../src/ad-shop.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-trace-log-'));
 const file = path.join(dir, 'protocol.log');
+function diagnosticFrame(name, size = 4) {
+  const frame = Buffer.alloc(11 + name.length + size, 0);
+  frame.writeInt32BE(frame.length - 4, 0);
+  frame[4] = 2; frame.writeInt32BE(123, 5); frame[9] = name.length;
+  frame.write(name, 10, 'ascii');
+  frame.fill(0xab, 11 + name.length);
+  return frame;
+}
+const snapshotDir = path.join(dir, 'protocol-errors');
+const diagnostics = createProtocolDiagnostics(snapshotDir);
+const unknownFrame = diagnosticFrame('SCUnknownFarmUpdate');
+const diagnosticEvent = { phase: 'message', error: 'Unknown message type: SCUnknownFarmUpdate', frame: unknownFrame,
+  pending: [{ name: 'FarmHarvestRequest', responseName: 'FarmHarvestResponse' }], watchers: [],
+  sendSeqNo: 12, recvSeqNo: 122, recentFrames: [{ direction: 'out', name: 'FarmHarvestRequest', seq: 12, bytes: 40 }] };
+const savedSnapshot = diagnostics.save(diagnosticEvent, { account: 'alipay:test', token: 'secret-context' });
+const savedRecord = JSON.parse(fs.readFileSync(savedSnapshot.file, 'utf8'));
+assert.deepEqual(Buffer.from(savedRecord.frameHex, 'hex'), unknownFrame, '错误原始帧必须逐字节保留以便离线重放');
+assert.equal(savedRecord.header.name, 'SCUnknownFarmUpdate');
+assert.equal(savedRecord.header.seq, 123);
+assert.equal(savedRecord.pending[0].name, 'FarmHarvestRequest');
+assert.equal(savedRecord.account, 'alipay:test');
+assert.equal(savedRecord.token, '[已脱敏]');
+assert.equal(savedRecord.truncated, false);
+const loginSnapshot = diagnostics.save({ phase: 'login', error: 'Unknown message type: FutureLoginResponse', frameBytes: 50,
+  header: { version: 2, name: 'FutureLoginResponse', seq: 77, flag: 0, payloadOffset: 30, token: 'secret-header' } });
+const loginRecord = JSON.parse(fs.readFileSync(loginSnapshot.file, 'utf8'));
+assert.equal(loginRecord.header.name, 'FutureLoginResponse');
+assert.equal(loginRecord.header.seq, 77);
+assert.equal(loginRecord.frameBytes, 50);
+assert(!('frameHex' in loginRecord));
+assert(!('token' in loginRecord.header));
+for (const event of [
+  { ...diagnosticEvent, phase: 'login' },
+  { ...diagnosticEvent, frame: diagnosticFrame('LoginResponse') },
+  { ...diagnosticEvent, frame: diagnosticFrame('AuthTokenResponse') },
+  { ...diagnosticEvent, frame: Buffer.from('token=secret-malformed') },
+]) {
+  const saved = diagnostics.save(event);
+  const record = JSON.parse(fs.readFileSync(saved.file, 'utf8'));
+  assert(!('frameHex' in record));
+  assert(record.rawOmitted);
+  assert.equal(record.capturedBytes, 0);
+}
+const oversizedSnapshot = diagnostics.save({ ...diagnosticEvent, frame: diagnosticFrame('SCHugeUpdate', 300 * 1024) });
+const oversizedRecord = JSON.parse(fs.readFileSync(oversizedSnapshot.file, 'utf8'));
+assert.equal(oversizedRecord.capturedBytes, 256 * 1024);
+assert.equal(oversizedRecord.frameHex.length, 512 * 1024);
+assert.equal(oversizedRecord.truncated, true);
+fs.writeFileSync(path.join(snapshotDir, 'keep.json'), '{}');
+for (let index = 0; index < 102; index++) {
+  const saved = diagnostics.save(diagnosticEvent);
+  assert(fs.existsSync(saved.file), '保留最新写入，即使多个错误在同一毫秒到达');
+}
+assert.equal(fs.readdirSync(snapshotDir).filter(name => name.startsWith('decode-')).length, 100);
+assert(fs.existsSync(path.join(snapshotDir, 'keep.json')), '只清理本模块生成的快照');
+const blockedSnapshotPath = path.join(dir, 'snapshot-path-is-file');
+fs.writeFileSync(blockedSnapshotPath, 'x');
+assert(createProtocolDiagnostics(blockedSnapshotPath).save(diagnosticEvent).error, '写入失败以结果返回，不中断业务');
 const log = createTraceLog(file, { maxBytes: 1024 });
 log.write('a'.repeat(700) + '\n');
 log.write('b'.repeat(700) + '\n');
@@ -174,6 +233,13 @@ try {
   assert(chain.every(entry => entry.dedupeKey === 'test:key'));
   assert.doesNotMatch(JSON.stringify(chain), /secret-/);
   app.emit(session, 'error', quotedError.message, { diagnostic: quotedError.stack });
+  session.client.emit('diagnostic', { ...diagnosticEvent, event: 'protocol-decode-error' });
+  const protocolError = webEntries.at(-1);
+  assert.match(protocolError.message, /SCUnknownFarmUpdate.*诊断快照已保存/);
+  assert.match(protocolError.detail, /FarmHarvestRequest/);
+  assert.equal(protocolError.extra.messageName, 'SCUnknownFarmUpdate');
+  assert.deepEqual(Buffer.from(JSON.parse(fs.readFileSync(protocolError.extra.protocolSnapshot, 'utf8')).frameHex, 'hex'), unknownFrame);
+  assert.doesNotMatch(JSON.stringify(protocolError), /"frameHex":|abababab/, '终端与网页不输出原始二进制');
   const stream = await fetch(root + '/api/events?account=trace-test');
   const reader = stream.body.getReader();
   const streamed = new TextDecoder().decode((await reader.read()).value);
@@ -195,6 +261,10 @@ try {
   const writeSync = fs.writeSync;
   try {
     fs.writeSync = () => { throw new Error('模拟磁盘写入失败'); };
+    assert.doesNotThrow(() => session.client.emit('diagnostic', { ...diagnosticEvent, event: 'protocol-decode-error' }));
+    assert.match(webEntries.at(-1).message, /诊断快照保存失败/);
+    assert.match(webEntries.at(-1).detail, /本次错误快照未保存/);
+    assert.doesNotMatch(webEntries.at(-1).detail, /frameHex/);
     assert.doesNotThrow(() => app.emit(session, 'info', '磁盘失败后网页仍输出'));
     assert.equal(webEntries.at(-1).message, '磁盘失败后网页仍输出');
   } finally { fs.writeSync = writeSync; }

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatConsoleLog } from '../src/console-log.mjs';
 import { createLogAccountLabels } from '../src/log-accounts.mjs';
+import { describeLogError } from '../src/log-errors.mjs';
 import { LOG_CATEGORIES } from '../src/log-categories.mjs';
 import { formatLoopStep } from '../src/loop.mjs';
 
@@ -106,6 +107,17 @@ test('不访问或输出 detail、extra 和其他原始字段', () => {
   const result = formatConsoleLog({ ...entry, detail: 'token=私密值', extra: { protocol: { password: '私密密码' } } });
   assert.equal(result, prefix() + '自动挂机开始');
   assert.doesNotMatch(result, /token|私密|password|protocol/);
+});
+
+test('未知协议消息名称保留在网页正文和终端，原始错误仍供诊断使用', () => {
+  const original = '农田收获 小麦失败：服务器消息解码失败：Unknown message type: SCNewFarmUpdate';
+  const translated = describeLogError(original);
+  const expected = '农田收获 小麦失败：服务器消息解码失败：当前协议无法识别消息：SCNewFarmUpdate';
+  assert.equal(translated.message, expected);
+  assert.equal(translated.detail, original);
+  const formatted = formatConsoleLog({ ...entry, category: 'production', level: 'error', ...translated });
+  assert.ok(formatted.endsWith(expected), '终端正文应包含具体消息名，不能依赖不输出的 detail');
+  assert.doesNotMatch(formatted, /Unknown message type/);
 });
 
 test('空正文和无效时间不会使日志输出抛错', () => {

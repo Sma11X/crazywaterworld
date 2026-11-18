@@ -58,7 +58,7 @@ export function describeLogError(message, context) {
     })
     .replace(/\bsocket closed during login: (\d+)[^\n]*/g, (_, code) => '登录时连接已断开（状态码 ' + code + '）')
     .replace(/\bunexpected auth reply: \w+/g, '登录时收到意外的服务器回复')
-    .replace(/\bUnknown message type: \w+/g, '当前协议无法识别这条消息')
+    .replace(/\bUnknown message type: (\w+)/g, '当前协议无法识别消息：$1')
     .replace(/\bprotocol has no type \w+/g, '当前协议尚不支持这项操作')
     .replace(connectionPattern, reason => connectionLabels.get(reason));
   return translated === message ? { message } : { message: translated, detail: message };
