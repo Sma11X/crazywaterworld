@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { createConsoleRuntime } from '../src/ui/console-store.mjs';
 import { defaultSettings, settingsUiRules } from '../src/automation-settings.mjs';
-import { activityAutomationFields } from '../src/activity-automation.mjs';
+import { activityAutomationFields, activityAutomationSettingFields } from '../src/activity-automation.mjs';
 
 const script = fs.readFileSync(new URL('../src/ui/activities.js', import.meta.url), 'utf8');
 const configScript = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
@@ -120,7 +120,7 @@ function fixture() {
   });
   const shipSaved = new Map([['merchant-a', shipSettings()], ['merchant-b', shipSettings({ mode: 'small' }, 3)]]);
   const automationSettings = (values = {}, revision = 1) => ({
-    settings: { ...Object.fromEntries(activityAutomationFields.map(({ key }) =>
+    settings: { ...Object.fromEntries(activityAutomationSettingFields.map(({ key }) =>
       [key, key.split('.').reduce((value, part) => value[part], defaultSettings())])), ...values },
     controls: activityAutomationFields, revision, baseRevision: 'base-' + revision,
   });
@@ -244,7 +244,7 @@ function fixture() {
           assert.equal(payload.revision, previous.revision);
           assert.equal(payload.baseRevision, previous.baseRevision);
           assert.equal(payload.confirm, true);
-          assert(activityAutomationFields.some(field => field.key === payload.key));
+          assert(activityAutomationSettingFields.some(field => field.key === payload.key));
           assert.equal(typeof payload.value, 'boolean');
           const next = clone(previous);
           next.settings[payload.key] = payload.value;
@@ -1346,7 +1346,7 @@ await test('活动元数据可定位无任务列表的已接入开关，纯展�
     { id: 'magicOcean', name: '神奇海洋', kind: 'limited', startTime: now - 100, endTime: now + 1000, taskKeys: [] },
   );
   await f.api.refresh(); f.api.select('beauty');
-  assert.equal(f.automationControls().length, 1);
+  assert.equal(f.automationControls().length, 3);
   assert(f.automationInput('activityAutomation.beauty'));
   f.api.select('magicOcean');
   assert.equal(f.automationControls().length, 0);
@@ -1356,6 +1356,43 @@ await test('活动元数据可定位无任务列表的已接入开关，纯展�
     ['activityAutomation.pirates', 'activityAutomation.openRank']);
   assert(f.automationInput('activityAutomation.pirates').getAttribute('aria-label').includes('海盗战报奖励'));
   assert(f.automationInput('activityAutomation.openRank').getAttribute('aria-label').includes('开服冲榜'));
+});
+
+await test('风采大赛随期次展示三个开关，历史与离线可改细项且不触发投票', async () => {
+  for (const state of ['active', 'upcoming', 'ended', 'offline']) {
+    const f = fixture(), now = Math.floor(f.state.now / 1000);
+    const archived = state === 'ended' || state === 'offline';
+    const row = { id: archived ? 'archive:beauty-old' : 'beauty', ...(archived ? { sourceId: 'beauty', observed: false } : {}),
+      name: '海上风采大赛', kind: 'limited', taskKeys: [],
+      startTime: state === 'upcoming' ? now + 60 : now - 3600,
+      endTime: archived ? now - 1 : now + 3600,
+      automation: { key: 'activityAutomation.beauty', enabled: false } };
+    f.activities.activities = [row];
+    f.catalog.activities = clone([row]);
+    if (state === 'offline') f.context.snapshot.connected = false;
+    f.automationSaved.set('merchant-a', f.automationSettings({
+      'activityAutomation.beauty': false, 'schedule.beautyVotes': true, 'schedule.beautyGift': false,
+    }));
+    const other = clone(f.automationSaved.get('merchant-b'));
+    await f.api.refresh(); f.api.select(row.id);
+    assert.equal(f.automationControls().length, 3, state);
+    assert.equal(f.automationInput('schedule.beautyVotes').getAttribute('aria-checked'), 'true');
+    assert.equal(f.automationInput('schedule.beautyGift').getAttribute('aria-label'), '领取每日投票礼包');
+    assert.match(f.node('activities-list').textContent, /每天投够\s*3\s*票/);
+    await f.clickAutomation('schedule.beautyGift');
+    await f.clickAutomation('schedule.beautyVotes');
+    assert.equal(f.automationSaved.get('merchant-a').settings['activityAutomation.beauty'], false);
+    assert.equal(f.automationSaved.get('merchant-a').settings['schedule.beautyGift'], true);
+    await f.api.refresh(); f.api.select(row.id);
+    assert.equal(f.automationInput('schedule.beautyVotes').getAttribute('aria-checked'), 'false');
+    assert.equal(f.automationInput('schedule.beautyGift').getAttribute('aria-checked'), 'true');
+    assert.deepEqual(f.automationSaved.get('merchant-b'), other);
+    assert(!f.state.calls.some(call => ['/api/activities/run', '/api/loop/start'].includes(call.route)));
+    assert.equal(f.node('activities-list').querySelectorAll('[data-activity-run]').length, 0);
+  }
+  const empty = fixture();
+  await empty.api.refresh();
+  assert(!empty.api.rows().some(row => row.id === 'beauty' || row.sourceId === 'beauty'), '没有期次时不补固定占位');
 });
 
 await test('联盟商船在活动页独立配置，离线及暂停可编辑且不出现挂机开关跳转', async () => {

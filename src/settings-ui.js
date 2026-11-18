@@ -5,6 +5,7 @@ const configWeeklyRanking = { owner: null, serial: 0, data: null, error: '', pen
 bindConsoleObject('configuration', configEditor, ['owner', 'data', 'draft', 'baseline', 'category', 'busy', 'loading', 'saving', 'saveError', 'saveRetries', 'selectedGroups', 'errors', 'playerData', 'playerError', 'previewSummary']);
 const configCategories = { base: '基地', world: '世界', heroes: '英雄', antique: '藏品', equipment: '装备', daily: '日常与活动' };
 const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderSubmit', 'weekOrder.allowDiamonds', 'schedule.weekOrderFinal',
+  'schedule.beautyVotes', 'schedule.beautyGift',
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const baseFamilies = [
   { id: 'construction', title: '建筑', groups: ['building'] },
@@ -205,10 +206,6 @@ const configGroups = [
     configField('schedule.compassSpin','龙王罗盘 · 自动抽取'),
     configField('eventActions.compassThreshold','铜钱达到多少开始抽取','number',{ parent: 'schedule.compassSpin',unit:'枚',help:'每轮先核对活动、道具单价与库存，默认10枚。'}),
     configField('eventActions.compassDrawCount','每批最多抽取','choice',{ parent: 'schedule.compassSpin',numeric:true,options:[[1,'1次'],[5,'5次'],[10,'10次'],[50,'50次']],help:'按实际铜钱和游戏支持的批次选择，每轮最多一批。'}),
-  ]},
-  {id:'beauty-contest',title:'限时 · 海上风采大赛',category:'daily',fields:[
-    configField('schedule.beautyVotes','每天投给当前最高票选手','switch',{help:'限时活动，每天投够3票即停；已投票数计入目标，同票按编号升序选择。'}),
-    configField('schedule.beautyGift','领取每日投票礼包'),
   ]},
   { id: 'building', title: '建筑', category: 'base', fields: [
     configField('building.enabled', '总开关'), configField('building.collect', '自动领取产出'), configField('building.build', '自动建造'),
@@ -1800,7 +1797,7 @@ async function configPreview() {
         data.moduleActions=plan.actions.filter(a=>selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a));
         data.usage=plan.usage;
       }
-      const activityNames={'weekly-activities':['军备竞赛'],'beauty-contest':['海上风采大赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};
+      const activityNames={'weekly-activities':['军备竞赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};
       if(activityNames[selected.id]){
         const stats=await call('/api/activity-statistics?refresh=1');
         data.moduleActivities=stats.items.filter(r=>activityNames[selected.id].includes(r.name));

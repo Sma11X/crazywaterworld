@@ -472,19 +472,22 @@ function renderActivityAutomation(box, row) {
   if (!controls.length) return;
   const section = el('div', 'activity-settings');
   for (const control of controls) {
-    const label = controls.length === 1 ? '开启自动挂机' : control.label + ' · 开启自动挂机';
-    const field = el('label', 'activity-auto');
-    const toggle = component('ui-event-switch');
-    const enabled = activityAutomationData.settings[control.key];
-    toggle.dataset.activityAutomation = control.key;
-    toggle.setAttribute('aria-label', label);
-    setTaskSwitch(toggle, enabled);
-    toggle.disabled = savingActivityAutomation.has(account);
-    toggle.onclick = () => {
-      if (account === current && !toggle.disabled) return saveActivityAutomation(control.key, !enabled);
-    };
-    field.append(toggle, el('span', null, label));
-    section.appendChild(field);
+    const mainLabel = controls.length === 1 ? '开启自动挂机' : control.label + ' · 开启自动挂机';
+    for (const setting of [{ ...control, label: mainLabel }, ...(control.fields ?? [])]) {
+      const field = el('label', 'activity-auto');
+      const toggle = component('ui-event-switch');
+      const enabled = activityAutomationData.settings[setting.key];
+      toggle.dataset.activityAutomation = setting.key;
+      toggle.setAttribute('aria-label', setting.label);
+      setTaskSwitch(toggle, enabled);
+      toggle.disabled = savingActivityAutomation.has(account);
+      toggle.onclick = () => {
+        if (account === current && !toggle.disabled) return saveActivityAutomation(setting.key, !enabled);
+      };
+      field.append(toggle, el('span', null, setting.label));
+      if (setting.help) field.appendChild(makeHelpTip(setting.label, setting.help));
+      section.appendChild(field);
+    }
   }
   const status = el('p', 'dim', savingActivityAutomation.has(account) ? '正在保存…' : activityAutomationStatus);
   status.setAttribute('role', 'status');

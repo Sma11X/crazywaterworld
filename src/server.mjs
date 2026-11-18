@@ -37,7 +37,7 @@ import { watchFreeRewardClock } from './extra-free-rewards.mjs';
 import { createPirateAdvanceTask } from './pirate-advance.mjs';
 import { automationControlView, setAutomationControl } from './automation-controls.mjs';
 import { activityAvailability, isActivityTaskAvailable } from './activity-availability.mjs';
-import { activityAutomationFields, activityAutomationControl } from './activity-automation.mjs';
+import { activityAutomationFields, activityAutomationSettingFields, activityAutomationControl } from './activity-automation.mjs';
 import http from 'node:http';
 import { setTimeout as recoveryWait } from 'node:timers/promises';
 import fs from 'node:fs';
@@ -836,7 +836,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   function activitySettingsView(session) {
     const current = settingsView(session);
     return {
-      settings: Object.fromEntries(activityAutomationFields.map(({ key }) => {
+      settings: Object.fromEntries(activityAutomationSettingFields.map(({ key }) => {
         const [group, field] = key.split('.');
         return [key, current.settings[group][field]];
       })),
@@ -1833,7 +1833,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           || Object.keys(payload).some(key => !['key', 'value', 'revision', 'baseRevision', 'confirm'].includes(key))) {
           throw new SettingsError({ settings: '请选择有效的活动自动挂机开关' });
         }
-        const control = activityAutomationFields.find(field => field.key === payload.key);
+        const control = activityAutomationSettingFields.find(field => field.key === payload.key);
         if (!control) throw new SettingsError({ settings: '请选择有效的活动自动挂机开关' });
         needConfirm(payload);
         const { session } = scoped_(parsed);
