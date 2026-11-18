@@ -138,7 +138,8 @@ export async function runWeeklyActivity(client, protocol, config, player, {
       await runBaseAutomation(connection, protocol, config, plan, { player, getSettings: current, ledger, enabled: active, onStep: emit });
       if (!plan.actions.length && settings.pet.species.length) note(plan.notesBySetting?.['pet.breed']?.join('；') || '海兽队列、材料或品质条件暂不满足');
     } else if (context.kind === 'forge') {
-      if (!settings.forge.buildingIds.length || !settings.forge.recipeIds.length) note('请先在装备自动锻造配置选择工厂和配方');
+      if (settings.forge.nativeAuto) note('已选择游戏原生自动锻造，周活动配方、品质和积分停止规则不参与；原生开关由装备挂机总开关同步');
+      else if (!settings.forge.buildingIds.length || settings.forge.craft !== false && !settings.forge.recipeIds.length) note('请先在装备自动锻造配置选择工厂和配方');
       else {
         const result = await runEquipmentForge(connection, protocol, config, player, { getSettings: current, ledger, enabled: active, onStep: emit });
         if (result.notes?.length) note(result.notes.join('；'));

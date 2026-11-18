@@ -83,6 +83,73 @@ try {
     assert.equal(nativeTaskValues(changed, {}).collect, false);
   });
 
+  await check('装备领取与续产独立保存，原生模式不要求工具配方或分解品质', () => {
+    const settings = defaultSettings();
+    assert.equal(settings.forge.nativeAuto, false);
+    assert.equal(settings.forge.collect, true);
+    assert.equal(settings.forge.craft, true);
+    Object.assign(settings.forge, { enabled: true, buildingIds: ['1装备厂'], craft: false });
+    const claimOnly = validateSettings(settings);
+    assert.deepEqual(claimOnly.forge.recipeIds, []);
+    const file = path.join(directory, 'forge-modes.json');
+    saveAutomationSettings('forge', claimOnly, { file, revision: 0 });
+    assert.deepEqual(loadAutomationSettings('forge', { file }).settings.forge, claimOnly.forge);
+    settings.forge.craft = true;
+    assert.throws(() => validateSettings(settings), error => !!error.fields?.['forge.recipeIds']);
+    settings.forge.nativeAuto = true;
+    settings.forge.collect = false;
+    settings.forge.decompose = true;
+    const native = validateSettings(settings);
+    assert.deepEqual(native.forge, settings.forge, '原生模式保留工具设置，不强行改写');
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(native)).forge, native.forge);
+    saveAutomationSettings('forge', native, { file, revision: 1 });
+    assert.deepEqual(loadAutomationSettings('forge', { file }).settings.forge, native.forge);
+    settings.forge.nativeAuto = false;
+    assert.throws(() => validateSettings(settings), error => !!error.fields?.['forge.recipeIds'] && !!error.fields?.['forge.decomposeQualities']);
+    for (const key of ['nativeAuto', 'collect', 'craft']) {
+      const invalid = structuredClone(native); invalid.forge[key] = 'true';
+      assert.throws(() => validateSettings(invalid), error => !!error.fields?.['forge.' + key]);
+    }
+  });
+
+  await check('版本8装备配置升级保留原领取续产与明确开关值，加载不改写文件', () => {
+    const old = exportAutomationSettings(defaultSettings()); old.version = 8;
+    Object.assign(old.settings.forge, { enabled: true, buildingIds: ['1装备厂'], recipeIds: ['1001'] });
+    for (const key of ['nativeAuto', 'collect', 'craft']) delete old.settings.forge[key];
+    const before = structuredClone(old), file = path.join(directory, 'forge-version8.json');
+    fs.writeFileSync(file, JSON.stringify({ version: 8, accounts: { old: { revision: 6, settingsVersion: 8, settings: old.settings } } }));
+    const bytes = fs.readFileSync(file);
+    for (const result of [importAutomationSettings(old), loadAutomationSettings('old', { file }).settings, validateSettings(old.settings)]) {
+      assert.deepEqual(result.forge, { ...old.settings.forge, nativeAuto: false, collect: true, craft: true });
+    }
+    assert.deepEqual(old, before);
+    assert.deepEqual(fs.readFileSync(file), bytes);
+    Object.assign(old.settings.forge, { nativeAuto: true, collect: false, craft: false });
+    assert.deepEqual(importAutomationSettings(old).forge, old.settings.forge);
+  });
+
+  await check('原生锻造隐藏工具配置，关闭模式恢复领取续产与原有参数', () => {
+    const source = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
+    const groups = newStateFunction(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
+    const fields = groups.find(group => group.id === 'forge').fields;
+    const draft = defaultSettings(); Object.assign(draft.forge, { nativeAuto: true, universal: true, decompose: true, recipeIds: ['1001'] });
+    const saved = structuredClone(draft.forge);
+    for (const field of fields.filter(field => !['forge.enabled', 'forge.buildingIds', 'forge.nativeAuto'].includes(field.key))) {
+      assert.equal(field.when?.(draft), false, field.key + '在原生模式不可见');
+    }
+    draft.forge.nativeAuto = false;
+    for (const key of ['collect', 'craft', 'decompose', 'recipeIds', 'materialReserve', 'dailyLimit', 'dailyGoldLimit']) {
+      assert.equal(fields.find(field => field.key === 'forge.' + key).when(draft), true);
+    }
+    assert.deepEqual(draft.forge, { ...saved, nativeAuto: false });
+    draft.forge.craft = false;
+    assert.equal(fields.find(field => field.key === 'forge.recipeIds').when(draft), false);
+    assert.equal(fields.find(field => field.key === 'forge.collect').when(draft), true);
+    assert.match(fields.find(field => field.key === 'forge.nativeAuto').help, /月卡权益/);
+    assert.match(source, /游戏原生开关/);
+    assert.match(source, /此预览只读/);
+  });
+
   await check('商人自动完成与钻石补料独立保存，旧账号补料默认关闭', () => {
     const settings = validateSettings(defaultSettings());
     assert.equal(settings.schedule.weekOrderSubmit, false);

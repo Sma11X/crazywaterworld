@@ -283,17 +283,20 @@ const configGroups = [
     configField('pet.advance', '自动进阶', 'switch', { help: '对已入驻的海兽投喂进阶材料；达到喂养和等级要求后进阶。' }),
   ] },
   { id: 'forge', title: '装备自动锻造', category: 'equipment', fields: [
-    configField('forge.enabled', '自动锻造总开关', 'switch', { help: '随每轮挂机检查，自动领取所选工厂已完成的装备，确认入库后再安排下一件；达到下单上限仍可领取。下方选择“装备锻造”预览；不会开启游戏原生自动锻造。' }),
+    configField('forge.enabled', '自动锻造总开关', 'switch', { help: '随每轮挂机检查所选工厂，按下方模式执行。保存配置后需启动挂机；预览只显示状态，不执行领取或锻造。关闭总开关或停止挂机只暂停工具，不会关闭游戏中已开启的原生自动锻造。' }),
     configField('forge.buildingIds', '锻造工厂', 'multi', { catalog: 'forgeBuildings', empty: '请选择装备工厂' }),
-    configField('forge.decompose','自动分解','switch',{help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
-    configField('forge.decomposeQualities','处理品质','multi',{ parent: 'forge.decompose',catalog:'equipQualities',empty:'未选择，不处理',when:d=>d.forge.decompose}),
-    configField('forge.recipeIds', '配方优先顺序', 'multi', { catalog: 'forgeRecipes', empty: '请选择锻造配方', help: '按勾选先后依次尝试，使用首个满足赛季、材料和预算的配方。产出装备和星级遵守游戏随机规则。' }),
-    configField('forge.universal', '允许万能材料补足', 'switch', { help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
-    configField('forge.materialReserve', '普通材料保留量', 'number', { unit: '每种', help: '一次锻造后，每种消耗的普通材料不得低于此值。' }),
-    configField('forge.universalReserve', '万能材料保留量', 'number', { parent: 'forge.universal', unit: '每种', when: d => d.forge.universal }),
-    configField('forge.goldReserve', '锻造后保留金币', 'number', { unit: '金币' }),
-    configField('forge.dailyLimit', '每日锻造次数上限', 'number', { unit: '次', help: '至少1次；只计本工具下单，未知结果仍占额度。' }),
-    configField('forge.dailyGoldLimit', '每日锻造金币预算', 'number', { unit: '金币', help: '至少1金币，跨轮和重启保留；不自动购买材料、不消耗钻石或加速器。' }),
+    configField('forge.nativeAuto', '使用游戏原生自动锻造', 'switch', { help: '开启后由游戏自己的逻辑领取和锻造，本组工具领取、续产、分解、配方、材料保留及预算均不生效，原配置保留；周活动的品质顺序和积分停止规则也不限制游戏原生。需要游戏的装备工厂自动锻造月卡权益，不会自动购买。保存后在挂机运行时同步开关并回读确认。关闭此项后，工具会关闭由本工具开启的原生开关，再按工具配置执行；如需停掉原生自动，请关闭此项并保持挂机运行到确认关闭后再停止。' }),
+    configField('forge.collect', '自动领取完工装备', 'switch', { when: d => !d.forge.nativeAuto, help: '领取所选工厂已完成的装备；达到锻造次数或金币预算上限仍可领取。只需领取时，可关闭“自动续产”。' }),
+    configField('forge.craft', '自动续产', 'switch', { when: d => !d.forge.nativeAuto, help: '工厂空闲时按下方配方、材料保留和预算继续制造。开启自动领取时，先确认装备入库再续产。' }),
+    configField('forge.decompose','自动分解','switch',{when:d=>!d.forge.nativeAuto,help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
+    configField('forge.decomposeQualities','处理品质','multi',{ parent: 'forge.decompose',catalog:'equipQualities',empty:'未选择，不处理',when:d=>!d.forge.nativeAuto && d.forge.decompose}),
+    configField('forge.recipeIds', '配方优先顺序', 'multi', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, catalog: 'forgeRecipes', empty: '请选择锻造配方', help: '按勾选先后依次尝试，使用首个满足赛季、材料和预算的配方。产出装备和星级遵守游戏随机规则。' }),
+    configField('forge.universal', '允许万能材料补足', 'switch', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
+    configField('forge.materialReserve', '普通材料保留量', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '每种', help: '一次锻造后，每种消耗的普通材料不得低于此值。' }),
+    configField('forge.universalReserve', '万能材料保留量', 'number', { parent: 'forge.universal', unit: '每种', when: d => !d.forge.nativeAuto && d.forge.craft && d.forge.universal }),
+    configField('forge.goldReserve', '锻造后保留金币', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '金币' }),
+    configField('forge.dailyLimit', '每日锻造次数上限', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '次', help: '至少1次；只计本工具下单，未知结果仍占额度。' }),
+    configField('forge.dailyGoldLimit', '每日锻造金币预算', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '金币', help: '至少1金币，跨轮和重启保留；不自动购买材料、不消耗钻石或加速器。' }),
   ] },
   { id: 'museum', title: '博物馆探宝', category: 'base', fields: [
     configField('museum.runEnabled', '博物馆探宝总开关', 'switch', { help: '统一暂停博物馆升级、领奖、藏品上架和探宝，保留细项选择。未选择任何执行动作时不会操作。' }),
@@ -1837,7 +1840,8 @@ async function configPreview() {
     if (data.forge) {
       const state = data.forge;
       root.append(el('p', 'config-help', '当前赛季 ' + (state.season ?? '未确认') + ' · 锻造等级 ' + (state.forgeLevel ?? '未确认') + ' · 金币 ' + (state.gold ?? '未确认')));
-      if (state.factories?.length) root.append(table(['工厂', '当前状态', '原生自动锻造', '工具检查', '操作'], state.factories.map(f => {
+      root.append(el('p', 'config-help', '游戏原生开关表示游戏内的自动锻造状态；工具是否自动领取由本组总开关和领取选项决定。此预览只读，保存配置并运行挂机后才会执行。'));
+      if (state.factories?.length) root.append(table(['工厂', '当前状态', '游戏原生开关', '工具检查', '操作'], state.factories.map(f => {
         let action = '—';
         if (f.recoverable) {
           const button = smallButton('确认已处理并解除');

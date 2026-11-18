@@ -86,8 +86,7 @@ test('无详细配置的原生营收和成就迁移补齐本组总控，不连�
   }
 });
 
-test('版本8新账号默认不启用零推荐兜底，兜底倍数默认1', () => {
-  assert.equal(SETTINGS_SCHEMA_VERSION, 8);
+test('新账号默认不启用零推荐兜底，兜底倍数默认1', () => {
   const fresh = defaultSettings();
   assert.equal(fresh.museum.noRecommendedFallback, false);
   assert.equal(fresh.museum.noRecommendedFactor, 1);
@@ -193,9 +192,9 @@ test('旧模式读取、保存、重载、导入导出幂等，并保持模块�
       assert.deepEqual(saved.settings, expected);
       assert.deepEqual(loadAutomationSettings('account', { file }).settings, expected);
       const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
-      assert.equal(stored.version, 8); assert.equal(stored.accounts.account.settingsVersion, 8);
+      assert.equal(stored.version, SETTINGS_SCHEMA_VERSION); assert.equal(stored.accounts.account.settingsVersion, SETTINGS_SCHEMA_VERSION);
       const exported = exportAutomationSettings(saved.settings);
-      assert.equal(exported.version, 8);
+      assert.equal(exported.version, SETTINGS_SCHEMA_VERSION);
       assert.deepEqual(importAutomationSettings(exported), expected);
     }
   } finally {

@@ -45,7 +45,8 @@ export function weeklyManagedSettings(settings) {
     next.factory.speedUpSources = [];
     next.schedule.adSpeedUpProduce = false;
   }
-  if (p.forgeEnabled) next.forge.enabled = false;
+  // 原生模式由游戏持续执行，周活动的积分目标不能控制它。
+  if (p.forgeEnabled && !settings.forge.nativeAuto) next.forge.enabled = false;
   if (p.heroEnabled) {
     next.loop.heroes = false;
     next.schedule.ticketRecruit = false;

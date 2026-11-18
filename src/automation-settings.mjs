@@ -16,7 +16,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 8;
+export const SETTINGS_SCHEMA_VERSION = 9;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -85,7 +85,7 @@ export const DEFAULT_SETTINGS = {
     defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], fleetStrategies: {}, autoRepair: false,
     nativeCommissionLimit: -1, repairBelowPercent: 80,
     dailyDispatchLimit: 10, reserveDuringWar: false, checkEverySeconds: 15 },
-  forge: { decompose: false, decomposeQualities: [], enabled: false, buildingIds: [], recipeIds: [], universal: false, materialReserve: 0,
+  forge: { decompose: false, decomposeQualities: [], enabled: false, nativeAuto: false, collect: true, craft: true, buildingIds: [], recipeIds: [], universal: false, materialReserve: 0,
     universalReserve: 0, goldReserve: 0, dailyLimit: 5, dailyGoldLimit: 100000, checkEverySeconds: 30 },
   antique: { enabled: false, activate: false, activateQualities: [], star: false, starQualities: [], targetStar: 0, universal: false,
     master: false, targetMasterLevel: 0, suit: false, suitQualities: [], goldReserve: 0, dailyGoldLimit: 20000,
@@ -295,7 +295,7 @@ export function validateSettings(input, options = {}) {
 function validateCurrentSettings(input, { partial = false, catalog = null } = {}) {
   // An already-open settings page can still submit the retired fields.
   // Ignore only these known fields; every other setting remains strict.
-  input = migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input))))));
+  input = migrateVersion8Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input)))))));
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
@@ -362,7 +362,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   if (output.heroes.heroIds.length) output.heroes.needsSelection = false;
   if (output.progression.trials && !output.progression.raidIds.length) errors['progression.raidIds'] = '请选择自动推关的试炼副本';
   if (output.pirateHunt.enabled && !output.pirateHunt.fleetIds.length) errors['pirateHunt.fleetIds'] = '请选择自动讨伐海盗的舰队';
-  if(output.forge.decompose && !output.forge.decomposeQualities.length)errors['forge.decomposeQualities']='请选择可自动分解的装备品质';
+  if(!output.forge.nativeAuto && output.forge.decompose && !output.forge.decomposeQualities.length)errors['forge.decomposeQualities']='请选择可自动分解的装备品质';
   if(output.pet.release && !output.pet.releaseQualities.length)errors['pet.releaseQualities']='请选择可自动放生的海兽品质';
   if (output.antique.activate && !output.antique.activateQualities.length) errors['antique.activateQualities'] = '请选择自动激活的藏品品质';
   if (output.antique.star && !output.antique.starQualities.length) errors['antique.starQualities'] = '请选择自动升星的藏品品质';
@@ -402,7 +402,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
     if (output.cityWar[refs].some(value => !/^[1-9]\d{0,3}:[1-9]\d{0,5}$/.test(value))) errors['cityWar.' + refs] = '城市选项必须包含有效场景和城市编号';
   }
   if (output.forge.enabled && !output.forge.buildingIds.length) errors['forge.buildingIds'] = '请选择装备锻造工厂';
-  if (output.forge.enabled && !output.forge.recipeIds.length) errors['forge.recipeIds'] = '请选择至少一种锻造配方';
+  if (output.forge.enabled && !output.forge.nativeAuto && output.forge.craft && !output.forge.recipeIds.length) errors['forge.recipeIds'] = '请选择至少一种锻造配方';
   if (output.forge.recipeIds.some(value => !/^[1-9]\d{0,8}$/.test(value))) errors['forge.recipeIds'] = '请选择有效的锻造配方';
   if (catalog) {
     for (const [name, collection] of Object.entries({
@@ -502,7 +502,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function validateSettingsStore(store) {
@@ -719,4 +719,15 @@ function migrateVersion7Settings(settings) {
   if (!Object.hasOwn(museum, 'noRecommendedFallback')) museum.noRecommendedFallback = legacyRecommended;
   if (!Object.hasOwn(museum, 'noRecommendedFactor')) museum.noRecommendedFactor = legacyRecommended ? museum.partialRecommendedFactor ?? 2 : 1;
   return { ...settings, museum };
+}
+
+// Version 9 exposes claim/start separately without changing existing forge
+// behavior. Native automation always requires an explicit opt-in.
+function migrateVersion8Settings(settings) {
+  if (!plain(settings) || !plain(settings.forge)) return settings;
+  const forge = { ...settings.forge };
+  for (const key of ['nativeAuto', 'collect', 'craft']) {
+    if (!Object.hasOwn(forge, key)) forge[key] = DEFAULT_SETTINGS.forge[key];
+  }
+  return { ...settings, forge };
 }

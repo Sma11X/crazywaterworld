@@ -53,7 +53,7 @@ import {watchTreasureTravel,matchesFollowDeparture} from './treasure-follow.mjs'
 import {watchFleetMaintenance,fleetMaintenanceEnabled,fleetMaintenanceInterval,runFleetMaintenance} from './fleet-maintenance.mjs';
 import {watchFleetSpeed,fleetSpeedEnabled,runFleetSpeed} from './fleet-speed.mjs';
 import { cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations, runCityWar } from './city-war.mjs';
-import { forgeEnabled, runEquipmentForge } from './equipment-forge.mjs';
+import { forgeEnabled, hasOwnedNativeForge, runEquipmentForge } from './equipment-forge.mjs';
 import { antiqueEnabled, runAntiqueUpgrade } from './antique-upgrade.mjs';
 import { readHeroGrowthPlan, heroStepLabel, runHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
@@ -571,10 +571,14 @@ export async function runLoop(client, protocol, {
       finally{rewards?.expect('联盟情报',rewards.now()+(getSettings()?.radar.checkEverySeconds??30));radarAt=Date.now()+(getSettings()?.radar.checkEverySeconds??30)*1000;}
     }
     async function checkForge() {
-      if (stop.aborted || !forgeEnabled(getSettings())) return;
+      // Switching away from native must still turn it off outside the weekly
+      // forge day or after its score target, without running custom recipes.
+      const nativeOnly = !forgeEnabled(getSettings()) && forgeEnabled(getWeeklySettings()) && hasOwnedNativeForge(player, usageLedger);
+      const forgeSettings = nativeOnly ? getWeeklySettings : getSettings;
+      if (stop.aborted || !forgeEnabled(forgeSettings())) return;
       try {
-        const result = await runEquipmentForge(client, protocol, config, player, { getSettings, ledger: usageLedger,
-          enabled: () => !stop.aborted && runtimeActive() && client.connected && forgeEnabled(getSettings()),
+        const result = await runEquipmentForge(client, protocol, config, player, { getSettings: forgeSettings, ledger: usageLedger, nativeOnly,
+          enabled: () => !stop.aborted && runtimeActive() && client.connected && forgeEnabled(forgeSettings()),
           onStep(entry) { summary.world.planned++; summary.world.results.push(entry); stepLog('world')({ ...entry, category: '装备锻造' }); },
         });
         const text = (result.notes ?? []).join('；');rewards?.observe('装备锻造',text||'本次已核对，锻造动作结果见日志');
