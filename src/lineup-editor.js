@@ -1,6 +1,5 @@
 // Saved formations and editor drafts belong to an account, including in-flight requests.
 const savedLineupAccounts = new Map();
-const manualLineupChoices = new Map();
 let lineupModal = null;
 
 function savedLineupState(account) {
@@ -8,6 +7,7 @@ function savedLineupState(account) {
     saved: null, editor: null, drafts: new Map(), activeDraft: null,
     readSerial: 0, editorSerial: 0, loading: false, saving: false, readError: '',
     message: '', error: false,
+    bindingPending: new Map(), bindingSave: null, bindingError: '',
     selectedHeroId: null, query: '', faction: '', career: '', ui: null,
   });
   return savedLineupAccounts.get(account);
@@ -18,8 +18,77 @@ function lineupRequest(path, account, body) {
     : { method: 'POST', body: JSON.stringify({ ...body, confirm: true }) });
 }
 
+function configuredLineupId(account, key) {
+  const state = savedLineupState(account);
+  if (state.bindingPending.has(key)) return state.bindingPending.get(key).value;
+  return key === 'mainline' ? state.saved?.mainlinePresetId || ''
+    : state.saved?.trialPresets?.find(binding => 'trial:' + binding.raidId === key)?.presetId || '';
+}
+
 function selectedLineupId(mode, raidId) {
-  return manualLineupChoices.get(current)?.get(mode === 'trial' ? 'trial:' + raidId : 'mainline') || '';
+  return configuredLineupId(current, mode === 'trial' ? 'trial:' + raidId : 'mainline');
+}
+
+function paintLineupChoiceStatus(node, state) {
+  node.textContent = state.bindingPending.size ? '正在保存阵容选择…' : state.bindingError;
+  node.hidden = !node.textContent;
+  node.className = state.bindingError && !state.bindingPending.size ? 'warn' : 'dim';
+}
+
+function createLineupChoiceStatus(account) {
+  const node = el('span'); node.dataset.lineupChoiceStatus = account;
+  node.setAttribute('role', 'status');
+  paintLineupChoiceStatus(node, savedLineupState(account));
+  return node;
+}
+
+function saveChallengeLineup(account, key, value) {
+  if (!account || account !== current) return Promise.resolve();
+  const state = savedLineupState(account);
+  state.bindingPending.set(key, { value }); state.bindingError = '';
+  updateManualLineupSelects(account);
+  if (state.bindingSave) return state.bindingSave;
+  const job = (async () => {
+    while (state.bindingPending.size) {
+      const changes = new Map(state.bindingPending);
+      try {
+        // Merge only the changed choices into the latest account configuration.
+        // Serialize saves so changing another trial cannot overwrite an in-flight choice.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const latest = await lineupRequest('/api/lineup-presets', account);
+          adoptSavedLineups(state, latest);
+          let mainlinePresetId = latest.mainlinePresetId || '';
+          const trials = new Map((latest.trialPresets || []).map(binding => [binding.raidId, binding.presetId]));
+          for (const [mode, choice] of changes) {
+            if (mode === 'mainline') mainlinePresetId = choice.value;
+            else if (choice.value) trials.set(mode.slice(6), choice.value);
+            else trials.delete(mode.slice(6));
+          }
+          try {
+            const data = await lineupRequest('/api/lineup-presets/bind', account, {
+              revision: latest.revision, mainlinePresetId,
+              trialPresets: [...trials].map(([raidId, presetId]) => ({ raidId, presetId })),
+            });
+            adoptSavedLineups(state, data);
+            state.bindingError = '';
+            break;
+          } catch (error) {
+            if (!error.fields?.revision || attempt === 1) throw error;
+          }
+        }
+      } catch (error) {
+        // A lost response may still have saved successfully. Re-read before rolling back the UI.
+        try { adoptSavedLineups(state, await lineupRequest('/api/lineup-presets', account)); } catch {}
+        state.bindingError = '阵容选择保存失败：' + error.message + '。请重新选择后重试。';
+      }
+      for (const [mode, choice] of changes) {
+        if (state.bindingPending.get(mode) === choice) state.bindingPending.delete(mode);
+      }
+      if (account === current) updateManualLineupSelects(account);
+    }
+  })();
+  state.bindingSave = job.finally(() => { state.bindingSave = null; });
+  return state.bindingSave;
 }
 
 function fillLineupSelect(select, presets, value) {
@@ -54,20 +123,19 @@ function createLineupSelect(account, mode, raidId) {
   select.dataset.lineupAccount = account;
   select.dataset.lineupMode = key;
   select.setAttribute('aria-label', mode === 'trial' ? '试炼挑战阵容' : '主线挑战阵容');
-  fillLineupSelect(select, savedLineupState(account).saved?.presets || [], manualLineupChoices.get(account)?.get(key) || '');
-  select.onchange = () => {
-    if (account !== current) return;
-    if (!manualLineupChoices.has(account)) manualLineupChoices.set(account, new Map());
-    manualLineupChoices.get(account).set(key, select.value);
-  };
+  fillLineupSelect(select, savedLineupState(account).saved?.presets || [], configuredLineupId(account, key));
+  select.onchange = () => saveChallengeLineup(account, key, select.value);
   return select;
 }
 
 function updateManualLineupSelects(account) {
-  const presets = savedLineupState(account).saved?.presets || [];
+  const state = savedLineupState(account), presets = state.saved?.presets || [];
   for (const select of document.querySelectorAll('select[data-lineup-mode]')) {
     if (select.dataset.lineupAccount !== account) continue;
-    fillLineupSelect(select, presets, manualLineupChoices.get(account)?.get(select.dataset.lineupMode) || '');
+    fillLineupSelect(select, presets, configuredLineupId(account, select.dataset.lineupMode));
+  }
+  for (const node of document.querySelectorAll('[data-lineup-choice-status]')) {
+    if (node.dataset.lineupChoiceStatus === account) paintLineupChoiceStatus(node, state);
   }
 }
 
@@ -93,7 +161,7 @@ async function refreshSavedLineups(account = current) {
     if (clearedReadError) { state.message = ''; state.error = false; }
     state.readError = '';
     const unchanged = JSON.stringify(state.saved) === JSON.stringify(data);
-    const contentUnchanged = state.saved && ['presets', 'catalog']
+    const contentUnchanged = state.saved && ['presets', 'catalog', 'mainlinePresetId', 'trialPresets']
       .every(key => JSON.stringify(state.saved[key]) === JSON.stringify(data[key]));
     adoptSavedLineups(state, data);
     if (account !== current) return;
@@ -134,7 +202,7 @@ async function mutateSavedLineups(account, path, body) {
   try {
     const data = await lineupRequest(path, account, { revision: state.saved?.revision ?? 0, ...body });
     adoptSavedLineups(state, data);
-    state.message = recovering ? '已完成阵容核对' : '已保存';
+    state.message = recovering ? '已完成阵容核对' : '';
     if (account === current) updateManualLineupSelects(account);
     return data;
   } catch (error) {
@@ -192,12 +260,15 @@ function renderSavedLineups(account) {
   clear(host); host.dataset.owner = account;
   const toolbar = el('div', 'bar');
   const create = smallButton('新建阵容'), capture = smallButton('保存游戏当前阵容');
+  create.id = 'saved-lineup-create';
+  create.setAttribute('aria-label', '新建阵容');
   create.disabled = capture.disabled = state.saving || !state.saved;
   create.onclick = () => openSavedLineupEditor(account);
   capture.onclick = () => captureSavedLineup(account);
   toolbar.append(create, capture); host.append(toolbar);
   const status = el('p', state.error ? 'warn' : 'dim', state.message || (state.saved ? '' : '正在读取已保存阵容…'));
-  status.setAttribute('role', 'status'); host.append(status);
+  status.setAttribute('role', 'status');
+  if (status.textContent) host.append(status);
   state.recoveryHost = el('div', 'saved-lineup-recovery-host');
   renderLineupRecovery(state.recoveryHost, state, account);
   host.append(state.recoveryHost);
@@ -244,7 +315,7 @@ function closeLineupDialog(restoreFocus = true) {
   document.body.classList.remove('lineup-modal-open');
   if (!restoreFocus || modal.account !== current) return;
   const row = [...document.querySelectorAll('[data-lineup-preset]')].find(item => item.dataset.lineupPreset === modal.presetId);
-  const fallback = row?.querySelector(modal.mode === 'viewer' ? 'button[aria-label^="查看阵容"]' : 'button[aria-label^="编辑阵容"]') || $('saved-lineup-refresh');
+  const fallback = row?.querySelector(modal.mode === 'viewer' ? 'button[aria-label^="查看阵容"]' : 'button[aria-label^="编辑阵容"]') || $('saved-lineup-create');
   (modal.returnFocus?.isConnected ? modal.returnFocus : fallback)?.focus({ preventScroll: true });
 }
 
@@ -437,9 +508,11 @@ function redrawLineupEditor(state, account, focusPosition) {
   const active = state.ui.root.contains(document.activeElement) ? document.activeElement : null;
   const label = active?.getAttribute('aria-label');
   const selection = active && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
+  const rosterScroll = state.ui.roster?.scrollTop || 0;
   const old = state.ui.root, host = el('div');
   renderLineupEditor(host, state, account);
   old.replaceWith(host.firstElementChild);
+  state.ui.roster.scrollTop = rosterScroll;
   if (focusPosition) {
     [...state.ui.root.querySelectorAll('[data-lineup-position]')]
       .find(item => item.dataset.lineupPosition === focusPosition)?.focus({ preventScroll: true });
@@ -477,7 +550,7 @@ function bindLineupPointer(button, state, account, heroId) {
     if (!drag || drag.id !== event.pointerId) return;
     const moved = drag.moved, target = drop;
     end();
-    if (!moved || account !== current) return;
+    if (!moved || account !== current || state.saving) return;
     state.suppressClickUntil = Date.now() + 400;
     if (target?.dataset.lineupPosition) {
       const [x, y] = target.dataset.lineupPosition.split(',').map(Number);
@@ -499,7 +572,10 @@ function drawLineupBoard(state, account, readonly = false) {
     const button = el(readonly ? 'div' : 'button', 'lineup-slot');
     if (!readonly) button.type = 'button';
     button.style.left = ((56 + (position.x - 1) * 56) / 336 * 100) + '%';
-    button.style.top = ((42 + (6 - position.y) * 68) / 492 * 100) + '%';
+    // Keep the outermost heroes inside the board as its height adapts to the viewport.
+    const rowRatio = (6 - position.y) / 6;
+    button.style.top = readonly ? ((42 + (6 - position.y) * 68) / 492 * 100) + '%'
+      : 'calc(' + (rowRatio * 100) + '% + ' + (33 - rowRatio * 66) + 'px)';
     button.dataset.lineupPosition = lineupPositionKey(position);
     button.setAttribute('aria-label', '站位 ' + position.x + '，' + position.y + (hero ? '，' + hero.name : '，空位'));
     button.append(hero ? lineupPortrait(hero, 48) : el('span', 'lineup-empty-slot', '+'), el('span', 'lineup-slot-name', hero?.name || '空位'));
@@ -515,7 +591,16 @@ function drawLineupBoard(state, account, readonly = false) {
       } else if (hero) state.selectedHeroId = hero.heroId;
       redrawLineupEditor(state, account, lineupPositionKey(position));
     };
-    if (hero) bindLineupPointer(button, state, account, hero.heroId);
+    if (hero) {
+      button.title = '拖动调整站位，右键下阵';
+      button.oncontextmenu = event => {
+        event.preventDefault();
+        if (account !== current || state.saving) return;
+        removeLineupHero(state, hero.heroId);
+        redrawLineupEditor(state, account, lineupPositionKey(position));
+      };
+      bindLineupPointer(button, state, account, hero.heroId);
+    }
   }
 }
 
@@ -566,8 +651,7 @@ async function saveLineupDraft(account, state) {
     state.drafts.set(saved.id, draft);
     if (state.activeDraft === key) state.activeDraft = saved.id;
   }
-  state.editorMessage = '阵容已保存，可在挑战页或自动挑战配置中选择';
-  state.message = '已保存「' + draft.name + '」';
+  state.editorMessage = '';
   if (account === current) {
     renderSavedLineups(account);
     if (modal && lineupModal === modal && modal.mode === 'editor') {
@@ -592,49 +676,59 @@ function renderLineupEditor(host, state, account) {
   heading.append(title, headingActions); root.append(heading);
   if (state.editorError) root.append(el('p', 'lineup-editor-notice', state.editorError));
   if (state.loading) root.append(el('p', 'lineup-muted', '正在读取游戏阵容和英雄，排队期间可继续编辑草稿名称。'));
-  const workspace = el('div', 'lineup-workspace'), battlefield = el('div', 'lineup-battlefield');
+  const workspace = el('div', 'lineup-workspace lineup-editor-workspace'), battlefield = el('div', 'lineup-battlefield');
+  const formationPanel = el('section', 'lineup-formation-panel');
   const count = el('div', 'lineup-board-heading');
   count.append(el('span', '', '已上阵 ' + draft.formation.heroPositions.length + ' / ' + (state.editor?.capacity ?? '—')), el('span', '', '敌方 →'));
   const board = el('div', 'lineup-board'); board.setAttribute('aria-label', '英雄站位');
   battlefield.append(count, board);
-  const options = el('div', 'lineup-formation-options'), types = el('div', 'lineup-formation-list');
-  options.append(el('h4', '', '选择阵型'), types);
+  const options = el('div', 'lineup-formation-options'), typeField = el('label', 'lineup-formation-field');
+  const typeSelect = el('select', 'lineup-formation-select'); typeSelect.setAttribute('aria-label', '阵型');
   for (const definition of state.editor?.formations || []) {
-    const button = el('button', 'lineup-formation-choice'); button.type = 'button';
-    button.disabled = !definition.unlocked || state.saving;
-    button.setAttribute('aria-pressed', String(draft.formation.presetId === definition.presetId));
-    button.title = [definition.effect, definition.unlockEffect].filter(Boolean).join('\n');
-    const text = el('span'); text.append(el('strong', '', definition.name), el('small', '', definition.unlocked ? definition.positions.length + ' 个站位' : '未解锁'));
-    button.append(iconEl(definition.icon, 42, definition.name), text);
-    button.onclick = () => { changeLineupFormation(state, definition.presetId); redrawLineupEditor(state, account); };
-    types.append(button);
+    const option = new Option(definition.name + (definition.unlocked ? ' · ' + definition.positions.length + ' 个站位' : ' · 未解锁'), String(definition.presetId));
+    option.disabled = !definition.unlocked;
+    typeSelect.add(option);
   }
   const selectedType = state.editor?.formations?.find(item => item.presetId === draft.formation.presetId);
-  if (selectedType) {
-    const effect = el('div', 'lineup-effect');
-    effect.append(el('strong', '', selectedType.name));
+  if (!selectedType) typeSelect.add(new Option('阵型 ' + draft.formation.presetId + ' · 待读取', String(draft.formation.presetId)));
+  typeSelect.value = String(draft.formation.presetId); typeSelect.disabled = state.saving || !state.editor;
+  typeSelect.onchange = () => {
+    if (account !== current || state.saving) return;
+    changeLineupFormation(state, Number(typeSelect.value));
+    redrawLineupEditor(state, account);
+  };
+  typeField.append(el('span', '', '阵型'), typeSelect); options.append(typeField);
+  if (selectedType?.effect || selectedType?.unlockEffect) {
+    const effect = el('details', 'lineup-effect lineup-effect-details');
+    effect.append(el('summary', '', '阵型效果'));
     if (selectedType.effect) effect.append(el('p', '', selectedType.effect));
     if (selectedType.unlockEffect) effect.append(el('p', 'lineup-muted', selectedType.unlockEffect));
     options.append(effect);
   }
-  workspace.append(battlefield, options); root.append(workspace);
+  formationPanel.append(options, battlefield);
   const selection = el('div', 'lineup-selection'), remove = smallButton('下阵');
   remove.dataset.lineupRemove = 'true';
   remove.disabled = state.saving || !draft.formation.heroPositions.some(item => item.heroId === state.selectedHeroId);
-  remove.onclick = () => { removeLineupHero(state, state.selectedHeroId); redrawLineupEditor(state, account); };
+  remove.onclick = () => {
+    if (account !== current || state.saving) return;
+    removeLineupHero(state, state.selectedHeroId); redrawLineupEditor(state, account);
+  };
   const hint = state.selectedHeroId ? '已选择 ' + lineupHero(state, state.selectedHeroId).name + '，点选站位放置或交换'
-    : '点选英雄后点站位，也可拖动头像。拖到“下阵”可移除。';
-  selection.append(el('p', 'lineup-muted', hint), remove); root.append(selection);
+    : '拖动或点选英雄入阵，右键场上英雄下阵。';
+  selection.append(el('p', 'lineup-muted', hint), remove); formationPanel.append(selection);
   const petField = el('label', 'lineup-pet-field'); petField.append(el('span', '', '出战海兽'));
   const petSelect = el('select'); petSelect.setAttribute('aria-label', '出战海兽'); petSelect.add(new Option('不携带海兽', '0'));
   for (const pet of state.editor?.pets || []) petSelect.add(new Option(pet.name, String(pet.uid)));
   const petUid = String(draft.formation.petUid || '0');
   if (petUid !== '0' && !(state.editor?.pets || []).some(pet => String(pet.uid) === petUid)) petSelect.add(new Option('待确认的海兽 ' + petUid, petUid));
   petSelect.value = petUid; petSelect.disabled = state.saving || !state.editor;
-  petSelect.onchange = () => { draft.formation.petUid = petSelect.value; draft.dirty = true; redrawLineupEditor(state, account); };
+  petSelect.onchange = () => {
+    if (account !== current || state.saving) return;
+    draft.formation.petUid = petSelect.value; draft.dirty = true; redrawLineupEditor(state, account);
+  };
   const selectedPet = state.editor?.pets?.find(pet => String(pet.uid) === petUid);
   if (selectedPet) petField.append(iconEl(selectedPet.icon, 44, selectedPet.name));
-  petField.append(petSelect); root.append(petField);
+  petField.append(petSelect);
   const rosterSection = el('section', 'lineup-roster-section'), filters = el('div', 'lineup-roster-filters');
   rosterSection.append(el('h4', '', '选择英雄'));
   const search = el('input'); search.type = 'search'; search.placeholder = '搜索英雄'; search.value = state.query;
@@ -648,8 +742,10 @@ function renderLineupEditor(host, state, account) {
     select.onchange = () => { state[key] = select.value; drawLineupRoster(state, account); }; filters.append(select);
   }
   const roster = el('div', 'lineup-roster');
-  rosterSection.append(filters, roster); root.append(rosterSection);
+  rosterSection.append(filters, roster);
   rosterSection.append(el('p', 'lineup-muted for-touch', '滑动英雄名称可滚动列表，拖动头像可布阵。'));
+  rosterSection.append(petField);
+  workspace.append(rosterSection, formationPanel); root.append(workspace);
   const footer = el('div', 'lineup-editor-footer'), nameField = el('label', 'lineup-name-field'), name = el('input');
   name.type = 'text'; name.value = draft.name; name.autocomplete = 'off'; name.maxLength = 60;
   name.disabled = state.saving; name.setAttribute('aria-label', '阵容名称');
@@ -670,5 +766,3 @@ function renderLineupEditor(host, state, account) {
   drawLineupBoard(state, account); drawLineupRoster(state, account);
   host.append(root);
 }
-
-if ($('saved-lineup-refresh')) $('saved-lineup-refresh').onclick = () => refreshSavedLineups();

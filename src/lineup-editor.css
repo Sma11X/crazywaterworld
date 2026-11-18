@@ -9,6 +9,7 @@
 body.lineup-modal-open { overflow:hidden }
 dialog.lineup-dialog { width:min(1100px,calc(100vw - 40px)); max-width:none; max-height:90dvh; margin:auto; padding:0; border:1px solid #526e88; border-radius:14px; overflow:hidden; background:#12253b; color:#edf5ff; box-shadow:0 24px 90px #07142380 }
 dialog.lineup-dialog::backdrop { background:#071423b8; backdrop-filter:blur(4px) }
+dialog.lineup-dialog[data-lineup-mode="editor"] { width:min(1000px,calc(100vw - 40px)) }
 .lineup-dialog-body { max-height:90dvh; overflow:auto; overscroll-behavior:contain; scrollbar-color:#526e88 #12253b }
 .lineup-dialog .lineup-editor { margin:0; border:0; border-radius:0; scroll-margin-top:0 }
 .lineup-dialog .lineup-editor-heading { position:sticky; top:0; z-index:10; gap:16px }
@@ -53,16 +54,15 @@ dialog.lineup-dialog::backdrop { background:#071423b8; backdrop-filter:blur(4px)
 .lineup-editor button[aria-pressed="true"] .lineup-portrait,.lineup-editor [data-lineup-drop="true"] .lineup-portrait,.lineup-editor [data-lineup-drop="true"] .lineup-empty-slot { box-shadow:0 0 0 3px #ffe5a3,0 0 18px #ffd87966 }
 .lineup-editor .lineup-slot[aria-pressed="true"],.lineup-editor .lineup-slot[data-lineup-drop="true"] { z-index:3 }
 .lineup-editor [data-lineup-dragging="true"] { opacity:.5 }
-.lineup-editor .lineup-formation-options { min-width:0; padding-top:2px }
-.lineup-editor .lineup-formation-list { display:grid; gap:7px; max-height:420px; overflow-y:auto; overscroll-behavior:contain; padding:3px; scrollbar-width:thin }
-.lineup-editor .lineup-formation-choice { display:flex; align-items:center; justify-content:flex-start; gap:9px; min-height:62px; width:100%; padding:7px 9px; color:#dceaf7; border:1px solid #405d7a; border-radius:8px; background:#1b354f; text-align:left; white-space:normal }
-.lineup-editor .lineup-formation-choice>span { min-width:0 }
-.lineup-editor .lineup-formation-choice strong { display:block; font-weight:500; font-size:13px }
-.lineup-editor .lineup-formation-choice small { display:block; color:#bdcfe2; font-size:11px; margin-top:2px }
-.lineup-editor .lineup-formation-choice[aria-pressed="true"] { border-color:#efce80; background:#3c3c36; color:#ffe3a2; box-shadow:inset 0 0 0 1px #e8c77a55 }
+.lineup-editor .lineup-formation-options { min-width:0 }
+.lineup-editor .lineup-formation-field { display:flex; align-items:center; gap:12px }
+.lineup-editor .lineup-formation-select { flex:1; min-width:0 }
+.lineup-editor .lineup-formation-panel { display:flex; flex-direction:column; gap:10px; min-width:0 }
 .lineup-editor .lineup-effect { margin-top:12px; padding-top:10px; border-top:1px solid #38536e; font-size:12px; color:#d6e5f3; overflow-wrap:anywhere }
 .lineup-editor .lineup-effect strong { color:#ffe1a2; font-weight:500 }
 .lineup-editor .lineup-effect p { margin-top:5px }
+.lineup-editor .lineup-effect-details { margin-top:5px; padding-top:0; border:0 }
+.lineup-editor .lineup-effect-details summary { cursor:pointer; color:var(--lineup-muted); width:fit-content }
 .lineup-editor .lineup-selection { display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:64px; padding:12px 16px; border-bottom:1px solid #334f6a }
 .lineup-editor .lineup-selection button { flex:none }
 .lineup-editor [data-lineup-remove][data-lineup-drop="true"] { outline:3px solid #f5d285; opacity:1 }
@@ -71,7 +71,7 @@ dialog.lineup-dialog::backdrop { background:#071423b8; backdrop-filter:blur(4px)
 .lineup-editor .lineup-roster-section { padding:14px 16px 16px }
 .lineup-editor .lineup-roster-filters { display:grid; grid-template-columns:minmax(120px,1.5fr) minmax(95px,1fr) minmax(95px,1fr); gap:8px; margin-bottom:12px }
 .lineup-editor .lineup-roster-filters>* { min-width:0 }
-.lineup-editor .lineup-roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:7px; max-height:340px; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; padding:3px; scrollbar-width:thin }
+.lineup-editor .lineup-roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); grid-auto-rows:max-content; gap:7px; max-height:340px; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; padding:3px; scrollbar-width:thin }
 .lineup-editor .lineup-hero { display:flex; flex-direction:column; justify-content:flex-start; align-items:center; gap:5px; padding:7px 2px; min-width:44px; min-height:44px; color:var(--lineup-ink); background:transparent; border:1px solid transparent; border-radius:8px; touch-action:pan-y; user-select:none; white-space:normal }
 .lineup-editor .lineup-hero .lineup-portrait { touch-action:none }
 .lineup-editor .lineup-hero[aria-pressed="true"] { border-color:#efd08a; background:#3b3c36 }
@@ -87,9 +87,31 @@ dialog.lineup-dialog::backdrop { background:#071423b8; backdrop-filter:blur(4px)
 .lineup-editor button:focus-visible,.lineup-editor input:focus-visible,.lineup-editor select:focus-visible { outline:2px solid #ffe19b; outline-offset:3px }
 .lineup-editor input,.lineup-editor select { min-height:44px; color:#eef6ff; background:#11283e; border-color:#526e88 }
 .lineup-editor input::placeholder { color:#a9bfd4 }
-.lineup-editor button:not(.lineup-slot):not(.lineup-hero):not(.lineup-formation-choice) { min-height:44px; background:#263f58; color:#e9f2fb; border-color:#5e7992 }
+.lineup-editor button:not(.lineup-slot):not(.lineup-hero) { min-height:44px; background:#263f58; color:#e9f2fb; border-color:#5e7992 }
+/* Keep the hero pool alongside the board so the editor fits a laptop screen. */
+#saved-lineup-editor .lineup-editor-heading { padding-block:10px }
+.lineup-editor .lineup-editor-workspace { grid-template-columns:minmax(0,1fr) minmax(320px,380px); padding:12px 16px; align-items:stretch }
+.lineup-editor-workspace .lineup-board { height:clamp(260px,calc(90dvh - 378px),350px); aspect-ratio:auto }
+.lineup-editor-workspace .lineup-slot { width:calc(100% / 6) }
+.lineup-editor-workspace .lineup-slot::before { left:50%; transform:translateX(-50%) }
+.lineup-editor-workspace .lineup-selection { min-height:44px; padding:0; border:0 }
+.lineup-editor-workspace .lineup-roster-section { display:flex; flex-direction:column; min-width:0; min-height:0; padding:0 }
+/* A length basis keeps the grid's intrinsic height independent of the hero count. */
+.lineup-editor-workspace .lineup-roster { flex:1 1 0px; height:0; min-height:120px; max-height:none; align-content:start }
+.lineup-editor-workspace .lineup-roster-filters { grid-template-columns:minmax(0,1.3fr) repeat(2,minmax(0,1fr)); margin-bottom:10px }
+.lineup-editor-workspace .lineup-pet-field { padding:10px 0 0; border-bottom:0; border-top:1px solid #334f6a; margin-top:10px }
+.lineup-editor-workspace .lineup-pet-field>span { flex:none }
+#saved-lineup-editor .lineup-editor-footer { padding:12px 16px; gap:8px 10px; align-items:center }
+#saved-lineup-editor .lineup-name-field { flex-direction:row; align-items:center; gap:12px }
+#saved-lineup-editor .lineup-name-field>span { flex:none }
+@media (min-width:701px) and (max-width:900px) {
+  .lineup-editor-workspace .lineup-roster-filters { grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .lineup-editor-workspace .lineup-roster-filters input { grid-column:1 / -1 }
+  .lineup-editor-workspace .lineup-pet-field { flex-wrap:wrap }
+  .lineup-editor-workspace .lineup-pet-field select { flex-basis:100% }
+}
 @media (max-width:700px) {
-  dialog.lineup-dialog { width:100vw; height:100dvh; max-height:100dvh; border:0; border-radius:0 }
+  dialog.lineup-dialog,dialog.lineup-dialog[data-lineup-mode="editor"] { width:100vw; height:100dvh; max-height:100dvh; border:0; border-radius:0 }
   dialog.lineup-dialog[open],dialog.lineup-dialog[open]::backdrop { animation:none }
   .lineup-dialog-body { height:100%; max-height:100dvh }
   .lineup-dialog .lineup-editor { min-height:100% }
@@ -101,9 +123,11 @@ dialog.lineup-dialog::backdrop { background:#071423b8; backdrop-filter:blur(4px)
   .lineup-viewer .lineup-workspace { grid-template-columns:minmax(0,1fr) }
   .lineup-viewer-heroes { grid-template-columns:repeat(2,minmax(0,1fr)) }
   .lineup-editor .lineup-workspace { grid-template-columns:minmax(0,1fr); padding:12px 12px 0; gap:14px }
-  .lineup-editor .lineup-formation-list { grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); max-height:205px }
-  .lineup-editor .lineup-formation-options h4 { margin-bottom:6px }
   .lineup-editor .lineup-effect { margin-top:9px }
+  .lineup-editor-workspace .lineup-formation-panel { order:-1 }
+  .lineup-editor-workspace .lineup-board { height:310px }
+  .lineup-editor-workspace .lineup-roster { flex:auto; height:auto; max-height:280px }
+  .lineup-editor-workspace .lineup-pet-field { padding-bottom:12px }
   .lineup-editor .lineup-editor-heading { align-items:flex-start; padding:12px }
   .lineup-editor .lineup-roster-section,.lineup-editor .lineup-selection,.lineup-editor .lineup-pet-field { padding-inline:12px }
   .lineup-editor .lineup-pet-field { display:grid; grid-template-columns:auto 1fr }

@@ -4,7 +4,6 @@ const progressionViews = [
   { id: 'trial', tab: 'stages', path: '/api/trials', render: renderTrialProgress },
   { id: 'equipment', tab: 'heroes', path: '/api/equipment', render: renderEquipment },
   { id: 'crafting', tab: 'heroes', path: '/api/equipment/crafting', render: renderCrafting },
-  { id: 'lineup', tab: 'lineups', path: '/api/lineups', render: renderLineups },
   { id: 'pirate-board', tab: 'activities', path: '/api/pirates/board', render: renderPirateBoard },
   { id: 'guild', tab: 'guild', path: '/api/guild', render: renderGuild },
   { id: 'formation', tab: 'heroes', path: '/api/fleets/formation', render: renderFormations },
@@ -61,7 +60,7 @@ async function refreshProgression(only) {
     finally{if(valid())box.removeAttribute('aria-busy');}
   }));
 }
-for(const id of ['trial','guild','guild-tech','equipment','crafting','lineup'])$(id+'-refresh').onclick=()=>refreshProgression(id);
+for(const id of ['trial','guild','guild-tech','equipment','crafting'])$(id+'-refresh').onclick=()=>refreshProgression(id);
 
 function progressionAction(label, path, payload, account, reason, group) {
   const key = JSON.stringify(group ? [account, group] : [account, path, payload]);
@@ -81,7 +80,7 @@ function progressionAction(label, path, payload, account, reason, group) {
     finally {
       pendingProgression.delete(key);
       if (account === current) {
-        const view=path.includes('/lineups/')?'lineup':path.includes('/crafting/')?'crafting':path.includes('/pirates/')?'pirate-board':path.includes('/guild/')?'guild':path.includes('/equipment/')?'equipment':path.includes('/fleets/')?'formation':'trial';
+        const view=path.includes('/crafting/')?'crafting':path.includes('/pirates/')?'pirate-board':path.includes('/guild/')?'guild':path.includes('/equipment/')?'equipment':path.includes('/fleets/')?'formation':'trial';
         button.disabled=Boolean(reason);button.textContent=label;await refreshProgression(view);
       }
     }
@@ -142,13 +141,15 @@ function renderTrialProgress(box, rows, account) {
       controls.manual.replaceWith(manual);controls.manual=manual;controls.row=row;
       paintTrialTask(controls,row.task??{});continue;
     }
-    const content=el('div');content.append(body);
+    const content=el('div','trial-content');content.append(body);
     const bar = el('div', 'bar trial-run-controls');
     let lineupSelect;
     if (typeof createLineupSelect === 'function') {
+      const lineupControls = el('div', 'trial-lineup-controls');
       const lineupLabel = el('label', 'choice-field'); lineupLabel.append(el('span', '', '挑战阵容'));
-      lineupSelect = createLineupSelect(account, 'trial', row.raidId); lineupLabel.append(lineupSelect); bar.append(lineupLabel);
-      bar.append(createLineupPreviewButton(account, lineupSelect));
+      lineupSelect = createLineupSelect(account, 'trial', row.raidId); lineupLabel.append(lineupSelect);
+      lineupControls.append(lineupLabel, createLineupPreviewButton(account, lineupSelect), createLineupChoiceStatus(account));
+      content.append(lineupControls);
     }
     const label = el('label', '', '失败停止次数');
     const input = el('input', 'config-input'); input.type = 'number'; input.min = '1'; input.step = '1'; input.value = trialFailureOptions.get(account + ':' + row.raidId) || '3';
@@ -620,71 +621,6 @@ function renderPirateBoard(box, data, account) {
   renderPirateFleets(box, data, account);
   renderPirateTargets(box, data, account);
   renderPirateProgress(box, data);
-}
-
-const lineupSelection = new Map();
-
-function lineupHeroes(rec) {
-  return rec.heroes.map(h => h.role ? h.name + '（' + h.role + '）' : h.name).join('、');
-}
-
-function lineupPower(rec) {
-  const box = el('div');
-  box.appendChild(el('div', null, fmt(rec.power)));
-  if (rec.isCurrent) return box;
-  box.appendChild(el('small', rec.delta < 0 ? 'warn' : 'ok', (rec.delta < 0 ? '比当前低 ' : '比当前高 ') + fmt(Math.abs(rec.delta))));
-  return box;
-}
-
-function lineupName(rec) {
-  const box = el('div');
-  box.appendChild(el('strong', null, rec.label));
-  box.appendChild(el('div', 'dim', rec.presetName));
-  if (rec.note) box.appendChild(el('div', 'warn', rec.note));
-  if (rec.pet) box.appendChild(el('div', 'dim', rec.pet));
-  return box;
-}
-
-function renderLineupTarget(box, target, account) {
-  if (target.reason) box.appendChild(el('p', 'dim', target.reason));
-  if (target.hint) box.appendChild(el('p', 'dim', target.hint));
-  if (target.current) {
-    const names = target.current.heroes.map(h => h.name).join('、');
-    box.appendChild(el('p', null, names
-      ? '当前阵容 · ' + target.current.presetName + ' · 总战力 ' + fmt(target.current.power) + ' · ' + names
-      : '当前阵容为空'));
-  }
-  if (!target.current) return;
-  if (target.recommended.length) {
-    box.appendChild(table(['推荐阵容', '英雄与分工', '总战力', '操作'], target.recommended.map(rec => [
-      lineupName(rec), lineupHeroes(rec), lineupPower(rec),
-      rec.isCurrent ? el('span', 'ok', '正在使用') : progressionAction('换成这套', '/api/lineups/apply',
-        { targetKey: target.key, previewKey: rec.previewKey }, account, target.reason, 'lineup'),
-    ])));
-  } else {
-    box.appendChild(el('p', 'dim', '现有英雄凑不齐完整的攻略阵容。'));
-  }
-  if (target.near.length) {
-    box.appendChild(table(['差一点能凑齐', '还差', '被占用'], target.near.map(rec => [
-      rec.label, rec.missing.join('、') || '—', rec.blocked.join('、') || '—',
-    ])));
-  }
-}
-
-function renderLineups(box, data, account) {
-  box.appendChild(el('p', 'dim', '阵容来自游戏内的英雄攻略，只选你能凑齐的，同类阵容按总战力排序。攻略没有按玩法分类，玩法适配是本工具的判断，也没有针对具体关卡，换阵不保证过关。'));
-  const bar = el('div', 'bar');
-  const select = choice(bar, '玩法和队伍', data.targets.map(t => ({ value: t.key, text: t.title })));
-  const saved = lineupSelection.get(account);
-  if (data.targets.some(t => t.key === saved)) select.value = saved;
-  const detail = el('div', 'progression-view');
-  const draw = () => {
-    lineupSelection.set(account, select.value);
-    renderLineupTarget(clear(detail), data.targets.find(t => t.key === select.value), account);
-  };
-  select.onchange = draw;
-  draw();
-  box.append(bar, detail);
 }
 
 setInterval(() => { if (!document.hidden && !$('tab-heroes').classList.contains('hidden')) void refreshProgression('crafting'); }, 15000);

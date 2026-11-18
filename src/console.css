@@ -183,6 +183,12 @@ label[for=gift-code-input] { display:block; margin-bottom:8px }
 #tab-stages #stage-failures { width:88px; flex-basis:88px }
 #tab-stages .bar label { color:var(--muted-foreground); font-weight:400 }
 .trial-run-controls { margin-top:8px }
+.trial-content { width:100%; min-width:0 }
+.trial-lineup-controls { display:grid; grid-template-columns:minmax(0,360px) auto; justify-content:start; align-items:center; gap:8px; margin-top:8px }
+.trial-lineup-controls .choice-field { display:flex; align-items:center; gap:8px; min-width:0; font-weight:400 }
+.trial-lineup-controls .choice-field>span { flex:none; white-space:nowrap }
+.trial-lineup-controls .saved-lineup-select { flex:1; width:0; min-width:0; max-width:none }
+.trial-lineup-controls [data-lineup-choice-status] { grid-column:1 / -1; overflow-wrap:anywhere }
 .trial-run-controls label { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-weight:400 }
 .trial-run-controls input { width:80px }
 #trial-view .trial-run-controls { margin-top:8px; gap:8px }

@@ -569,6 +569,10 @@ function subscribe() {
   if (stream) return;
   stream = new EventSource('/api/events?scope=all');
   stream.addEventListener('logs-cleared', event => clearLogBefore(JSON.parse(event.data)));
+  stream.addEventListener('lineup-changed', event => {
+    const { account } = JSON.parse(event.data);
+    if (account === current) void refreshSavedLineups();
+  });
   stream.addEventListener('guild-aid-changed', event => {
     const account = JSON.parse(event.data).account;
     if (account !== current) return;
@@ -968,9 +972,11 @@ function renderStages(data) {
   if (!lineupSelect || lineupSelect.dataset.lineupAccount !== current) {
     lineupSelect?.remove();
     lineupControl.querySelector('button')?.remove();
+    lineupControl.querySelector('[data-lineup-choice-status]')?.remove();
     lineupSelect = createLineupSelect(current, 'mainline');
     lineupControl.appendChild(lineupSelect);
     lineupControl.appendChild(createLineupPreviewButton(current, lineupSelect));
+    lineupControl.appendChild(createLineupChoiceStatus(current));
   }
   lineupSelect.disabled = data.running || !current;
   if (data.running) $('stage-failures').value = data.maxFailures;
@@ -988,10 +994,12 @@ async function refreshStages() {
     const lineupControl = $('stage-lineup-control');
     lineupControl.querySelector('select')?.remove();
     lineupControl.querySelector('button')?.remove();
+    lineupControl.querySelector('[data-lineup-choice-status]')?.remove();
     const lineupSelect = createLineupSelect(account, 'mainline');
     lineupSelect.disabled = true;
     lineupControl.appendChild(lineupSelect);
     lineupControl.appendChild(createLineupPreviewButton(account, lineupSelect));
+    lineupControl.appendChild(createLineupChoiceStatus(account));
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem('stages:' + account)) || {}; } catch {}
     $('stage-failures').value = saved.maxFailures || 3;
@@ -1019,7 +1027,7 @@ async function stageCommand(start) {
     const data = await call('/api/stages/' + (start ? 'start' : 'stop'), {
       method: 'POST', body: JSON.stringify({ confirm: true, ...prefs }),
     });
-    if (start) { try { localStorage.setItem('stages:' + account, JSON.stringify(prefs)); } catch {} }
+    if (start) { try { localStorage.setItem('stages:' + account, JSON.stringify({ maxFailures: prefs.maxFailures })); } catch {} }
     if (account === current) renderStages(data);
   } catch (error) {
     if (account === current) { reportError(error); }

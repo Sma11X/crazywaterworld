@@ -36,12 +36,14 @@ class Element {
   replaceChildren(...items) { this.children = []; this.text = ''; this.append(...items); }
   setAttribute(key, value) { this.attributes.set(key, String(value)); }
   getAttribute(key) { return this.attributes.get(key); }
+  removeAttribute(key) { this.attributes.delete(key); }
   contains(node) { return this === node || this.children.some(item => item.contains?.(node)); }
   querySelectorAll(selector) {
     const matches = node => {
       if (selector === '[aria-label]') return node.attributes.has('aria-label');
       if (selector === '[data-lineup-position]') return Boolean(node.dataset.lineupPosition);
       if (selector === '[data-lineup-preset]') return Boolean(node.dataset.lineupPreset);
+      if (selector === '[data-lineup-choice-status]') return Boolean(node.dataset.lineupChoiceStatus);
       if (selector === 'button[aria-label^="编辑阵容"]') return node.tagName === 'BUTTON' && node.getAttribute('aria-label')?.startsWith('编辑阵容');
       if (selector === 'button[aria-label^="查看阵容"]') return node.tagName === 'BUTTON' && node.getAttribute('aria-label')?.startsWith('查看阵容');
       return node.tagName.toLowerCase() === selector;
@@ -50,7 +52,7 @@ class Element {
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   addEventListener(type, listener) { this.listeners.set(type, [...(this.listeners.get(type) || []), listener]); }
-  dispatch(type) { this['on' + type]?.(); for (const listener of this.listeners.get(type) || []) listener(); }
+  dispatch(type) { const result = this['on' + type]?.(); for (const listener of this.listeners.get(type) || []) listener(); return result; }
   focus() { this.focused = true; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.isConnected = false; }
   replaceWith(element) { const index = this.parent.children.indexOf(this); this.parent.children[index] = element; element.parent = this.parent; this.isConnected = false; }
@@ -79,12 +81,28 @@ const savedData = (name = '阵容A', revision = 1) => ({
   recovery: null, trialRaids: [{ value: '1', label: '试炼一' }],
 });
 
-function fixture() {
-  const host = new Element(), body = new Element('body'), selectors = [], calls = [], renders = [];
+function fixture({ server = new Map([['account-a', savedData()]]) } = {}) {
+  const host = new Element(), body = new Element('body'), selectors = [], calls = [], renders = [], errors = [];
   body.append(host);
-  const runtime = { response: null, drop: null };
+  const runtime = { response: null, drop: null, server };
+  const respond = request => {
+    const data = server.get(request.account) || savedData();
+    if (request.url.startsWith('/api/lineup-presets/bind?')) {
+      if (request.body.revision !== data.revision) throw Object.assign(new Error('配置版本冲突'), { fields: { revision: '已变化' } });
+      const updated = { ...data, mainlinePresetId: request.body.mainlinePresetId,
+        trialPresets: clone(request.body.trialPresets), revision: data.revision + 1 };
+      server.set(request.account, updated);
+      return clone(updated);
+    }
+    return clone(data);
+  };
   const context = vm.createContext({
     current: 'account-a', structuredClone, Date, console,
+    localStorage: {
+      getItem() { assert.fail('挑战阵容应从服务器配置读取'); },
+      setItem() { assert.fail('挑战阵容应写入服务器配置'); },
+    },
+    reportError: (error, action, account) => errors.push({ message: error.message, action, account }),
     $: id => id === 'saved-lineup-view' ? host : null,
     el: (tag, className, text) => new Element(tag, className, text),
     Option: class extends Element { constructor(text, value) { super('option', '', text); this.value = value; } },
@@ -93,7 +111,7 @@ function fixture() {
       const request = { url, account: new URL(url, 'http://localhost').searchParams.get('account'),
         body: options?.body && JSON.parse(options.body) };
       calls.push(request);
-      return runtime.response ? runtime.response(request) : savedData();
+      return runtime.response ? runtime.response(request) : respond(request);
     },
     clear: element => { element.textContent = ''; return element; },
     smallButton: label => new Element('button', '', label),
@@ -104,9 +122,9 @@ function fixture() {
   context.renderSavedLineups = account => renders.push(account);
   context.redrawLineupEditor = (state, account) => renders.push(account);
   const state = context.savedLineupState('account-a');
-  context.adoptSavedLineups(state, savedData()); state.editor = editorData(); state.activeDraft = 'p1';
+  context.adoptSavedLineups(state, clone(server.get('account-a') || savedData())); state.editor = editorData(); state.activeDraft = 'p1';
   state.drafts.set('p1', { id: 'p1', name: '阵容A', formation: formation(), dirty: false });
-  return { context, state, runtime, calls, renders, host, body, selectors, realRender, realRedraw,
+  return { context, state, runtime, calls, renders, host, body, selectors, server, respond, errors, realRender, realRedraw,
     draft: () => context.currentLineupDraft(state) };
 }
 
@@ -160,21 +178,168 @@ await test('Pointer拖拽交换与下阵，取消拖拽保留草稿', () => {
   assert.equal(f.draft().formation.heroPositions.some(item => item.heroId === 'a'), false);
 });
 
-await test('手动阵容选择按账号和副本隔离，已删除选择明确显示', () => {
-  const f = fixture();
-  const mainline = f.context.createLineupSelect('account-a', 'mainline');
+const chooseLineup = (f, mode, raidId, value, account = f.context.current) => {
+  const select = f.context.createLineupSelect(account, mode, raidId);
+  f.selectors.push(select);
+  select.value = value;
+  return { select, saving: select.onchange() };
+};
+const boundData = () => ({ ...savedData(),
+  presets: [...savedData().presets, { id: 'p2', name: '阵容B', formation: formation() }],
+  mainlinePresetId: 'p1', trialPresets: [{ raidId: '1', presetId: 'p2' }, { raidId: '2', presetId: 'p1' }],
+});
+
+await test('挑战阵容读取账号配置并按主线和各试炼隔离，删除选择明确显示', () => {
+  const f = fixture({ server: new Map([['account-a', boundData()], ['account-b', { ...boundData(), mainlinePresetId: 'p2', trialPresets: [] }]]) });
+  assert.equal(f.context.createLineupSelect('account-a', 'mainline').value, 'p1');
   const trial = f.context.createLineupSelect('account-a', 'trial', 1);
-  assert.equal(mainline.value, '');
-  trial.value = 'p1'; trial.onchange();
-  assert.equal(f.context.selectedLineupId('trial', 1), 'p1');
-  assert.equal(f.context.selectedLineupId('trial', 2), '');
-  assert.equal(f.context.selectedLineupId('mainline'), '');
-  f.context.current = 'account-b'; assert.equal(f.context.selectedLineupId('trial', 1), '');
-  trial.value = ''; trial.onchange(); f.context.current = 'account-a';
-  assert.equal(f.context.selectedLineupId('trial', 1), 'p1');
-  f.selectors.push(trial); f.state.saved.presets = [];
+  assert.equal(trial.value, 'p2');
+  assert.equal(f.context.selectedLineupId('trial', 2), 'p1');
+  assert.equal(f.context.selectedLineupId('trial', 3), '');
+  f.context.adoptSavedLineups(f.context.savedLineupState('account-b'), clone(f.server.get('account-b')));
+  f.context.current = 'account-b';
+  assert.equal(f.context.selectedLineupId('mainline'), 'p2');
+  assert.equal(f.context.selectedLineupId('trial', 1), '');
+  trial.value = ''; trial.onchange();
+  assert.equal(f.calls.length, 0, '旧账号控件不能修改新账号配置');
+  f.context.current = 'account-a'; f.selectors.push(trial); f.state.saved.presets = [];
   f.context.updateManualLineupSelects('account-a');
-  assert.equal(trial.value, 'p1'); assert.match(trial.children.at(-1).textContent, /已删除/);
+  assert.equal(trial.value, 'p2'); assert.match(trial.children.at(-1).textContent, /已删除/);
+});
+
+await test('选择挑战阵容立即写入账号配置，新页面直接恢复且只修改对应绑定', async () => {
+  const server = new Map([['account-a', boundData()], ['account-b', savedData()]]), f = fixture({ server });
+  const original = clone(server.get('account-a'));
+  await chooseLineup(f, 'mainline', undefined, 'p2').saving;
+  assert.equal(server.get('account-a').mainlinePresetId, 'p2');
+  assert.deepEqual(server.get('account-a').trialPresets, original.trialPresets);
+  await chooseLineup(f, 'trial', 1, 'p1').saving;
+  assert.deepEqual(server.get('account-a').trialPresets, [{ raidId: '1', presetId: 'p1' }, { raidId: '2', presetId: 'p1' }]);
+  assert.deepEqual(server.get('account-a').presets, original.presets);
+  const reloaded = fixture({ server });
+  assert.equal(reloaded.context.selectedLineupId('mainline'), 'p2');
+  assert.equal(reloaded.context.createLineupSelect('account-a', 'trial', 1).value, 'p1');
+  assert.equal(reloaded.context.createLineupSelect('account-a', 'trial', 2).value, 'p1');
+  assert.equal(f.state.bindingError, '');
+  assert(f.calls.every(request => new URL(request.url, 'http://localhost').pathname === '/api/lineup-presets' || request.url.startsWith('/api/lineup-presets/bind?')));
+  assert(f.calls.filter(request => request.body).every(request => request.body.confirm === true));
+  assert.equal(server.get('account-b').mainlinePresetId, '');
+});
+
+await test('改回游戏当前阵容清空相应配置，不影响其他试炼或账号', async () => {
+  const server = new Map([['account-a', boundData()], ['account-b', boundData()]]), f = fixture({ server });
+  await chooseLineup(f, 'mainline', undefined, '').saving;
+  await chooseLineup(f, 'trial', 1, '').saving;
+  const reloaded = fixture({ server });
+  assert.equal(reloaded.context.selectedLineupId('mainline'), '');
+  assert.equal(reloaded.context.selectedLineupId('trial', 1), '');
+  assert.equal(reloaded.context.selectedLineupId('trial', 2), 'p1');
+  assert.deepEqual(server.get('account-a').trialPresets, [{ raidId: '2', presetId: 'p1' }]);
+  assert.deepEqual(server.get('account-b'), boundData());
+});
+
+await test('连续更改阵容按账号串行保存，较早响应不能覆盖最后选择', async () => {
+  const f = fixture({ server: new Map([['account-a', boundData()]]) }), entered = deferred(), release = deferred();
+  let writes = 0, concurrent = 0, peak = 0;
+  f.runtime.response = async request => {
+    if (!request.body) return f.respond(request);
+    writes++; concurrent++; peak = Math.max(peak, concurrent);
+    if (writes === 1) { entered.resolve(); await release.promise; }
+    try { return f.respond(request); } finally { concurrent--; }
+  };
+  const first = chooseLineup(f, 'mainline', undefined, 'p2');
+  await entered.promise;
+  const latest = chooseLineup(f, 'mainline', undefined, '');
+  const trial = chooseLineup(f, 'trial', 1, 'p1');
+  assert.equal(f.context.selectedLineupId('mainline'), '', '保存中的新选择优先于旧响应');
+  assert.equal(f.context.selectedLineupId('trial', 1), 'p1');
+  release.resolve();
+  await Promise.all([first.saving, latest.saving, trial.saving]);
+  assert.equal(peak, 1); assert(writes >= 2);
+  assert.equal(f.server.get('account-a').mainlinePresetId, '');
+  assert.equal(f.server.get('account-a').trialPresets.find(item => item.raidId === '1').presetId, 'p1');
+  assert.equal(f.context.selectedLineupId('mainline'), '');
+  assert.equal(first.select.value, ''); assert.equal(latest.select.value, '');
+});
+
+await test('版本冲突后读取最新配置重试，保留其他入口新增的试炼绑定', async () => {
+  const f = fixture({ server: new Map([['account-a', boundData()]]) });
+  let writes = 0;
+  f.runtime.response = request => {
+    if (request.body && ++writes === 1) {
+      const current = f.server.get('account-a');
+      f.server.set('account-a', { ...current, revision: current.revision + 1,
+        trialPresets: [...current.trialPresets, { raidId: '3', presetId: 'p2' }] });
+    }
+    return f.respond(request);
+  };
+  await chooseLineup(f, 'mainline', undefined, 'p2').saving;
+  assert.equal(writes, 2);
+  assert.equal(f.server.get('account-a').mainlinePresetId, 'p2');
+  assert.deepEqual(f.server.get('account-a').trialPresets.at(-1), { raidId: '3', presetId: 'p2' });
+  assert.equal(f.state.bindingError, '');
+});
+
+await test('配置保存失败恢复服务器选择并显示错误，之后仍可重新保存', async () => {
+  const f = fixture({ server: new Map([['account-a', boundData()]]) });
+  f.runtime.response = request => { if (request.body) throw new Error('配置写入失败'); return f.respond(request); };
+  const status = f.context.createLineupChoiceStatus('account-a'); f.body.append(status);
+  const failed = chooseLineup(f, 'mainline', undefined, 'p2');
+  await failed.saving;
+  assert.equal(f.context.selectedLineupId('mainline'), 'p1');
+  assert.equal(failed.select.value, 'p1');
+  assert.equal(f.server.get('account-a').mainlinePresetId, 'p1');
+  assert.match(f.state.bindingError, /配置写入失败/);
+  assert.match(status.textContent, /配置写入失败/);
+  f.runtime.response = null;
+  await chooseLineup(f, 'mainline', undefined, 'p2').saving;
+  assert.equal(f.server.get('account-a').mainlinePresetId, 'p2');
+  assert.equal(f.state.bindingError, '');
+  assert.equal(status.textContent, '');
+});
+
+await test('保存回包丢失后回读服务器配置，不把已写入选择误还原', async () => {
+  const f = fixture({ server: new Map([['account-a', boundData()]]) });
+  f.runtime.response = request => {
+    const result = f.respond(request);
+    if (request.body) throw new Error('保存响应丢失');
+    return result;
+  };
+  const { select, saving } = chooseLineup(f, 'mainline', undefined, 'p2');
+  await saving;
+  assert.equal(f.server.get('account-a').mainlinePresetId, 'p2');
+  assert.equal(f.context.selectedLineupId('mainline'), 'p2');
+  assert.equal(select.value, 'p2');
+});
+
+await test('阵容绑定保存中切号只更新原账号，其他账号选择保持独立', async () => {
+  const server = new Map([['account-a', boundData()], ['account-b', { ...boundData(), mainlinePresetId: '' }]]);
+  const f = fixture({ server }), entered = deferred(), release = deferred();
+  f.runtime.response = async request => {
+    if (request.account === 'account-a' && request.body) { entered.resolve(); await release.promise; }
+    return f.respond(request);
+  };
+  const savingA = chooseLineup(f, 'mainline', undefined, 'p2').saving;
+  await entered.promise;
+  f.context.current = 'account-b';
+  f.context.adoptSavedLineups(f.context.savedLineupState('account-b'), clone(server.get('account-b')));
+  const savingB = chooseLineup(f, 'mainline', undefined, 'p1').saving;
+  await savingB;
+  assert.equal(f.context.selectedLineupId('mainline'), 'p1');
+  f.renders.length = 0; release.resolve(); await savingA;
+  assert.equal(server.get('account-a').mainlinePresetId, 'p2');
+  assert.equal(server.get('account-b').mainlinePresetId, 'p1');
+  assert.equal(f.context.selectedLineupId('mainline'), 'p1');
+  assert(!f.renders.includes('account-b'), '旧账号保存响应不应重绘当前账号');
+});
+
+await test('服务器绑定变化时同步挑战选择，即使阵容列表本身没有变化', async () => {
+  const f = fixture({ server: new Map([['account-a', boundData()]]) });
+  const select = f.context.createLineupSelect('account-a', 'mainline'); f.selectors.push(select);
+  const previous = f.server.get('account-a');
+  f.server.set('account-a', { ...previous, mainlinePresetId: 'p2', revision: previous.revision + 1 });
+  await f.context.refreshSavedLineups();
+  assert.equal(select.value, 'p2'); assert.equal(f.context.selectedLineupId('mainline'), 'p2');
 });
 
 await test('读取结果过期与切号不会覆盖其他账号或编辑草稿', async () => {
@@ -242,7 +407,7 @@ await test('HTML与挑战接线包含编辑入口、单次和连续选择及手�
   assert(!script.includes('innerHTML'));
 });
 
-await test('编辑弹窗渲染全部阵型、英雄和海兽，管理列表提供查看且移除绑定', async () => {
+await test('编辑弹窗使用阵型下拉框并渲染英雄和海兽，管理列表提供查看且移除绑定', async () => {
   const f = fixture();
   f.draft().formation.petUid = '9223372036854775806';
   f.realRender('account-a');
@@ -254,11 +419,62 @@ await test('编辑弹窗渲染全部阵型、英雄和海兽，管理列表提�
   const nodes = descendants(f.body.querySelector('dialog'));
   assert.equal(nodes.filter(node => node.dataset.lineupPosition).length, 3);
   assert.equal(nodes.filter(node => node.dataset.lineupHero).length, 3);
-  const formations = nodes.filter(node => node.className === 'lineup-formation-choice');
-  assert.equal(formations.length, 3); assert.equal(formations[2].disabled, true);
+  const formationSelect = nodes.find(node => node.getAttribute('aria-label') === '阵型');
+  assert.equal(formationSelect.tagName, 'SELECT');
+  assert.equal(String(formationSelect.value), '1');
+  assert.equal(formationSelect.children.length, 3);
+  assert.equal(formationSelect.children[2].disabled, true);
+  assert.match(formationSelect.children[2].textContent, /未解锁/);
+  assert.equal(nodes.filter(node => node.className === 'lineup-formation-choice').length, 0);
   assert.equal(nodes.find(node => node.getAttribute('aria-label') === '出战海兽').value, '9223372036854775806');
   assert.equal(f.body.querySelector('dialog').open, true);
   assert(nodes.some(node => node.getAttribute('role') === 'status'));
+});
+
+await test('阵型下拉切换保留英雄，锁定选项不可改变草稿', async () => {
+  const f = fixture();
+  await f.context.openSavedLineupEditor('account-a', f.state.saved.presets[0]);
+  const select = f.body.querySelectorAll('select').find(node => node.getAttribute('aria-label') === '阵型');
+  const heroes = f.draft().formation.heroPositions.map(item => item.heroId).sort();
+  select.value = '2'; select.onchange();
+  assert.equal(f.draft().formation.presetId, 2);
+  assert.deepEqual(f.draft().formation.heroPositions.map(item => item.heroId).sort(), heroes);
+  assert.deepEqual(clone(f.draft().formation.heroPositions), [{ heroId: 'a', pos: { x: 5, y: 3 } }, { heroId: 'b', pos: { x: 2, y: 0 } }]);
+  const before = clone(f.draft().formation);
+  select.value = '3'; select.onchange();
+  assert.deepEqual(clone(f.draft().formation), before);
+});
+
+await test('右键下阵只修改当前账号可编辑草稿，保存中与切号时无效', async () => {
+  const f = fixture();
+  await f.context.openSavedLineupEditor('account-a', f.state.saved.presets[0]);
+  const slot = f.state.ui.board.children.find(node => node.dataset.lineupPosition === '1,1');
+  const before = clone(f.draft().formation);
+  const event = { preventDefault() { this.prevented = true; }, stopPropagation() {} };
+  assert.equal(typeof slot.oncontextmenu, 'function');
+  f.state.saving = true; slot.oncontextmenu(event);
+  assert.deepEqual(clone(f.draft().formation), before);
+  f.state.saving = false; f.context.current = 'account-b'; slot.oncontextmenu(event);
+  assert.deepEqual(clone(f.draft().formation), before);
+  f.context.current = 'account-a'; f.state.selectedHeroId = 'a'; slot.oncontextmenu(event);
+  assert.equal(event.prevented, true);
+  assert.deepEqual(f.draft().formation.heroPositions.map(item => item.heroId), ['b']);
+  assert.equal(f.state.selectedHeroId, null); assert.equal(f.draft().dirty, true);
+  assert.equal(f.calls.length, 0, '右键下阵只更新草稿，不请求保存或写入游戏');
+});
+
+await test('英雄池Pointer拖入空站位，保留原有上阵英雄', async () => {
+  const f = fixture(); f.state.editor.capacity = 3;
+  await f.context.openSavedLineupEditor('account-a', f.state.saved.presets[0]);
+  const source = f.state.ui.roster.children.find(node => node.dataset.lineupHero === 'c');
+  const target = f.state.ui.board.children.find(node => node.dataset.lineupPosition === '1,3');
+  target.closest = () => target; f.runtime.drop = target;
+  source.onpointerdown({ button: 0, pointerId: 11, isPrimary: true, clientX: 10, clientY: 10 });
+  source.onpointermove({ pointerId: 11, clientX: 100, clientY: 100, preventDefault() {} });
+  source.onpointerup({ pointerId: 11 });
+  assert.deepEqual(clone(f.draft().formation.heroPositions), [
+    { heroId: 'a', pos: { x: 1, y: 1 } }, { heroId: 'b', pos: { x: 4, y: 4 } }, { heroId: 'c', pos: { x: 1, y: 3 } },
+  ]);
 });
 
 await test('空闲恢复记录隐藏，冲突记录提供原目标摘要及三种处理入口', () => {
@@ -291,6 +507,52 @@ await test('挑战恢复状态刷新仅更新提示，保留编辑器DOM、筛�
   assert.equal(f.state.query, '英雄a');
   assert.equal(f.draft().name, '仍在输入');
   assert.equal(f.state.saved.revision, 2);
+});
+
+await test('阵容阶段通知只刷新当前账号状态，不占用运行日志', () => {
+  const streams = [], refreshes = [], logs = [];
+  const context = vm.createContext({
+    current: 'account-a', stream: null, Date,
+    updateLogSummary() {}, clearLogBefore() {},
+    appendLog: entry => logs.push(clone(entry)),
+    refreshSavedLineups: () => { refreshes.push(context.current); return Promise.resolve(); },
+    EventSource: class {
+      constructor(url) { this.url = url; this.listeners = new Map(); streams.push(this); }
+      addEventListener(type, listener) { this.listeners.set(type, listener); }
+      dispatch(type, data) {
+        const event = { data: JSON.stringify(data) };
+        if (type === 'message') this.onmessage(event);
+        else {
+          assert(this.listeners.has(type), '应订阅 ' + type + ' 事件');
+          this.listeners.get(type)(event);
+        }
+      }
+    },
+  });
+  const start = pageSource.indexOf('function subscribe()');
+  const end = pageSource.indexOf('// ---- 账号', start);
+  assert(start >= 0 && end > start);
+  vm.runInContext(pageSource.slice(start, end), context);
+  context.subscribe(); context.subscribe();
+  assert.equal(streams.length, 1, '重复订阅不应创建额外事件流');
+  const stream = streams[0];
+  assert.equal(stream.url, '/api/events?scope=all');
+  for (const phase of ['switching', 'battling', 'restoring', 'idle']) {
+    stream.dispatch('lineup-changed', { account: 'account-a', phase });
+  }
+  assert.deepEqual(refreshes, ['account-a', 'account-a', 'account-a', 'account-a']);
+  assert.deepEqual(logs, [], '正常阵容过程通知不进入运行日志');
+  stream.dispatch('lineup-changed', { account: 'account-b', phase: 'conflict' });
+  assert.equal(refreshes.length, 4, '其他账号的通知不刷新当前账号');
+  context.current = 'account-b';
+  stream.dispatch('lineup-changed', { account: 'account-a', phase: 'idle' });
+  stream.dispatch('lineup-changed', { account: 'account-b', phase: 'pending' });
+  assert.deepEqual(refreshes, ['account-a', 'account-a', 'account-a', 'account-a', 'account-b']);
+  assert.deepEqual(logs, []);
+  const warning = { account: 'account-b', t: Date.now(), level: 'warn', message: '登录后阵容仍待恢复', extra: { lineupChanged: true } };
+  stream.dispatch('message', warning);
+  assert.equal(refreshes.at(-1), 'account-b'); assert.equal(refreshes.length, 6);
+  assert.deepEqual(logs, [warning], '已有异常日志仍显示并触发状态刷新');
 });
 
 await test('暂时没有账号后重新选择原账号会恢复已缓存的阵容界面', async () => {
@@ -365,6 +627,7 @@ await test('查看弹窗仅请求离线目录，站位只读，缺海兽信息�
   assert.equal(dialog.querySelectorAll('select').length, 0);
   for (const slot of dialog.querySelectorAll('[data-lineup-position]')) {
     assert.equal(slot.tagName, 'DIV'); assert.equal(slot.onclick, undefined); assert.equal(slot.onpointerdown, undefined);
+    assert.equal(slot.oncontextmenu, undefined);
   }
   assert(dialog.querySelectorAll('button').every(button => button.textContent === '关闭'));
   assert(f.calls.every(request => request.url.startsWith('/api/lineup-presets?') && !request.body));
@@ -415,8 +678,8 @@ await test('关闭或切号后的编辑与查看异步响应不会重新打开�
   assert.equal(f.context.savedLineupState('account-b').saved, null);
 });
 
-await test('保存失败保留编辑弹窗，保存成功关闭并显示保存名称', async () => {
-  const f = fixture(); f.context.redrawLineupEditor = f.realRedraw;
+await test('保存失败保留编辑弹窗，保存成功更新列表且不显示成功提示', async () => {
+  const f = fixture(); f.context.redrawLineupEditor = f.realRedraw; f.context.renderSavedLineups = f.realRender;
   await f.context.openSavedLineupEditor('account-a', f.state.saved.presets[0]);
   f.draft().name = '弹窗保存测试';
   f.runtime.response = () => { throw new Error('版本冲突'); };
@@ -426,14 +689,17 @@ await test('保存失败保留编辑弹窗，保存成功关闭并显示保存�
   f.runtime.response = () => savedData('弹窗保存测试', 2);
   await f.context.saveLineupDraft('account-a', f.state);
   assert.equal(f.body.querySelector('dialog'), null); assert.equal(f.state.activeDraft, null);
-  assert.equal(f.state.drafts.get('p1').dirty, false); assert.match(f.state.message, /已保存「弹窗保存测试」/);
+  assert.equal(f.state.drafts.get('p1').dirty, false);
+  assert.equal(f.state.message, ''); assert.equal(f.state.editorMessage, '');
+  assert.match(f.host.textContent, /弹窗保存测试/);
+  assert(!f.host.textContent.includes('已保存'));
 });
 
-await test('查看按钮保留select原事件，并随选项与删除状态同步', () => {
+await test('查看按钮保留select原事件，并随选项与删除状态同步', async () => {
   const f = fixture(), select = f.context.createLineupSelect('account-a', 'mainline');
   const original = select.onchange, button = f.context.createLineupPreviewButton('account-a', select);
   assert.equal(select.onchange, original); assert.equal(button.disabled, true);
-  select.value = 'p1'; select.dispatch('change');
+  select.value = 'p1'; await select.dispatch('change');
   assert.equal(button.disabled, false); assert.equal(f.context.selectedLineupId('mainline'), 'p1');
   f.state.saved.presets = []; f.selectors.push(select); f.context.updateManualLineupSelects('account-a');
   assert.equal(button.disabled, true); assert.match(button.title, /已删除/);

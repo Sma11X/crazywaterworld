@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -39,6 +40,7 @@ saveStore({ activeId: 'a', accounts: ['a', 'b', 'old'].map(id => ({ id, label: i
 fs.writeFileSync(path.join(directory, 'automation-settings.json'), JSON.stringify({ version: 1, accounts: { old: { settings: old, revision: 4 } } }));
 const app = createConsole({ port: 0, protocol: {} });
 const root = await app.listen();
+const streams = new Set();
 let passed = 0;
 const test = async (name, work) => { await work(); passed++; console.log('通过：' + name); };
 async function api(route, body, account = 'a') {
@@ -53,10 +55,38 @@ async function until(predicate) {
   const deadline = Date.now() + 5000;
   while (!predicate()) { assert(Date.now() < deadline, '等待测试状态超时'); await sleep(10); }
 }
+function subscribe(query) {
+  return new Promise((resolve, reject) => {
+    const stream = { events: [], request: null, response: null };
+    streams.add(stream);
+    stream.request = http.get(root + '/api/events' + query, response => {
+      stream.response = response;
+      if (response.statusCode !== 200) { reject(new Error('SSE HTTP ' + response.statusCode)); return; }
+      let buffer = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => {
+        buffer += chunk;
+        let end;
+        while ((end = buffer.indexOf('\n\n')) !== -1) {
+          const lines = buffer.slice(0, end).split('\n'); buffer = buffer.slice(end + 2);
+          const data = lines.find(line => line.startsWith('data: '));
+          if (data) stream.events.push({ type: lines.find(line => line.startsWith('event: '))?.slice(7) || 'log', data: JSON.parse(data.slice(6)) });
+        }
+      });
+      resolve(stream);
+    });
+    stream.request.on('error', reject);
+  });
+}
+function closeStream(stream) {
+  stream.request?.destroy(); stream.response?.destroy(); streams.delete(stream);
+}
+const lineupEvents = stream => stream.events.filter(event => event.type === 'lineup-changed').map(event => event.data);
+const routineLineupLog = /^(正在切换挑战阵容|使用所选阵容挑战|使用游戏当前阵容挑战|正在恢复原阵容|阵容核对完成)/;
 function fixture(account = 'a') {
   const client = new EventEmitter();
   Object.assign(client, {
-    connected: true, current: structuredClone(original), writes: [], requests: [], passedStage: 0,
+    connected: true, current: structuredClone(original), writes: [], requests: [], passedStage: 0, failRestore: false,
     onBattle: null, unlocked: [7], pets: [{ uid: { low: 1, high: 2097152 }, petId: 'p', star: 2, level: 10 }],
     stop() { this.connected = false; this.stopped = true; },
     async request(name, body) {
@@ -64,6 +94,7 @@ function fixture(account = 'a') {
       this.requests.push(name);
       if (name === 'GetFormationRequest') return { formation: structuredClone(this.current) };
       if (name === 'SaveFormationRequest') {
+        if (this.failRestore && body.formation.presetId === original.presetId) throw new Error('模拟阵容恢复失败');
         this.current = normalizeFormation(body.formation, { allowEmpty: true });
         this.writes.push(structuredClone(this.current));
         return { formation: structuredClone(this.current) };
@@ -189,12 +220,48 @@ try {
     assert.equal(client.writes.length, 4);
   });
 
-  await test('单次试炼通过正常HTTP入口切换、确认战果并恢复', async () => {
-    const { client } = fixture();
-    const result = ok(await api('trials/challenge', { raidId: 2, stageId: 2001, lineupId: saved.presets[0].id }));
-    assert.match(result.message, /已通关/);
-    assert.deepEqual(client.writes, [target, original]);
-    assert.equal(readLineupRuntime('a').pending, false);
+  await test('正常试炼保留挑战结果但不输出阵容过程日志，独立SSE按账号更新状态', async () => {
+    const { client, session } = fixture();
+    const connections = await Promise.all(['?scope=all', '?account=a', '?account=b', ''].map(subscribe));
+    const [all, scoped, other, system] = connections;
+    const logStart = session.log.length;
+    try {
+      const result = ok(await api('trials/challenge', { raidId: 2, stageId: 2001, lineupId: saved.presets[0].id }));
+      assert.match(result.message, /已通关/);
+      assert.deepEqual(client.writes, [target, original]);
+      assert.equal(readLineupRuntime('a').pending, false);
+      const marker = app.emit(null, 'info', '阵容静默日志验收完成');
+      await until(() => connections.every(stream => stream.events.some(event => event.type === 'log' && event.data.id === marker.id)));
+      const expected = ['switching', 'battling', 'restoring', 'idle'].map(phase => ({ account: 'a', phase }));
+      assert.deepEqual(lineupEvents(all), expected);
+      assert.deepEqual(lineupEvents(scoped), expected);
+      assert.deepEqual(lineupEvents(other), []);
+      assert.deepEqual(lineupEvents(system), []);
+      const logs = session.log.slice(logStart);
+      assert(logs.some(entry => entry.message === result.message), '最终挑战结果仍保留在运行日志');
+      assert(!logs.some(entry => routineLineupLog.test(entry.message)), '正常阵容过程不能占用业务日志容量');
+      assert(!all.events.some(event => event.type === 'log' && routineLineupLog.test(event.data.message)), '正常阵容过程不能作为日志发送到网页');
+      assert.equal(session.lineupState.phase, 'idle');
+    } finally { connections.forEach(closeStream); }
+  });
+
+  await test('阵容恢复失败仍保留警告原因与状态通知', async () => {
+    const { client, session } = fixture();
+    const stream = await subscribe('?account=a'), logStart = session.log.length;
+    client.onBattle = () => { client.failRestore = true; };
+    try {
+      const result = await api('trials/challenge', { raidId: 2, stageId: 2001, lineupId: saved.presets[0].id });
+      assert.equal(result.status, 400);
+      assert.match(result.data.error, /模拟阵容恢复失败/);
+      await until(() => lineupEvents(stream).some(event => event.phase === 'pending'));
+      assert(session.log.slice(logStart).some(entry => entry.level === 'warn' && /模拟阵容恢复失败/.test(entry.message)), '恢复失败不能被正常过程日志降噪隐藏');
+      assert.equal(session.lineupState.phase, 'pending');
+      client.failRestore = false;
+      const recovery = ok(await api('lineup-presets')).recovery;
+      ok(await api('lineup-presets/recover', { confirm: true, resolution: 'restore', expectedTransactionId: recovery.transactionId }));
+      assert.deepEqual(client.current, original);
+      assert.equal(readLineupRuntime('a').pending, false);
+    } finally { closeStream(stream); }
   });
 
   await test('连续主线和连续试炼均绑定本次选择并逐场恢复', async () => {
@@ -204,10 +271,14 @@ try {
     assert.equal(session.stages.view().wins, 1);
     assert.deepEqual(client.writes, [target, original]);
     ({ client, session } = fixture());
+    const logStart = session.log.length;
     ok(await api('trials/start', { confirm: true, raidId: 2, maxFailures: 1, lineupId: saved.presets[0].id }));
     await until(() => !session.trials.get(2).view().running);
     assert.equal(session.trials.get(2).view().wins, 1);
     assert.deepEqual(client.writes, [target, original]);
+    const messages = session.log.slice(logStart).filter(entry => entry.message.startsWith('试炼 · 强化石副本：')).map(entry => entry.message);
+    assert(messages.some(message => /通关|通过1关/.test(message)), '连续试炼仍保留通关结果');
+    assert.equal(new Set(messages).size, messages.length, '阵容阶段更新不能重复输出同一试炼结果');
   });
 
   await test('断开连接等待在途战报及恢复完成后关闭客户端', async () => {
@@ -227,7 +298,7 @@ try {
   });
 
   await test('断线记录在下次操作前恢复，第三套阵容需显式处理', async () => {
-    const { client } = fixture();
+    const { client, session } = fixture();
     const makePending = () => withTemporaryLineup(client, { accountId: 'a', role: lineupRole(player), formation: target }, async () => { client.connected = false; });
     await assert.rejects(makePending(), error => error.lineupRestorePending);
     client.connected = true;
@@ -240,6 +311,7 @@ try {
     assert.equal((await api('lineup-editor')).status, 400);
     const pending = ok(await api('lineup-presets')).recovery;
     assert.equal(pending.phase, 'conflict');
+    assert(session.log.some(entry => entry.level === 'warn' && /游戏阵容已被其他操作修改/.test(entry.message)), '阵容冲突仍需显示明确原因');
     assert.equal((await api('lineup-presets/recover', { confirm: true, resolution: 'restore', expectedTransactionId: 'old' })).status, 400);
     const kept = ok(await api('lineup-presets/recover', { confirm: true, resolution: 'keep', expectedTransactionId: pending.transactionId }));
     assert.equal(kept.recovery.pending, false);
@@ -275,6 +347,7 @@ try {
   });
   console.log('保存阵容HTTP与执行器专项 ' + passed + '/' + passed + ' 通过');
 } finally {
+  for (const stream of streams) closeStream(stream);
   await app.close();
   assert.equal(path.dirname(directory), fs.realpathSync(os.tmpdir()));
   fs.rmSync(directory, { recursive: true, force: true });

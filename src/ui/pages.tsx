@@ -146,10 +146,8 @@ export function heroesPage() {
 export function lineupsPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
     <Panel title="我的阵容" help="管理已保存的自定义阵容，点击查看或在弹窗中编辑。主线和试炼可在各自入口选择阵容，挑战结束后自动还原到挑战前的搭配。">
-      <div className="bar"><Button id="saved-lineup-refresh" variant="outline">刷新已保存阵容</Button></div>
       <div id="saved-lineup-view" className="progression-view" />
     </Panel>
-    <Panel title="推荐阵容"><div className="bar"><Button id="lineup-refresh" variant="outline">刷新推荐</Button></div><div id="lineup-view" className="progression-view" aria-live="polite" /></Panel>
   </div>)
 }
 

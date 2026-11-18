@@ -618,10 +618,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   function observeLineup(session, event) {
     session.lineupState = event;
-    const labels = { switching: '正在切换挑战阵容', battling: event.lineupId ? '使用所选阵容挑战' : '使用游戏当前阵容挑战', restoring: '正在恢复原阵容',
-      pending: '原阵容待恢复', conflict: '阵容恢复需要处理', idle: '阵容核对完成' };
-    emit(session, event.phase === 'pending' || event.phase === 'conflict' ? 'warn' : 'state',
-      labels[event.phase] + (event.reason ? ' · ' + event.reason : ''), { lineupChanged: true });
+    // Routine formation transitions update the UI without flooding the activity log.
+    trace(session, 'lineup', event);
+    if (event.phase === 'pending' || event.phase === 'conflict') {
+      const label = event.phase === 'pending' ? '原阵容待恢复' : '阵容恢复需要处理';
+      emit(session, 'warn', label + (event.reason ? ' · ' + event.reason : ''));
+    }
+    const payload = `event: lineup-changed\ndata: ${JSON.stringify({ account: session.id, phase: event.phase })}\n\n`;
+    for (const res of streams) {
+      if (res.allAccounts || res.account === session.id) writeStream(res, payload);
+    }
   }
 
   function syncLineupRecoveryState(session, recovery) {
@@ -3277,12 +3283,20 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const generation = session.generation;
         const progression = settingsView(session).settings.progression;
         if (session.loop.running && progression.enabled && progression.trials && progression.raidIds.includes(String(payload.raidId))) throw new Error('该试炼已随挂机推关，请先暂停挂机再手动开始');
+        let lastReport = '';
         json(task.start(payload, async () => {
           const client = await ensureConnected(session, account);
           return { client, player: session.player, config, schedule: work => enqueue(session, work),
             executeBattle: sessionLineupExecutor(session, client, payload.lineupId ?? ''),
             enabled: () => !session.paused && session.generation === generation && session.client === client && client.connected };
-        }, state => emit(session, state.failed ? 'error' : 'info', `试炼 · ${raid.title}：${state.reason}（通过${state.wins}关，连续失败${state.failures}次）`)));
+        }, state => {
+          const level = state.failed ? 'error' : 'info';
+          const message = `试炼 · ${raid.title}：${state.reason}（通过${state.wins}关，连续失败${state.failures}次）`;
+          const signature = level + ':' + message;
+          if (signature === lastReport) return;
+          lastReport = signature;
+          emit(session, level, message);
+        }));
         return;
       }
       if (route === 'POST /api/trials/challenge') {
