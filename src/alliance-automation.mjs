@@ -86,10 +86,6 @@ async function resolveAidRecords(state, ledger, player) {
     if (!record.confirmed && d.kind === 'guildAidGift' && d.acknowledged && !state.askIds.includes(d.reqId)) ledger.resolveKey(key, true);
     if (!record.confirmed && d.kind === 'guildAidClaim' && !d.ids.some(id => state.ownRequests.some(row => row.id === id))) {
       ledger.resolveKey(key, true);
-      if (d.sequenceKey && d.items?.length) {
-        const seq = ledger.keyRecords()[d.sequenceKey]?.details;
-        if (seq && d.items.includes(seq.itemId)) ledger.updateKeyDetails(d.sequenceKey, { ...seq, received: true });
-      }
     }
     if (!record.confirmed && d.kind === 'guildAidAsk' && d.day === state.day && state.askUsed >= d.nextCount &&
       state.ownRequests.some(row => row.itemId === d.itemId && !d.beforeIds.includes(row.id))) ledger.resolveKey(key, true);
@@ -114,18 +110,15 @@ async function runMutual(client, protocol, config, player, { getSettings, ledger
   if (state.ready.length) {
     if (unfinished('guildAidClaim')) return report({ key: 'allianceMutual', label: '联盟互助', skipped: true, reason: '上次领取结果待确认' });
     let ticket, sent = false;
-    const before = state.ownRequests.filter(row => state.ready.includes(row.id));
     try {
       const result = await claimMyGuildAid(client, config, { player, enabled: current, beforeSend(ids) {
         if (!current()) throw Error('领取前账号或日期已变化');
         ticket = ledger.reserve({}, {}, {}, { uniqueKey: 'guildAidClaim:' + state.worldId + ':' + state.playerId + ':' + digest(ids.slice().sort().join(',')),
-          details: { kind: 'guildAidClaim', worldId: state.worldId, playerId: state.playerId, day, ids, sequenceKey: seqKey, items: before.map(row => row.itemId) } });
+          details: { kind: 'guildAidClaim', worldId: state.worldId, playerId: state.playerId, day, ids } });
       } });
       sent = true;
       if (!result.ok) throw Error(result.label);
       ledger.confirm(ticket);
-      const seq = sequence();
-      if (seq && before.some(row => row.itemId === seq.itemId)) ledger.updateKeyDetails(seqKey, { ...seq, received: true });
       report({ key: 'allianceMutual', label: result.label, ok: true });
       if (!current()) return;
       state = await aidState(client, protocol, config, player, getSettings(), current);
@@ -135,7 +128,8 @@ async function runMutual(client, protocol, config, player, { getSettings, ledger
     }
   }
   let p = getSettings().alliance;
-  if (p.autoAsk && current()) {
+  const askTarget = p.askDailyLimit ?? 20;
+  if (p.autoAsk && askTarget > 0 && state.askUsed < Math.min(askTarget, state.askLimit) && current()) {
     if (p.mutualMode !== 'exchange' && !p.requestMaterials?.length && p.recruit) {
       const recruitment = await readGuildOrderView(client, protocol, config, { player, settings: getSettings(), enabled: current });
       // Asking remains independent of the recruitment factory setting, but
@@ -148,19 +142,19 @@ async function runMutual(client, protocol, config, player, { getSettings, ledger
     if (!askItem) report({ key: 'allianceAsk', label: '联盟自动求助', skipped: true, reason: p.mutualMode === 'exchange' ? '本赛季贡献材料未开放，不回退其他赛季材料' : '未选择求助材料，当前也没有可求助的缺料' });
     else if (askMaterialAllowed(askItem, config, player, getSettings())) {
       if (!sequence()) {
-        const token = ledger.reserve({}, {}, {}, { uniqueKey: seqKey, details: { kind: 'guildAidSequence', worldId: state.worldId, playerId: state.playerId, day, itemId: askItem, received: false } });
+        const token = ledger.reserve({}, {}, {}, { uniqueKey: seqKey, details: { kind: 'guildAidSequence', worldId: state.worldId, playerId: state.playerId, day, itemId: askItem } });
         ledger.confirm(token);
       }
-      // First publish only one request. After an actual matching collection,
-      // issue remaining daily requests for that material, rechecking each send.
-      for (let count = 0; count < state.askLimit && current() && getSettings().alliance.autoAsk; count++) {
+      // The protocol accepts one request at a time. Fill today's remaining
+      // target in this round, confirming every send without waiting for a gift.
+      for (let count = 0; count < askTarget && current() && getSettings().alliance.autoAsk; count++) {
         if (unfinished('guildAidAsk')) { report({ key: 'allianceAsk', label: '联盟自动求助', skipped: true, reason: '前次求助结果待确认，不重复发布' }); break; }
-        if (state.askUsed >= state.askLimit) break;
-        if (!sequence()?.received && state.ownRequests.some(row => row.itemId === askItem && (row.ready || row.endTime > state.now))) break;
+        const limit = Math.min(askTarget, state.askLimit);
+        if (Math.max(state.askUsed, ledger.snapshot().counters.guildAidAsks ?? 0) >= limit) break;
         if (!askMaterialAllowed(askItem, config, player, getSettings())) break;
         const key = 'guildAidAsk:' + state.worldId + ':' + state.playerId + ':' + day + ':' + state.askUsed;
         if (ledger.hasKey(key)) break;
-        const token = ledger.reserve({ guildAidAsks: 1 }, { guildAidAsks: state.askLimit }, { guildAidAsks: state.askUsed }, { uniqueKey: key,
+        const token = ledger.reserve({ guildAidAsks: 1 }, { guildAidAsks: limit }, { guildAidAsks: state.askUsed }, { uniqueKey: key,
           details: { kind: 'guildAidAsk', worldId: state.worldId, playerId: state.playerId, day, itemId: askItem, nextCount: state.askUsed + 1, beforeIds: state.ownRequests.map(row => row.id) } });
         if (!current() || !getSettings().alliance.autoAsk) { ledger.cancel(token); break; }
         let sent = false;
@@ -169,9 +163,8 @@ async function runMutual(client, protocol, config, player, { getSettings, ledger
           const after = await aidState(client, protocol, config, player, getSettings(), current);
           if (after.day !== day || after.askUsed !== state.askUsed + 1 || !after.ownRequests.some(row => row.itemId === askItem && !state.ownRequests.some(old => old.id === row.id))) throw Error('求助次数与新请求尚未确认');
           ledger.confirm(token); state = after;
-          report({ key: 'allianceAsk', label: '已求助 ' + displayMaterial(config, askItem) + '，今日 ' + state.askUsed + '/' + state.askLimit, ok: true });
+          report({ key: 'allianceAsk', label: '已求助 ' + displayMaterial(config, askItem) + '，今日 ' + state.askUsed + '/' + limit + '（游戏上限 ' + state.askLimit + '）', ok: true });
         } catch (error) { if (rejected(error, 'GuildAidAskRequest', sent)) ledger.cancel(token); report({ key: 'allianceAsk', label: '联盟自动求助', error: error.message, pending: !rejected(error, 'GuildAidAskRequest', sent) }); break; }
-        if (!sequence()?.received) break;
       }
     }
   }
@@ -179,13 +172,12 @@ async function runMutual(client, protocol, config, player, { getSettings, ledger
   if (!current() || !p.autoHelp || !p.helpDailyLimit) return;
   if (unfinished('guildAidGift')) return report({ key: 'allianceHelp', label: '联盟自动帮助', skipped: true, reason: '前次赠送结果待确认，保留用量' });
   if ((ledger.snapshot().counters.guildAidGifts ?? 0) >= p.helpDailyLimit) return;
-  const topUp = (nowOf(client) + 28800) % 86400 >= 23 * 3600 + 40 * 60;
-  const maxGifts = topUp ? Math.min(p.helpDailyLimit, 100) : 1;
+  const maxGifts = p.helpDailyLimit - (ledger.snapshot().counters.guildAidGifts ?? 0);
   for (let gift = 0; gift < maxGifts && current(); gift++) {
   p = getSettings().alliance;
   if (!p.autoHelp || (ledger.snapshot().counters.guildAidGifts ?? 0) >= p.helpDailyLimit) return;
-  // Refresh after any ask/collection and immediately before donating. All
-  // modes, including late-night top-up, retain material and nickname filters.
+  // Keep filling the daily gift target while eligible requests remain.
+  // Refresh inventory, reservations and filters before every donation.
   state = await aidState(client, protocol, config, player, getSettings(), current);
   p = getSettings().alliance;
   const chosen = state.candidates.find(row => allianceMaterialAllowed(row.itemId, getSettings(), player) &&

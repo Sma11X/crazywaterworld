@@ -46,6 +46,42 @@ function legacySettings() {
 }
 
 try {
+  test('联盟求助次数补全旧配置，保留显式次数并校验边界', () => {
+    const settings = defaultSettings();
+    Object.assign(settings.alliance, { enabled: true, mutual: true, autoAsk: true, helpDailyLimit: 7 });
+    delete settings.alliance.askDailyLimit;
+    const before = structuredClone(settings);
+    for (const version of [1, SETTINGS_SCHEMA_VERSION]) {
+      fs.writeFileSync(file, JSON.stringify({ version: SETTINGS_SCHEMA_VERSION, accounts: {
+        ask: { settingsVersion: version, settings, revision: 3 },
+      } }));
+      const bytes = fs.readFileSync(file);
+      const loaded = loadAutomationSettings('ask', { file });
+      const imported = importAutomationSettings({ format: SETTINGS_FORMAT, version, settings });
+      assert.deepEqual(loaded.settings, imported);
+      assert.deepEqual(loaded.settings.alliance, { ...before.alliance, askDailyLimit: 20 });
+      assert.deepEqual(fs.readFileSync(file), bytes, '补全只在内存进行');
+      assert.deepEqual(settings, before, '补全不修改输入');
+      saveAutomationSettings('ask', loaded.settings, { file, revision: loaded.revision });
+      assert.deepEqual(loadAutomationSettings('ask', { file }).settings, imported);
+    }
+    for (const askDailyLimit of [0, 7, 1000]) {
+      const explicit = defaultSettings();
+      explicit.alliance.askDailyLimit = askDailyLimit;
+      assert.equal(importAutomationSettings(exportAutomationSettings(explicit)).alliance.askDailyLimit, askDailyLimit);
+      const loaded = loadAutomationSettings('ask', { file });
+      saveAutomationSettings('ask', explicit, { file, revision: loaded.revision });
+      assert.equal(loadAutomationSettings('ask', { file }).settings.alliance.askDailyLimit, askDailyLimit);
+    }
+    for (const askDailyLimit of [-1, 1001, 1.5, '20', null, undefined]) {
+      const invalid = defaultSettings();
+      invalid.alliance.askDailyLimit = askDailyLimit;
+      assert.throws(() => validateSettings(invalid), error => !!error.fields?.['alliance.askDailyLimit']);
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: SETTINGS_SCHEMA_VERSION, settings: invalid }),
+        error => !!error.fields?.['alliance.askDailyLimit']);
+    }
+  });
+
   test('旧互助开关在读取、导入、保存和重启后始终停用，不改变新版联盟授权', () => {
     for (const version of [1, SETTINGS_SCHEMA_VERSION]) for (const enabled of [false, true]) for (const mutual of [false, true]) {
       const settings = defaultSettings();

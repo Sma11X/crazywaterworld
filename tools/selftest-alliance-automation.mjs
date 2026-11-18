@@ -12,7 +12,7 @@ let serial = 0, passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log('通过：' + name); };
 const settings = () => ({ alliance: { enabled: true, recruit: false, recruitDailyLimit: 0, recruitProduction: false, mutual: true,
   mutualMode: 'custom', autoHelp: false, autoAsk: false, allowedMaterials: [], blockedMaterials: [], requestMaterials: [], memberKeywords: [],
-  stockReserve: 0, helpDailyLimit: 20, collectGifts: false, autoTech: false, techIds: [], techDailyLimit: 20 } });
+  stockReserve: 0, helpDailyLimit: 20, askDailyLimit: 20, collectGifts: false, autoTech: false, techIds: [], techDailyLimit: 20 } });
 function fixture() {
   const f = guildMutualFixture(), id = ++serial;
   f.player.playerId = String(9007199260000000n + BigInt(id));
@@ -60,19 +60,49 @@ try {
     f.ledger.confirm(f.ledger.reserve({ guildAidGifts: 1 })); await f.run(); assert.equal(f.gifts().length, 0);
     f.settings.alliance.mutualMode = 'exchange'; await f.run(); assert.equal(f.gifts().length, 0);
   });
-  await test('求助先发一条，确认同材料收取后才用完剩余全局次数', async () => {
+  await test('求助当轮连续发布到每日20次，无需领取，重复轮与重启不重复发布', async () => {
     const f = fixture(); f.settings.alliance.autoAsk = true; f.settings.alliance.requestMaterials = ['橡胶圈'];
-    f.state.askUsed = 17; await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.state.askUsed, 18);
-    await f.run(); assert.equal(f.asks().length, 1, '未收回前不追加');
-    f.state.own[0].helper = { playerId: f.friend, nickname: '盟友' };
+    await f.run(); assert.equal(f.asks().length, 20); assert.equal(f.state.askUsed, 20);
+    assert.equal(f.state.own.length, 20); assert.ok(f.state.own.every(row => !row.helper), '尚未收到任何回赠也应完成求助目标');
+    assert.equal(f.ledger.snapshot().counters.guildAidAsks, 20);
+    await f.run(); assert.equal(f.asks().length, 20);
     f.ledger = createUsageLedger('fixture-' + serial, { file: f.file });
-    await f.run(); assert.equal(f.asks().length, 3); assert.equal(f.state.askUsed, 20);
-    await f.run(); assert.equal(f.asks().length, 3);
+    await f.run(); assert.equal(f.asks().length, 20);
+  });
+  await test('求助每日目标遵守游戏上限，手动已用次数只补差额，0禁用', async () => {
+    for (const { target, gameLimit, used, expected } of [
+      { target: 3, gameLimit: 20, used: 0, expected: 3 },
+      { target: 25, gameLimit: 20, used: 0, expected: 20 },
+      { target: 20, gameLimit: 8, used: 0, expected: 8 },
+      { target: 5, gameLimit: 20, used: 2, expected: 3 },
+      { target: 20, gameLimit: 20, used: 17, expected: 3 },
+      { target: 2, gameLimit: 20, used: 4, expected: 0 },
+      { target: 0, gameLimit: 20, used: 0, expected: 0 },
+    ]) {
+      const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, requestMaterials: ['橡胶圈'], askDailyLimit: target });
+      f.config.tables.GuildParamCfg.data[0].paramValue = gameLimit; f.state.askUsed = used;
+      await f.run(); assert.equal(f.asks().length, expected, JSON.stringify({ target, gameLimit, used }));
+      assert.equal(f.state.askUsed, used + expected);
+      await f.run(); assert.equal(f.asks().length, expected, '每日目标不是每轮新增次数');
+    }
+  });
+  await test('跨日重新计算求助与赠送额度，不沿用昨日已完成次数', async () => {
+    const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, autoHelp: true, requestMaterials: ['橡胶圈'], askDailyLimit: 3, helpDailyLimit: 2 });
+    f.state.stock.橡胶圈 = 10;
+    f.ledger = createUsageLedger('fixture-' + serial, { file: f.file, now: () => Date.now() + f.client.serverClockOffsetMs });
+    const firstDay = f.ledger.snapshot().day;
+    await f.run(); assert.equal(f.asks().length, 3); assert.equal(f.gifts().length, 2);
+    f.client.serverClockOffsetMs = 86400000; f.state.askUsed = 0; f.state.own = [];
+    for (const row of f.state.requests) row.endTime = Math.floor((Date.now() + f.client.serverClockOffsetMs) / 1000) + 3600;
+    assert.notEqual(f.ledger.snapshot().day, firstDay);
+    await f.run(); assert.equal(f.asks().length, 6); assert.equal(f.gifts().length, 4);
+    assert.equal(f.ledger.snapshot().counters.guildAidAsks, 3); assert.equal(f.ledger.snapshot().counters.guildAidGifts, 2);
+    await f.run(); assert.equal(f.asks().length, 6); assert.equal(f.gifts().length, 4);
   });
   await test('未选择求助材料只请求当前缺料，关闭赠送不影响求助', async () => {
     const f = fixture(); f.settings.alliance.autoAsk = true; await f.run(); assert.equal(f.asks().length, 0);
     f.state.stock.橡胶圈 = 0; f.state.workerOrder = [{ index: 1, requirements: [{ type: 0, id: '橡胶圈', num: 1 }] }];
-    await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.gifts().length, 0);
+    await f.run(); assert.equal(f.asks().length, 20); assert.equal(f.gifts().length, 0);
   });
   await test('贡献模式固定当前赛季材料，未开放时不回退；材料自定义原值保留', async () => {
     const f = fixture(); f.settings.alliance.autoAsk = true; f.settings.alliance.mutualMode = 'exchange'; f.settings.alliance.requestMaterials = ['木材'];
@@ -83,7 +113,7 @@ try {
   });
   await test('主动求助不受赠送白黑名单限制，贡献帮助忽略隐藏白名单但仍守禁用和昵称', async () => {
     const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, autoHelp: true, allowedMaterials: ['木材'], blockedMaterials: ['橡胶圈'], requestMaterials: ['橡胶圈'] });
-    await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.gifts().length, 0);
+    await f.run(); assert.equal(f.asks().length, 20); assert.equal(f.gifts().length, 0);
     const g = fixture(); Object.assign(g.settings.alliance, { mutualMode: 'exchange', autoAsk: true, autoHelp: true, allowedMaterials: ['木材'], requestMaterials: ['木材'], blockedMaterials: ['橡胶圈'] });
     await g.run(); assert.equal(g.asks()[0].body.reqItemId, '橡胶圈'); assert.equal(g.gifts().length, 0);
     g.settings.alliance.blockedMaterials = []; g.settings.alliance.memberKeywords = ['不存在']; await g.run(); assert.equal(g.gifts().length, 0);
@@ -95,7 +125,23 @@ try {
     await f.run(); assert.equal(f.asks().length, 1); f.state.failure = ''; f.ledger = createUsageLedger('fixture-' + serial, { file: f.file });
     await f.run(); assert.equal(f.asks().length, 1);
     f.state.askUsed = 1; f.state.own.push({ reqId: '1001', reqItemId: '橡胶圈', endTime: Math.floor(Date.now() / 1000) + 60 });
-    await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.ledger.snapshot().uncertain, 0);
+    await f.run(); assert.equal(f.asks().length, 20); assert.equal(f.state.askUsed, 20); assert.equal(f.ledger.snapshot().uncertain, 0);
+    await f.run(); assert.equal(f.asks().length, 20);
+  });
+  await test('求助已发布但回包未知，重启核实后仅补剩余次数', async () => {
+    const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, requestMaterials: ['橡胶圈'], askDailyLimit: 4 });
+    f.state.failure = 'askAcceptedUnknown'; await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.state.askUsed, 1);
+    assert.equal(f.ledger.snapshot().uncertain, 1);
+    f.state.failure = ''; f.ledger = createUsageLedger('fixture-' + serial, { file: f.file });
+    await f.run(); assert.equal(f.asks().length, 4); assert.equal(f.state.askUsed, 4); assert.equal(f.ledger.snapshot().uncertain, 0);
+    await f.run(); assert.equal(f.asks().length, 4);
+  });
+  await test('求助结果未知即使跨日重启也保留阻断，不借额度重置重复发送', async () => {
+    const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, requestMaterials: ['橡胶圈'] });
+    f.state.failure = 'askUnknown'; await f.run(); assert.equal(f.asks().length, 1);
+    f.client.serverClockOffsetMs = 86400000; f.state.failure = '';
+    f.ledger = createUsageLedger('fixture-' + serial, { file: f.file, now: () => Date.now() + f.client.serverClockOffsetMs });
+    await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.ledger.snapshot().uncertain, 1);
   });
   await test('赠送未知与明确拒绝分别保留/释放持久预算', async () => {
     const f = fixture(); f.settings.alliance.autoHelp = true; f.state.failure = 'giftUnknown'; await f.run();
@@ -111,16 +157,61 @@ try {
     const g = fixture(); g.settings.alliance.autoAsk = true; g.settings.alliance.requestMaterials = ['橡胶圈'];
     g.state.before = name => { if (name === 'CounterInfoRequest') g.player.guildId = '999'; }; await g.run(); assert.equal(g.asks().length, 0);
   });
-  await test('23:40后补齐剩余帮助次数，仍不放宽材料、昵称和保留库存', async () => {
-    const f = fixture(); f.settings.alliance.autoHelp = true; f.settings.alliance.helpDailyLimit = 3;
+  await test('白天连续赠送，仍遵守材料、昵称筛选及库存保留', async () => {
+    const f = fixture(); Object.assign(f.settings.alliance, { autoHelp: true, helpDailyLimit: 20, allowedMaterials: ['橡胶圈'] });
     const midnight = Math.floor((Date.now() + 28800000) / 86400000) * 86400000 - 28800000;
-    const late = midnight + (23 * 3600 + 45 * 60) * 1000;
-    f.client.serverClockOffsetMs = late - Date.now();
+    const noon = midnight + 12 * 3600 * 1000;
+    f.client.serverClockOffsetMs = noon - Date.now();
     f.ledger = createUsageLedger('fixture-' + serial, { file: f.file, now: () => Date.now() + f.client.serverClockOffsetMs });
-    for (const row of f.state.requests) row.endTime = Math.floor(late / 1000) + 3600;
+    for (const row of f.state.requests) row.endTime = Math.floor(noon / 1000) + 3600;
+    f.state.requests[0].reqItemId = '木材'; f.state.requests[1].asker.playerId = f.other;
+    f.state.members[1].nickname = 'Alice-盟友'; f.state.members[2].nickname = '其他盟友';
+    const expectedIds = f.state.requests.slice(2, 5).map(row => row.reqId);
     f.state.stock.橡胶圈 = 5; f.settings.alliance.stockReserve = 2;
     f.settings.alliance.memberKeywords = ['不匹配']; await f.run(); assert.equal(f.gifts().length, 0);
-    f.settings.alliance.memberKeywords = []; await f.run(); assert.equal(f.gifts().length, 3); assert.equal(f.state.stock.橡胶圈, 2);
+    f.settings.alliance.memberKeywords = ['ALICE']; await f.run(); assert.equal(f.gifts().length, 3); assert.equal(f.state.stock.橡胶圈, 2);
+    assert.deepEqual(f.gifts().map(row => row.id), expectedIds); assert.equal(f.state.stock.木材, 20);
+    await f.run(); assert.equal(f.gifts().length, 3);
+  });
+  await test('批量赠送到每日上限或候选用完，已赠送次数计入目标', async () => {
+    for (const { target, used, candidates, expected } of [
+      { target: 20, used: 0, candidates: 20, expected: 20 },
+      { target: 5, used: 2, candidates: 20, expected: 3 },
+      { target: 20, used: 0, candidates: 2, expected: 2 },
+      { target: 0, used: 0, candidates: 20, expected: 0 },
+    ]) {
+      const f = fixture(); Object.assign(f.settings.alliance, { autoHelp: true, helpDailyLimit: target });
+      f.state.stock.橡胶圈 = 25; f.state.requests = f.state.requests.slice(0, candidates);
+      if (used) f.ledger.confirm(f.ledger.reserve({ guildAidGifts: used }));
+      await f.run(); assert.equal(f.gifts().length, expected, JSON.stringify({ target, used, candidates }));
+      assert.equal(f.state.stock.橡胶圈, 25 - expected);
+      assert.equal(f.ledger.snapshot().counters.guildAidGifts ?? 0, used + expected);
+      f.ledger = createUsageLedger('fixture-' + serial, { file: f.file });
+      await f.run(); assert.equal(f.gifts().length, expected, '重启不重置每日赠送额度');
+    }
+  });
+  await test('批量赠送逐次保留居民订单物料，不因连续发送耗尽预留', async () => {
+    const f = fixture(); f.settings.alliance.autoHelp = true; f.state.stock.橡胶圈 = 5;
+    f.state.workerOrder = [{ index: 1, requirements: [{ type: 0, id: '橡胶圈', num: 2 }] }];
+    await f.run(); assert.equal(f.gifts().length, 3); assert.equal(f.state.stock.橡胶圈, 2);
+    await f.run(); assert.equal(f.gifts().length, 3);
+  });
+  await test('批量执行中关闭求助或赠送开关立即停止，已发送首条留待下轮核销', async () => {
+    const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, requestMaterials: ['橡胶圈'] });
+    f.state.before = name => { if (name === 'CounterInfoRequest' && f.asks().length === 1) f.settings.alliance.autoAsk = false; };
+    await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.state.askUsed, 1);
+    assert.equal(f.ledger.snapshot().uncertain, 1);
+    await f.run(); assert.equal(f.asks().length, 1); assert.equal(f.ledger.snapshot().uncertain, 0);
+    const g = fixture(); g.settings.alliance.autoHelp = true; g.state.stock.橡胶圈 = 20;
+    g.state.onGift = () => { g.settings.alliance.autoHelp = false; };
+    await g.run(); assert.equal(g.gifts().length, 1); assert.equal(g.state.stock.橡胶圈, 19);
+    assert.equal(g.ledger.snapshot().uncertain, 1);
+    await g.run(); assert.equal(g.gifts().length, 1); assert.equal(g.ledger.snapshot().uncertain, 0);
+  });
+  await test('批量求助中调低每日目标，后续发送立即遵守新目标', async () => {
+    const f = fixture(); Object.assign(f.settings.alliance, { autoAsk: true, requestMaterials: ['橡胶圈'] });
+    f.state.before = name => { if (name === 'CounterInfoRequest' && f.asks().length === 2) f.settings.alliance.askDailyLimit = 2; };
+    await f.run(); assert.equal(f.asks().length, 2); assert.equal(f.state.askUsed, 2);
   });
   await test('募兵需求到用户上限或游戏上限即停止，缺料补产只准备当前订单', async () => {
     const s = settings(); Object.assign(s.alliance, { recruit: true, recruitProduction: true, recruitDailyLimit: 2 });

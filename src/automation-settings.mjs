@@ -253,6 +253,11 @@ export function validateSettings(input, options = {}) {
 
 function validateCurrentSettings(input, { partial = false, catalog = null } = {}) {
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
+  // This additive limit was absent from saved version 2 settings. Only fill
+  // the missing field; explicit values still pass through strict validation.
+  if (plain(input) && plain(input.alliance) && !Object.hasOwn(input.alliance, 'askDailyLimit')) {
+    input = { ...input, alliance: { ...input.alliance, askDailyLimit: DEFAULT_SETTINGS.alliance.askDailyLimit } };
+  }
   const errors = Object.create(null);
   const output = defaultSettings();
   if (!plain(input)) throw new SettingsError({ settings: '配置必须是 JSON 对象' });
