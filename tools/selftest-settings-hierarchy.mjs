@@ -310,9 +310,12 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   f.renderPage();f.activate('world');f.activateGroup('cityWar');
   const sections=f.env.node('config-group-cityWar').querySelectorAll('.config-field-section');
   const global=f.env.node('config-section-cityWar-targetMode');
-  assert.equal(sections.length,1);assert.equal(global.tagName,'SECTION');
-  assert.equal(global.querySelector('summary'),null);
-  assert(visible(f.widget('cityWar.targetMode').node));
+  assert.equal(sections.length,1);assert.equal(global.tagName,'DETAILS');
+  assert.equal(global.querySelector('summary').textContent,'全局策略');
+  assert.equal(global.open,false);
+  assert(!visible(f.widget('cityWar.targetMode').node),'全局策略默认收起');
+  global.open=true;global.ontoggle();
+  assert(visible(f.widget('cityWar.targetMode').node),'展开后显示全局策略');
   const city=f.env.node('config-group-cityWar');
   assert(city.children.indexOf(global)>city.children.indexOf(f.widget('fleetSpeed.dailyDiamondLimit').node));
   const participants=f.widget('cityWar.fleetIds'),roles=f.widget('cityWar.defenceFleetIds');
@@ -340,7 +343,13 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   participants.disclosure.onclick();
   f.renderPage();
   assert.equal(f.widget('cityWar.fleetIds').disclosure.getAttribute('aria-expanded'),'false','重绘保留参与舰队收起状态');
-  assert(visible(f.widget('cityWar.targetMode').node),'重绘后全局策略仍直接展示');
+  assert(visible(f.widget('cityWar.targetMode').node),'重绘保留全局策略展开状态');
+  const expanded=f.env.node('config-section-cityWar-targetMode');
+  expanded.open=false;expanded.ontoggle();f.renderPage();
+  assert(!visible(f.widget('cityWar.targetMode').node),'重绘保留全局策略收起状态');
+  f.errors({message:'策略无效',fields:{'cityWar.targetMode':'请选择有效的目标来源'}},{focus:false});
+  assert.equal(f.env.node('config-section-cityWar-targetMode').open,true,'隐藏错误自动展开全局策略');
+  assert(visible(f.widget('cityWar.targetMode').node));
   assert.equal(f.env.saves,0,'展开收起不保存配置');
 });
 

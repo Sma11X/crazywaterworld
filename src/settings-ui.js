@@ -490,7 +490,7 @@ const cityWarGroup = configGroups.find(group => group.id === 'cityWar');
 const cityWarStrategyFields = cityWarGroup.fields.filter(field => cityWarStrategyKeys.includes(field.key.split('.')[1]));
 cityWarGroup.fields = [
   ...cityWarGroup.fields.filter(field => !cityWarStrategyFields.includes(field)),
-  ...cityWarStrategyFields.map(field => ({ ...field, parent: undefined, section: '全局策略', sectionCollapsible: false })),
+  ...cityWarStrategyFields.map(field => ({ ...field, parent: undefined, section: '全局策略', startCollapsed: true })),
 ];
 
 function configGet(key) {
