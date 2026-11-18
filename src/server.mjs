@@ -95,7 +95,8 @@ import { assertResourcesReady, resourceReadiness } from './resource-store.mjs';
 import { readTreasureLoot, planTreasureLoot, treasureAutomationEnabled } from './treasure-loot.mjs';
 import { readCityWar, planCityWar, cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations } from './city-war.mjs';
 import { readWorldOnlineReward, worldOnlineRewardKey } from './world-online-rewards.mjs';
-import { readEquipmentForge, planEquipmentForge, releaseStaleEquipmentForge, forgeEnabled } from './equipment-forge.mjs';
+import { readEquipmentForge, releaseStaleEquipmentForge, forgeEnabled } from './equipment-forge.mjs';
+import { previewEquipmentForge } from './equipment-forge-preview.mjs';
 import { reconcileManualForge } from './manual-forge-sync.mjs';
 import { readAntiqueUpgrade, planAntiqueUpgrade, antiqueEnabled } from './antique-upgrade.mjs';
 import { watchBasePushes, surveyBaseAutomation, planBaseAutomation, baseDemands, previewNativeAutomation } from './base-automation.mjs';
@@ -2268,8 +2269,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               ...(state.lotteryError ? ['周抽奖状态未确认：' + state.lotteryError] : []), ...(state.orderError ? ['商人订单状态未确认：' + state.orderError] : [])] }, { activities: state.activities?.length ?? 0 }, '活动状态（只读）'), viewOnly: true };
           }
           if (category === 'forge') {
-            const state = await readEquipmentForge(client, protocolFor(client), config, session.player);
-            const plan = planEquipmentForge(state, config, settings, { usage, keys: usageFor(session).keyRecords() });
+            const player = session.player, generation = session.generation;
+            const { snapshot: state, plan } = await previewEquipmentForge(client, protocolFor(client), config, player, settings,
+              { usage, keys: usageFor(session).keyRecords(), enabled: () => session.client === client && client.connected
+                && !session.paused && session.player === player && session.generation === generation });
             return { ...output(plan, { factories: state.buildings.length }, '装备锻造'), forge: {
               factories: plan.factories, gold: state.gold, season: state.season, forgeLevel: state.forgeLevel } };
           }
