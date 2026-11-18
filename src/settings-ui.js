@@ -1454,7 +1454,9 @@ async function configRefreshPlayers() {
 function configPlayerPicker(spec, id) {
   const root = el('div', 'config-player-picker'); root.id = id; root.tabIndex = -1; root.setAttribute('role', 'group'); root.setAttribute('aria-label', spec.label);
   const selected = el('div', 'config-player-tags');
-  const details = el('details', 'config-multi'); const summary = el('summary', '', '选择盟友'); summary.setAttribute('aria-label', '选择' + spec.label); details.append(summary);
+  // 点击姓名标签时，焦点须留在下拉框内，避免落到外层分组触发失焦关闭。
+  const details = el('details', 'config-multi'); details.tabIndex = -1;
+  const summary = el('summary', '', '选择盟友'); summary.setAttribute('aria-label', '选择' + spec.label); details.append(summary);
   const panel = el('div', 'config-multi-panel'); const search = el('input', 'config-input'); search.type = 'search'; search.placeholder = '搜索昵称或角色 ID'; search.setAttribute('aria-label', '搜索' + spec.label);
   const status = el('p', 'config-help'); status.setAttribute('role', 'status');
   const list = el('div', 'config-option-list');
