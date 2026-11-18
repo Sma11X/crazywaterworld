@@ -312,7 +312,7 @@ const configGroups = [
   ] },
   { id: 'resources', title: '加速与钻石', category: 'base', fields: [
     configField('resources.keepAccelerators', '保留加速器数量', 'number', { unit: '个', help: '所有自动加速共用保留量，消耗后不得低于此值。' }),
-    configField('resources.allowDiamonds', '允许自动消耗钻石'),
+    configField('resources.allowDiamonds', '自动钻石消耗总开关'),
     configField('resources.diamondThreshold', '钻石保留阈值', 'number', { parent: 'resources.allowDiamonds', unit: '钻石', help: '本工具消费后余额不得低于此值。游戏内手动消费不受此开关限制。' }),
     configField('resources.diamondDailyLimit', '每日钻石使用量', 'number', { parent: 'resources.allowDiamonds', unit: '钻石', help: '0 表示禁止自动花钻石。统计启用本版本后的自动消费，升级前与游戏内手动消费不计入。北京时间零点重置；结果不明的已发送消费仍占额度。' }),
   ] },

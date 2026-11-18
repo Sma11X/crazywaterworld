@@ -8,7 +8,7 @@ add('loop.dailies', '日常行动与点金总开关', '总控制', { help: '控�
 add('loop.tasks', '主线、支线与成就总开关', '总控制');
 add('dailies.enabled', '每日任务与奖励总开关', '总控制', { help: '控制日常行动和每日任务、活跃宝箱、免费赠礼。钻石点金独立受点金和钻石开关限制。' });
 add('heroes.enabled', '英雄自动养成', '总控制', { fields: ['heroes.enabled','loop.heroes'], help: '控制英雄随挂机自动养成；养成动作、目标和资源保留在游戏配置中设置。' });
-add('resources.allowDiamonds', '允许自动消耗钻石', '总控制', { help: '仅授权已开启项目在保存的保留量、次数和预算内消费。不会开启任何其他项目。' });
+add('resources.allowDiamonds', '自动钻石消耗总开关', '总控制', { help: '仅授权已开启项目在保存的保留量、次数和预算内消费。不会开启任何其他项目。' });
 for (const [key,label] of [
  ['building.enabled','建筑总开关'],['building.collect','收取建筑产出'],['building.build','自动建造'],['building.upgrade','自动升级建筑'],['building.finish','自动完工'],['building.supply','缺料时为建筑备料'],['building.speedUp','建筑自动加速'],
  ['factory.enabled','工厂总开关'],['factory.gain','领取工厂产品'],['factory.produce','工厂自动生产'],['factory.cooperateNative','按需调整原生自动生产'],['factory.speedUp','工厂自动加速'],
