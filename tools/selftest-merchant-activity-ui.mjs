@@ -76,7 +76,16 @@ function fixture() {
       ]);
     }
     querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
-    focus() { state.focused = this; }
+    contains(node) { return node === this || this.children.some(child => child.contains(node)); }
+    remove() {
+      if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+      this.parentElement = null;
+    }
+    focus() {
+      const previous = state.focused;
+      state.focused = this;
+      for (let node = previous; node; node = node.parentElement) node.onfocusout?.();
+    }
     scrollIntoView() {}
   }
   const element = (tag, className, text) => new Element(tag, className, text);
@@ -145,6 +154,7 @@ function fixture() {
       const table = element('table'); table.headers = headers; table.rows = rows; return table;
     },
     document: {
+      get activeElement() { return state.focused; },
       querySelectorAll(selector) {
         return [...nodes.values()].flatMap(item => item.querySelectorAll(selector));
       },
@@ -303,6 +313,181 @@ let passed = 0;
 async function test(name, work) {
   await work(); passed++; console.log('通过：' + name);
 }
+
+const flushAsync = () => new Promise(resolve => setImmediate(resolve));
+
+await test('活动目录和所选配置先显示，不等待慢游戏请求或其他配置接口', async () => {
+  const f = fixture(), live = deferred(), hero = deferred();
+  f.catalog.activities = clone(f.activities.activities);
+  f.catalog.eventTasks = clone(f.activities.eventTasks);
+  f.catalog.activities.push({ id: 'loading-lottery', name: '已存周转盘', kind: 'weekly', weekType: 4,
+    startTime: f.activities.serverNow - 10, endTime: f.activities.serverNow + 3600, taskKeys: ['weekGift'] });
+  f.catalog.eventTasks.push({ key: 'weekGift', label: '免费礼包', enabled: true });
+  f.activities.activities[0].name = '实时商人';
+  f.state.respond = request => {
+    if (request.route === '/api/activities') return live.promise;
+    if (request.route === '/api/hero-raid/settings') return hero.promise;
+  };
+  const pending = f.api.refresh();
+  assert(f.state.calls.some(call => call.route === '/api/activities'), '游戏请求与配置读取同时启动');
+  assert(f.node('activity-tabs').children.length, '目录未返回前也有静态配置入口');
+  await flushAsync();
+  assert(f.node('activity-tabs').textContent.includes('已存周转盘'));
+  f.api.select('loading-lottery');
+  assert.equal(f.node('activities-list').querySelector('[data-activity-run=weekGift]').disabled, true);
+  f.api.selectMerchant();
+  assert.equal(f.controls().length, 4, '商人配置不等超凡英雄配置完成');
+  assert.match(f.node('activities-status').textContent, /正在同步/);
+  live.resolve(f.activities);
+  await flushAsync();
+  assert.equal(f.node('activity-title').textContent, '实时商人', '实时数据到达即更新，不等慢配置');
+  assert(!f.node('activities-status').textContent.includes('正在同步'));
+  hero.resolve(undefined);
+  await pending;
+});
+
+await test('完整活动先返回时迟到目录不能降级实时状态', async () => {
+  const f = fixture(), catalog = deferred();
+  f.state.respond = request => request.route === '/api/activities/catalog' ? catalog.promise : undefined;
+  await f.api.refresh();
+  assert.equal(f.node('activity-tabs').querySelector('[aria-selected=true]').dataset.activity, f.activities.activities[0].id,
+    '首次载入应选第一项当前活动，不沿用静态入口临时选中的海盗');
+  const title = f.node('activity-title').textContent;
+  catalog.resolve({ ...f.catalog, activities: [{ ...f.activities.activities[0], name: '迟到旧目录' }] });
+  await flushAsync();
+  assert.equal(f.node('activity-title').textContent, title);
+  assert(f.node('activities-order').children.length, '实时商人订单仍可见');
+});
+
+await test('不完整目录不覆盖记忆选择，加载中主动改选仍以用户选择为准', async () => {
+  for (const changeSelection of [false, true]) {
+    const f = fixture();
+    await f.api.refresh(); f.api.selectMerchant();
+    const preferred = f.node('activity-tabs').querySelector('[aria-selected=true]').dataset.activity;
+    f.context.current = 'merchant-b'; await f.api.refresh();
+    f.context.current = 'merchant-a';
+    const live = deferred();
+    f.state.respond = request => request.route === '/api/activities' ? live.promise : undefined;
+    const pending = f.api.refresh();
+    await flushAsync();
+    assert.equal(f.node('activity-tabs').querySelector('[aria-selected=true]').dataset.activity, 'pirates');
+    if (changeSelection) f.api.selectHero();
+    live.resolve(f.activities); await pending;
+    assert.equal(f.node('activity-tabs').querySelector('[aria-selected=true]').dataset.activity,
+      changeSelection ? 'hero-raid' : preferred);
+  }
+});
+
+await test('刷新保留可见活动但临时关闭执行入口，失败后仍只展示目录', async () => {
+  const f = fixture();
+  f.activities.activities.push({ id: 'live-lottery', name: '周转盘', kind: 'weekly', weekType: 4,
+    startTime: f.activities.serverNow - 10, endTime: f.activities.serverNow + 3600, taskKeys: ['weekGift'] });
+  f.activities.eventTasks.push({ key: 'weekGift', label: '免费礼包', enabled: true });
+  await f.api.refresh(); f.api.select('live-lottery');
+  assert(!f.node('activities-list').querySelector('[data-activity-run=weekGift]').disabled);
+  const live = deferred();
+  f.state.respond = request => {
+    if (request.route === '/api/activities') return live.promise;
+    if (request.route === '/api/activities/catalog') throw Error('目录暂不可用');
+  };
+  const pending = f.api.refresh();
+  assert.equal(f.node('activity-title').textContent, '周转盘');
+  assert.equal(f.node('activities-list').querySelector('[data-activity-run=weekGift]').disabled, true);
+  live.reject(Error('游戏读取失败')); await pending;
+  assert.equal(f.node('activities-list').querySelector('[data-activity-run=weekGift]').disabled, true);
+  assert.match(f.node('activities-status').textContent, /同步失败/);
+});
+
+await test('切号后迟到的活动及目录均不能修改当前账号面板', async () => {
+  const f = fixture(), live = deferred(), catalog = deferred();
+  f.state.respond = request => {
+    if (request.account !== 'merchant-a') return;
+    if (request.route === '/api/activities') return live.promise;
+    if (request.route === '/api/activities/catalog') return catalog.promise;
+  };
+  const pending = f.api.refresh();
+  f.context.current = 'merchant-b'; await f.api.refresh(); f.api.selectMerchant();
+  const title = f.node('activity-title').textContent;
+  catalog.resolve({ ...f.catalog, activities: [{ ...f.activities.activities[0], name: '旧账号目录' }] });
+  live.resolve({ ...f.activities, activities: [{ ...f.activities.activities[0], name: '旧账号活动' }] });
+  await pending; await flushAsync();
+  assert.equal(f.api.owner, 'merchant-b');
+  assert.equal(f.node('activity-title').textContent, title);
+  assert.equal(f.input('autoFinal').getAttribute('aria-checked'), 'false');
+});
+
+await test('游戏活动请求期间断开后，迟到响应保持目录模式且不可执行', async () => {
+  const f = fixture(), live = deferred();
+  f.activities.activities.push({ id: 'live-lottery', name: '周转盘', kind: 'weekly', weekType: 4,
+    startTime: f.activities.serverNow - 10, endTime: f.activities.serverNow + 3600, taskKeys: ['weekGift'] });
+  f.activities.eventTasks.push({ key: 'weekGift', label: '免费礼包', enabled: true });
+  f.state.respond = request => request.route === '/api/activities' ? live.promise : undefined;
+  const pending = f.api.refresh();
+  f.context.snapshot.connected = false;
+  live.resolve(f.activities); await pending; f.api.select('live-lottery');
+  assert.equal(f.node('activities-list').querySelector('[data-activity-run=weekGift]').disabled, true);
+  assert.match(f.node('activities-status').textContent, /未连接/);
+});
+
+await test('完整活动返回不打断数值编辑，占位入口切换真实期次仍保留原输入和焦点', async () => {
+  const f = fixture(), live = deferred(), now = f.activities.serverNow;
+  f.activities.activities.push({ id: 'hero-raid:12', name: '超凡英雄活动', kind: 'weekly',
+    startTime: now - 10, endTime: now + 3600, taskKeys: ['weekGift'] });
+  f.activities.eventTasks.push({ key: 'weekGift', label: '免费礼包', enabled: true });
+  f.state.respond = request => request.route === '/api/activities' ? live.promise : undefined;
+  const pending = f.api.refresh(); await flushAsync(); f.api.selectHero();
+  const input = f.heroInput('retryTimes'); input.focus(); input.value = '23';
+  live.resolve(f.activities); await pending;
+  assert.equal(f.node('activity-tabs').querySelector('[aria-selected=true]').dataset.activity, 'hero-raid:12');
+  assert.equal(f.heroInput('retryTimes'), input, '原输入节点留在 DOM 中，不用重建后模拟恢复焦点');
+  assert.equal(f.context.document.activeElement, input);
+  assert.equal(input.value, '23');
+  assert.equal(input.parentElement.parentElement.parentElement, f.node('activities-list'));
+  assert(!f.state.calls.some(call => call.method === 'POST'), '后台回填不提交未完成输入');
+  const refresh = deferred();
+  f.state.respond = request => request.route === '/api/activities' ? refresh.promise : undefined;
+  const refreshing = f.api.refresh();
+  assert.equal(f.heroInput('retryTimes'), input);
+  assert.equal(f.node('activities-list').querySelector('[data-activity-run=weekGift]').disabled, true,
+    '保留配置编辑不能阻止旧执行按钮失效');
+  refresh.resolve(f.activities); await refreshing;
+  f.state.respond = null; await input.onchange();
+  assert.equal(f.heroSaved.get('merchant-a').settings.retryTimes, 23, '失焦后的原生 change 仍可保存草稿');
+});
+
+await test('迟到配置回填不覆盖海商时间输入，离开表单后更新到服务端最新配置', async () => {
+  const f = fixture();
+  f.seaSaved.set('merchant-a', f.seaSettings({ firstDepartureMode: 'time' }));
+  await f.api.refresh(); f.api.selectSea();
+  const late = deferred();
+  f.state.respond = request => request.route === '/api/merchant/settings' ? late.promise : undefined;
+  const pending = f.api.refresh();
+  const input = f.seaInput('merchant.firstDepartureTime'); input.focus(); input.value = '09:45';
+  late.resolve(f.seaSettings({ firstDepartureMode: 'time', firstDepartureTime: '10:30' }, {}, 2));
+  await pending;
+  assert.equal(f.seaInput('merchant.firstDepartureTime'), input);
+  assert.equal(input.value, '09:45');
+  assert.equal(f.context.document.activeElement, input);
+  assert(!f.state.calls.some(call => call.method === 'POST'));
+  f.node('outside-panel').focus(); await flushAsync();
+  assert.equal(f.seaInput('merchant.firstDepartureTime').value, '10:30', '离开表单后补绘迟到配置');
+});
+
+await test('后台活动更新保留商船多选的展开、搜索、筛选结果和焦点', async () => {
+  const f = fixture(), live = deferred();
+  f.state.respond = request => request.route === '/api/activities' ? live.promise : undefined;
+  const pending = f.api.refresh(); await flushAsync(); f.api.selectShip();
+  const picker = f.shipInput('guildShip.disabledMaterials');
+  picker.open = true; picker.ontoggle();
+  const search = picker.querySelector('.config-input'); search.value = '木板'; search.oninput();
+  const filtered = picker.querySelector('.config-option-list').textContent;
+  live.resolve(f.activities); await pending;
+  assert.equal(f.shipInput('guildShip.disabledMaterials'), picker);
+  assert.equal(picker.open, true);
+  assert.equal(search.value, '木板');
+  assert.equal(picker.querySelector('.config-option-list').textContent, filtered);
+  assert.equal(f.context.document.activeElement, search);
+});
 
 await test('活动详情仅呈现一套商人设置，回读原账号保存值', async () => {
   const f = fixture();
