@@ -168,14 +168,15 @@ try {
   const antiques = page.locator('#config-group-antique');
   assert.equal(await antiques.locator('#config-field-antique-maxActions, #config-field-antique-checkEverySeconds').count(), 0);
   const antiqueMaster = antiques.getByRole('switch', { name: '藏品养成总开关', exact: true });
-  const actions = antiques.getByRole('group', { name: '养成设置', exact: true });
+  assert.equal(await antiques.locator('fieldset, legend').count(), 0);
+  assert.equal(await antiques.locator('.config-disclosure').count(), 4);
   for (const key of ['activate', 'star', 'master', 'suit']) {
-    const toggle = actions.locator('#config-field-antique-' + key);
+    const toggle = antiques.locator('#config-field-antique-' + key);
     assert(await toggle.isVisible() && await toggle.isEnabled());
   }
   await antiqueMaster.click(); await saved();
   assert.match(await antiques.locator('#config-field-antique-enabled-note').textContent(), /尚未选择执行动作/);
-  const masterLevel = actions.locator('#config-field-antique-master');
+  const masterLevel = antiques.locator('#config-field-antique-master');
   await masterLevel.click(); await saved();
   await antiqueMaster.click(); await saved();
   assert.equal(loadAutomationSettings('config-a').settings.antique.enabled, false);

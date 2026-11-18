@@ -26,8 +26,6 @@
 .config-control { min-width:0 }
 .config-row[data-kind=switch] .config-control { justify-self:end }
 .config-control>button[role=switch] { margin-left:0 }
-.config-module-settings { min-width:0; border:0; margin:16px 0 0; padding:0 }
-.config-module-settings>legend { padding:0; font-weight:600 }
 .config-module-control { padding-block:12px }
 .config-module-control .config-label-line { flex-wrap:wrap }
 .config-module-control .config-help { flex-basis:100% }
@@ -38,10 +36,11 @@
 .config-children { min-width:0; margin:0 0 12px 6px; padding:2px 14px }
 .config-children>.config-branch { margin:4px 0; padding:0 }
 .config-children .config-children { margin-left:6px; padding-right:8px }
-/* 装备主开关与普通设置齐平，仅从属参数保留缩进。 */
-#config-group-forge>.config-branch { margin:0; padding:0; border:0; border-radius:0; background:transparent }
-#config-group-forge>.config-branch>.config-row { padding-block:8px; border-bottom:1px solid var(--border) }
-#config-group-forge>.config-branch>.config-row>.config-label-line>.config-label { font-weight:400 }
+/* 装备与藏品主开关平铺，只有展开后的从属参数保留缩进。 */
+:is(#config-group-forge,#config-group-antique)>.config-branch { margin:0; padding:0; border:0; border-radius:0; background:transparent }
+:is(#config-group-forge,#config-group-antique)>.config-branch>.config-row { padding-block:8px; border-bottom:1px solid var(--border) }
+:is(#config-group-forge,#config-group-antique)>.config-branch>.config-row>.config-label-line>.config-label { font-weight:400 }
+:is(#config-group-forge,#config-group-antique) .config-disclosure { padding-inline:0; gap:4px }
 .config-row.has-children>.config-control { display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap }
 .config-row.has-children>.config-control>.config-select { flex:1; width:auto; min-width:0 }
 .config-row.has-children>.config-control>.config-field-error { flex-basis:100% }

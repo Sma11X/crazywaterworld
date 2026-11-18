@@ -286,10 +286,10 @@ const configGroups = [
   { id: 'forge', title: '装备自动锻造', category: 'equipment', fields: [
     configField('forge.enabled', '自动锻造总开关', 'switch', { help: '随每轮挂机检查，自动领取所选工厂已完成的装备，确认入库后再安排下一件；达到下单上限仍可领取。下方选择“装备锻造”预览；不会开启游戏原生自动锻造。' }),
     configField('forge.buildingIds', '锻造工厂', 'multi', { catalog: 'forgeBuildings', empty: '请选择装备工厂' }),
-    configField('forge.decompose','自动分解','switch',{collapsible:false,help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
+    configField('forge.decompose','自动分解','switch',{help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
     configField('forge.decomposeQualities','处理品质','multi',{ parent: 'forge.decompose',catalog:'equipQualities',empty:'未选择，不处理',when:d=>d.forge.decompose}),
     configField('forge.recipeIds', '配方优先顺序', 'multi', { catalog: 'forgeRecipes', empty: '请选择锻造配方', help: '按勾选先后依次尝试，使用首个满足赛季、材料和预算的配方。产出装备和星级遵守游戏随机规则。' }),
-    configField('forge.universal', '允许万能材料补足', 'switch', { collapsible: false, help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
+    configField('forge.universal', '允许万能材料补足', 'switch', { help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
     configField('forge.materialReserve', '普通材料保留量', 'number', { unit: '每种', help: '一次锻造后，每种消耗的普通材料不得低于此值。' }),
     configField('forge.universalReserve', '万能材料保留量', 'number', { parent: 'forge.universal', unit: '每种', when: d => d.forge.universal }),
     configField('forge.goldReserve', '锻造后保留金币', 'number', { unit: '金币' }),
@@ -444,7 +444,7 @@ const configGroups = [
     configField('heroes.targetLevel', '目标等级', 'number', { section: '高级设置', unit: '级', help: '0 表示采用游戏当前允许的上限。' }),
     configField('heroes.targetStar', '目标星级', 'number', { section: '高级设置', unit: '星', help: '0 表示采用游戏上限。' }),
   ] },
-  { id: 'antique', title: '藏品养成', category: 'antique', settingsLegend: '养成设置', fields: [
+  { id: 'antique', title: '藏品养成', category: 'antique', fields: [
     configField('antique.enabled', '藏品养成总开关', 'switch', { moduleControl: true, help: '只在已有碎片、经验或金币足够时操作，不购买、不消耗钻石。结果未知时保留记录，不重复发送。' }),
     configField('antique.activate', '自动激活藏品', 'switch', { help: '使用对应藏品碎片激活，稀有/史诗/传说/超凡分别需要 10/10/10/50 个碎片。万能碎片不会自动兑换。' }),
     configField('antique.activateQualities', '激活品质', 'multi', { parent: 'antique.activate', catalog: 'antiqueQualities', empty: '未选择，不激活', when: d => d.antique.activate }),
@@ -964,15 +964,7 @@ function configRender() {
         section.append(el('p','config-section-intro',known ? '仅显示服务器确认已建成的 '+(fleetIds?.length??0)+' 支舰队。' : '舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
       }
       const fields = group.fields.map(spec => ({ ...spec, category, groupId: group.id }));
-      if (group.settingsLegend) {
-        configRenderFields(fields.filter(field => field.moduleControl), section);
-        const settings = el('fieldset', 'config-module-settings');
-        settings.append(el('legend', '', group.settingsLegend));
-        section.append(settings);
-        configRenderFields(fields.filter(field => !field.moduleControl), settings);
-      } else {
-        configRenderFields(fields, section);
-      }
+      configRenderFields(fields, section);
       if (group.id === 'progression') {
         const lineups = el('button', 'config-small-button', '管理自定义阵容'); lineups.type = 'button';
         lineups.onclick = async () => {

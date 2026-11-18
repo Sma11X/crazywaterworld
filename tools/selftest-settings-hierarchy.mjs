@@ -491,12 +491,13 @@ test('所有模块主控与参数在同组，英雄组合主控保留细项，�
   f.set('antique.enabled', false);
   f.activate('antique'); f.activateGroup('antique');
   const master = f.widget('antique.enabled'), section = f.env.node('config-group-antique');
-  const options = section.querySelector('fieldset');
+  assert.equal(section.querySelector('fieldset'), null);
   assert.equal(master.node.parentElement, section);
   assert.equal(master.disclosure, undefined);
   for (const action of ['activate', 'star', 'master', 'suit']) {
     const row = f.widget('antique.' + action);
-    assert.equal(row.node.parentElement, options);
+    assert.equal(row.node.parentElement, section);
+    assert(row.disclosure, '保留参数展开入口 ' + action);
     assert(visible(row.node), '暂停时仍可编辑 ' + action);
   }
   assert.equal(f.widget('antique.targetStar').parentKey, 'antique.star');
