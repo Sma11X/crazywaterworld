@@ -310,12 +310,19 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   f.renderPage();f.activate('world');f.activateGroup('cityWar');
   const sections=f.env.node('config-group-cityWar').querySelectorAll('.config-field-section');
   const global=f.env.node('config-section-cityWar-targetMode');
-  assert.equal(sections.length,4);assert.equal(global.open,false);
-  assert(sections.filter(section=>section!==global).every(section=>section.open));
+  assert.equal(sections.length,1);assert.equal(global.tagName,'SECTION');
+  assert.equal(global.querySelector('summary'),null);
+  assert(visible(f.widget('cityWar.targetMode').node));
+  const city=f.env.node('config-group-cityWar');
+  assert(city.children.indexOf(global)>city.children.indexOf(f.widget('fleetSpeed.dailyDiamondLimit').node));
   const participants=f.widget('cityWar.fleetIds'),roles=f.widget('cityWar.defenceFleetIds');
+  assert.equal(participants.node.parentElement,city,'参与舰队直接展示，不再套分区折叠');
   assert.equal(roles.parentKey,participants.spec.key);
   assert.equal(roles.node.parentElement,participants.childPanel);
-  assert.equal(participants.disclosure,null,'参与舰队直接展示职责，不增加折叠入口');
+  assert.equal(participants.disclosure.textContent,'展开设置');
+  assert(!visible(roles.node),'舰队职责与策略默认收起');
+  participants.disclosure.onclick();
+  assert.equal(participants.disclosure.textContent,'收起设置');
   assert(visible(roles.node));
   for(const mode of ['repair','march']){
     assert(roles.control.contains(f.widget('fleetSpeed.fleets.0.'+mode).node));
@@ -325,9 +332,15 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   }
   assert(!f.editor.fields.has('fleetSpeed.fleets.0.smartSave'));
   assert.equal(f.env.saves,0);
-  const first=sections.find(section=>section!==global);first.open=false;first.ontoggle();
+  participants.disclosure.onclick();
+  f.errors({message:'预算无效',fields:{'fleetSpeed.fleets.0.repairMaxDiamonds':'请填写有效预算'}},{focus:false});
+  assert.equal(participants.disclosure.getAttribute('aria-expanded'),'true','逐队字段错误自动展开参与舰队设置');
+  assert(visible(f.widget('fleetSpeed.fleets.0.repairMaxDiamonds').node));
+  f.errors({fields:{}},{focus:false});
+  participants.disclosure.onclick();
   f.renderPage();
-  assert.equal(f.env.node(first.id).open,false,'普通重绘保留手动收起');
+  assert.equal(f.widget('cityWar.fleetIds').disclosure.getAttribute('aria-expanded'),'false','重绘保留参与舰队收起状态');
+  assert(visible(f.widget('cityWar.targetMode').node),'重绘后全局策略仍直接展示');
   assert.equal(f.env.saves,0,'展开收起不保存配置');
 });
 

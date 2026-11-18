@@ -53,7 +53,7 @@ try {
   const openConfig = async () => {
     await page.locator('#account-picker-title').filter({ hasText: '配置验收账号' }).waitFor();
     await page.locator('#tabs [data-tab=settings]').click();
-    await page.locator('#config-field-building-enabled').waitFor(); await saved();
+    await page.locator('#config-field-building-enabled').waitFor({ state: 'attached' }); await saved();
   };
   const group = async id => {
     await page.evaluate(id => {

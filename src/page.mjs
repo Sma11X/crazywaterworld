@@ -2099,6 +2099,12 @@ consoleStore.subscribe((state, previous) => {
 function activateConsolePage(button, resource = selectedResource) {
     const isResource = button.dataset.tab === 'resources';
     const target = isResource ? resource : button.dataset.tab;
+    // 当前历史记录随刷新保留；离开锚点对应的页面时移除旧地址。
+    const staleAnchor = (target !== 'settings' && location.hash.startsWith('#config-group-'))
+      || (target !== 'stages' && location.hash === '#pirate-first-kill')
+      || (target !== 'overview' && location.hash === '#journal');
+    const url = staleAnchor ? location.pathname + location.search : location.href;
+    history.replaceState({ ...history.state, consoleView: { tab: button.dataset.tab, resource } }, '', url);
     stateActions.setView({ page: target, ...(isResource ? { resource } : {}) });
     $('resource-tabs').hidden = !isResource;
     for (const tab of document.querySelectorAll('[data-resource-tab]')) {
@@ -2122,7 +2128,10 @@ function activateConsolePage(button, resource = selectedResource) {
       pollCapture();
     }
     if (button.dataset.tab === 'manual') refreshManualWorld();
-    if (button.dataset.tab === 'settings') { void configLoad(); void refreshLoop(); }
+    if (button.dataset.tab === 'settings') {
+      if (!location.hash.startsWith('#config-group-')) configActivate(configEditor.category);
+      void configLoad(); void refreshLoop();
+    }
     if(target==='giftcodes')void refreshGiftCodes();
     if (target === 'activities') refreshActivities();
     if (button.dataset.tab === 'stages') {refreshStages();void refreshSavedLineups();}
@@ -2145,11 +2154,16 @@ async function boot() {
     reportError(error);
     return;
   }
-  // 每次打开默认总览；移除旧配置锚点，确保随后点击同一链接也能正确定位。
-  if(location.hash.startsWith('#config-group-'))history.replaceState(null,'',location.pathname+location.search);
-  activateConsolePage(document.querySelector('#tabs [data-tab="overview"]'));
+  // 显式链接优先，否则恢复当前历史记录的页面；配置分组由 configApplyHash 恢复。
+  const savedView = history.state?.consoleView;
+  const initialTab = location.hash.startsWith('#config-group-') ? 'settings'
+    : location.hash === '#pirate-first-kill' ? 'stages' : location.hash === '#journal' ? 'overview' : savedView?.tab;
+  const button = [...document.querySelectorAll('#tabs button')].find(tab => tab.dataset.tab === initialTab)
+    || document.querySelector('#tabs [data-tab="overview"]');
+  const resource = [...document.querySelectorAll('[data-resource-tab]')].some(tab => tab.dataset.resourceTab === savedView?.resource)
+    ? savedView.resource : selectedResource;
+  activateConsolePage(button, resource);
   if (location.hash === '#journal') openJournal();
-  if (location.hash === '#pirate-first-kill') activateConsolePage(document.querySelector('#tabs [data-tab="stages"]'));
   pollCapture();
 }
 // Coalesce related mutations before painting every account surface. The store
