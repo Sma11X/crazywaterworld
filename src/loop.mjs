@@ -58,7 +58,6 @@ import { forgeEnabled, hasOwnedNativeForge, runEquipmentForge } from './equipmen
 import { antiqueEnabled, runAntiqueUpgrade } from './antique-upgrade.mjs';
 import { readHeroGrowthPlan, heroStepLabel, runHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
-import { serviceGuildOrders } from './guild-orders.mjs';
 import { serviceGuildAid } from './guild-aid.mjs';
 import { serviceStageAuto } from './progress-automation.mjs';
 import { createChallengeRun, runChallengeRound } from './challenge-automation.mjs';
@@ -821,10 +820,6 @@ export async function runLoop(client, protocol, {
       // 兼容原有联盟服务；巨轮只由世界分类中的详细配置控制。
       // 新版调度服务与这些入口共享同一个账号队列；只有显式开启旧开关时才执行，避免重复请求。
       await checkFactoryDue({ checkpoint: true });
-      if (isEnabled && legacyEnabled('guildOrders')) {
-        try { await serviceGuildOrders(client, protocol, config, { player, getSettings, enabled: () => legacyActive('guildOrders'), scheduler: rewards, report: serviceReport('dailies', '联盟订单') }); }
-        catch (error) { phaseFailure('dailies', '联盟订单检查', error); }
-      }
       if (isEnabled && legacyEnabled('guildAidHelp')) {
         try { await serviceGuildAid(client, protocol, config, { player, getSettings, enabled: () => legacyActive('guildAidHelp'), scheduler: rewards, report: serviceReport('dailies', '联盟互助') }); }
         catch (error) { phaseFailure('dailies', '联盟互助检查', error); }

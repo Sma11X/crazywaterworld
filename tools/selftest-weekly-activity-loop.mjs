@@ -136,16 +136,16 @@ try {
     assert.deepEqual(f.writes, []);
   });
 
-  await test('关闭周活动总开关后恢复有效原生任务，已退役海兽入口保持移除', async () => {
+  await test('关闭周活动总开关后恢复有效原生任务，已退役联盟订单和海兽入口保持移除', async () => {
     const f = fixture({ master: false });
     await f.run();
     assert(!f.calls.includes('CrossRankInfoRequest'));
-    for (const request of ['DailyTaskInfoRequest', 'RecruitInfoRequest', 'GuildInfoRequest', 'GuildOrderRequest', 'OnWaterRequest']) {
+    for (const request of ['DailyTaskInfoRequest', 'RecruitInfoRequest', 'OnWaterRequest']) {
       assert(f.calls.includes(request), '关闭活动后恢复原入口 ' + request);
     }
     assert.deepEqual(f.writes, [['RecruitStartRequest', { way: 2 }]]);
-    assert(!f.reports.some(entry => ['petCollect', 'petBreed'].includes(entry.key ?? entry.taskKey)), '残留旧海兽开关不能恢复已退役入口');
-    assert(f.reports.some(entry => /没有联盟订单/.test(entry.reason ?? '')), '旧联盟订单入口已真实读取并正常等待');
+    assert(!f.reports.some(entry => ['guildOrders', 'petCollect', 'petBreed'].includes(entry.key ?? entry.taskKey)), '残留旧开关不能恢复已退役入口');
+    assert(!f.calls.includes('GuildInfoRequest') && !f.calls.includes('GuildOrderRequest'), '关闭活动后不恢复旧联盟订单入口');
   });
 } finally {
   if (previousDataDir === undefined) delete process.env.CW_DATA_DIR;

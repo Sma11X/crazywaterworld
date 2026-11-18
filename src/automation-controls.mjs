@@ -75,7 +75,6 @@ const idleModules = {
  'dailies.enabled':['日常与活动','rewards','每日任务与奖励'],
  'loop.tasks':['日常与活动','rewards','主线、支线与成就'],
  'loop.dailies':['日常与活动','daily-actions','日常行动'],
- 'schedule.guildOrders':['世界','guild-orders','联盟订单'],
 };
 for(const control of controls){const module=idleModules[control.key];if(module)Object.assign(control,{idleGroup:module[0],configTarget:module[1],idleLabel:module[2]});}
 Object.assign(controls.find(c=>c.key==='museum.runEnabled'),{help:'统一暂停或恢复博物馆升级、领奖、藏品上架和探宝，保留细项选择。自动探宝同时领取探险奖励和派遣探险。',configuredFields:['museum.upgrade','museum.revenue','museum.achievements','museum.display','museum.enabled']});

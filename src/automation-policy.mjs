@@ -67,7 +67,7 @@ export function nativePreferenceEnabled(settings, key) {
   if (retiredAutomationTasks.has(key)) return false;
   if (!settings) return true;
   if (!activityTaskEnabled(settings, key)) return false;
-  if (settings.alliance?.enabled && ['guildOrders', 'guildWelfare'].includes(key)) return false;
+  if (settings.alliance?.enabled && key === 'guildWelfare') return false;
   if (gatherTasks.has(key) && settings.gather.enabled === false) return false;
   const map = {
     stageAuto: () => settings.progression?.enabled !== false && (settings.progression?.mainline ?? settings.schedule?.stageAuto) === true,

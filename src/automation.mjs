@@ -6,9 +6,9 @@ export const defaultCompassSpinCount = 10;
 export const maxCompassSpinCount = 999;
 
 // 旧字段仅兼容导入，统一停用，不能在新模块关闭后恢复执行。
-// 装备由 forge.enabled 控制；联盟互助由 alliance.enabled / mutual / autoHelp 控制；巨轮由 treasure.enabled 控制。
+// 装备由 forge.enabled 控制；联盟募兵、互助由 alliance.enabled 及对应细项控制；巨轮由 treasure.enabled 控制。
 export const migratedAutomationTasks = new Set(['museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'radarAuto', 'radarRepair', 'museumRevenue', 'museumAchievements', 'worldBossDamage']);
-export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft', 'guildAidCollect', 'guildAidHelp', 'treasureLoot', ...migratedAutomationTasks]);
+export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft', 'guildOrders', 'guildAidCollect', 'guildAidHelp', 'treasureLoot', ...migratedAutomationTasks]);
 
 export const automationTasks = [
   ['armsRaceRewards', '自动领奖', '周期活动', false],

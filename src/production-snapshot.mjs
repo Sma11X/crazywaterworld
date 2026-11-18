@@ -149,7 +149,7 @@ export function buildProductionSnapshot(raw, config, settings = {}) {
   }
   if (raw.guildOrder?.order) addOrder('guildRecruit', digest(raw.guildOrder.order), raw.guildOrder.order.requirements,
     null, { refreshAt: timestamp(raw.guildOrder.order.nextRefreshTime),
-      enabled: settings.alliance?.enabled === true ? settings.alliance.recruit === true : settings.schedule?.guildOrders === true });
+      enabled: settings.alliance?.enabled === true && settings.alliance.recruit === true });
   else if (raw.guildOrder != null) incomplete('GuildOrderRequest', '联盟订单未完整返回');
   // A confirmed cabin.player is the existing guild-ship module's receipt for
   // GuildShipOrderRequest. Its materials have already been submitted.

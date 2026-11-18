@@ -3716,6 +3716,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!task || typeof payload.enabled !== 'boolean') throw new Error('无效的自动任务设置');
         if (retiredAutomationTasks.has(task.key)) throw new Error(task.key === 'treasureLoot'
           ? '万吨巨轮已统一，请在“挂机配置 → 世界 → 万吨巨轮”中设置'
+          : task.key === 'guildOrders'
+          ? '联盟订单独立入口已移除，请在“联盟 · 募兵与互助”中设置自动募兵'
           : ['guildAidCollect', 'guildAidHelp'].includes(task.key)
           ? '联盟互助已统一，请在“联盟 · 募兵与互助”中设置互助总开关和自动赠送'
           : '装备领取与续产已统一，请在装备自动锻造中设置自动挂机');

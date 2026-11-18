@@ -37,10 +37,10 @@ let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 
 try {
-  await check('28个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
+  await check('27个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
     const rendered = configFields.filter(field => field.moduleControl).map(field => field.key);
     const idleKeys = idleAutomationControls.map(control => control.key), movedFields = idleAutomationControls.flatMap(control => control.fields);
-    assert.equal(idleKeys.length, 28, '海兽领取与培育统一由海兽模块管理，不保留兼容入口');
+    assert.equal(idleKeys.length, 27, '联盟募兵统一由联盟模块管理，不保留旧订单入口');
     assert.equal(rendered.length, new Set(rendered).size, '每个入口只显示一次');
     assert.deepEqual(new Set(rendered), new Set(idleKeys));
     assert.deepEqual(new Set(settingsUiRules().controlFields), new Set(movedFields));
@@ -59,6 +59,9 @@ try {
       assert.equal(locations, 1, key + ' 应有且仅有一个编辑位置');
     }
     assert(!configGroups.some(group => group.id === 'runtime'), '运行安排已从网页配置移除');
+    assert(!configGroups.some(group => group.id === 'guild-orders'), '旧联盟订单页签已移除');
+    assert(!configKeys.has('schedule.guildOrders'), '动态配置不能重新生成旧联盟订单开关');
+    assert(configGroups.find(group => group.id === 'alliance').fields.some(field => field.key === 'alliance.recruit'), '联盟模块保留自动募兵');
     assert(!configKeys.has('loop.rounds'), '网页挂机持续循环，不提供轮数编辑');
     assert(!configKeys.has('loop.everySeconds'));
   });

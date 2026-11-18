@@ -110,10 +110,9 @@ for (const getSettings of [() => null, legacyServiceSettings]) {
   const f = loopFixture();
   await runLoop(f.client, {}, { ...f.options, getSettings, isEnabled: key => legacyKeys.includes(key) });
   for (const key of legacyKeys) {
-    if (key === 'guildOrders') assert(f.reports.some(entry => entry.key === key && entry.skipped), '仍支持的联盟订单保留实际服务入口');
-    else assert(!f.reports.some(entry => entry.key === key), '已迁移动作不能从残留回调恢复旧入口：' + key);
+    assert(!f.reports.some(entry => entry.key === key), '已退役或迁移动作不能从残留回调恢复旧入口：' + key);
   }
-  assert.deepEqual(f.reads, [], '未解锁的原服务在读取游戏前给出等待原因');
+  assert.deepEqual(f.reads, [], '残留旧回调不能再触发退役服务读取');
 }
 
 for (const settings of [null, defaultSettings()]) {

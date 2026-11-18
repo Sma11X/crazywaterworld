@@ -427,9 +427,6 @@ const configGroups = [
       }).map(field=>({...field,fleetIndex:i,fleetGroup:'fleetSpeed',section:label+'加速'}));
     })
   ] },
-  { id: 'guild-orders', title: '联盟订单', category: 'world', fields: [
-    configField('schedule.guildOrders', '自动提交联盟订单', 'switch', { help: '每轮最多提交一单，仅使用现有材料并预留其他订单用料。默认关闭。' }),
-  ] },
   { id: 'heroes', title: '英雄养成', category: 'heroes', fields: [
     configField('heroes.enabled', '养成总开关'), configField('loop.heroes', '加入自动挂机'),
     configField('heroes.heroIds', '指定英雄', 'multi', { catalog: 'heroes', empty: '留空则不处理任何英雄', help: '可搜索并选择多个英雄。手动执行和挂机都只处理名单中已拥有的英雄。' }),

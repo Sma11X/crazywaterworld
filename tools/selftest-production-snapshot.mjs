@@ -414,7 +414,7 @@ await test('当前订单读取独立于生产优先级和自动提交开关', as
   assert.equal(snapshot.complete, true, JSON.stringify(snapshot.missingReads));
   assert.deepEqual([...new Set(snapshot.orders.map(row => row.source))].sort(), ['cargo', 'guildRecruit', 'heroRaid', 'merchant', 'refugee', 'resident']);
   assert(snapshot.orders.every(row => row.kind === 'order'));
-  assert.equal(snapshot.orders.find(row => row.source === 'guildRecruit').metadata.enabled, true);
+  assert.equal(snapshot.orders.find(row => row.source === 'guildRecruit').metadata.enabled, false, '残留联盟订单开关不能授权新版募兵');
   assert.equal(snapshot.orders.find(row => row.source === 'heroRaid').metadata.enabled, false);
   assert.equal(snapshot.orders.find(row => row.source === 'refugee').id, 'refugee:9007199254740993');
   assert.deepEqual(snapshot.orders.find(row => row.source === 'refugee').requirements, [{ id: '面包', num: 1 }]);
