@@ -3,6 +3,7 @@ import { recordsInWorld, settleFleetSnapshot } from './fleet-settlement.mjs';
 // 按原生委任策略接管后的城战攻守。只移动本人舰队和正常维修，不宣战。
 import { exactAutomationId } from './automation-policy.mjs';
 import { loadMapAsset } from './world.mjs';
+import { cityWarFleetStrategy } from './city-war-settings.mjs';
 
 const rows = (config, name) => config?.tables?.[name]?.data ?? [];
 const integer = (value, min = 0) => Number.isSafeInteger(value) && value >= min;
@@ -19,17 +20,21 @@ export const cityWarEnabled = settings => settings?.cityWar?.enabled === true;
 const fleetRole = (preferences, id) => preferences?.defenceFleetIds?.includes(id) ? 'defence' : 'attack';
 const targetRole = target => target.role ?? 'attack';
 const roleName = role => role === 'defence' ? '防守' : '进攻';
-function targetPreferences(preferences, role) {
-  if (role !== 'defence') return preferences;
+function targetPreferences(preferences, role, fleetId) {
+  const strategy = cityWarFleetStrategy(preferences, fleetId);
+  if (role !== 'defence') return strategy;
   return {
-    targetMode: preferences.defenceTargetMode ?? preferences.targetMode,
-    targetPriority: preferences.defenceTargetPriority ?? preferences.targetPriority,
-    cityRefs: preferences.defenceCityRefs ?? preferences.cityRefs,
+    targetMode: strategy.defenceTargetMode,
+    targetPriority: strategy.defenceTargetPriority,
+    cityRefs: strategy.defenceCityRefs,
   };
 }
 
-export function cityWarTargetSelected(preferences, target) {
-  const selected = targetPreferences(preferences, targetRole(target));
+export function cityWarTargetSelected(preferences, target, fleetId) {
+  // 地图单城预览取参与舰队的并集；逐队派遣与预留必须传入实际舰队编号。
+  if (fleetId === undefined) return (preferences.fleetIds ?? []).some(id => cityWarTargetSelected(preferences, target, id));
+  if (fleetRole(preferences, fleetId) !== targetRole(target)) return false;
+  const selected = targetPreferences(preferences, targetRole(target), fleetId);
   return selected.targetMode === 'alliance' || selected.cityRefs.includes(target.ref);
 }
 
@@ -203,7 +208,7 @@ function fleetGate(fleet, snapshot, p) {
 export function cityWarReservedFleets(snapshot, settings, now = snapshot?.now) {
   const p = settings?.cityWar;
   if (!p?.enabled || !p.reserveDuringWar || snapshot?.reason || !(snapshot?.startTime <= now && now < snapshot.endTime)) return [];
-  return p.fleetIds.filter(id => (snapshot.targets ?? []).some(target => cityWarTargetSelected(p, target) && targetRole(target) === fleetRole(p, id)));
+  return p.fleetIds.filter(id => (snapshot.targets ?? []).some(target => cityWarTargetSelected(p, target, id)));
 }
 
 // 首杀发送前只刷新城战意向，不在候选复核期间另行派遣舰队。
@@ -248,37 +253,38 @@ export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys
     if (native?.close && native.off) plan.nativeOffFleetIds.push(id);
   }
   if (plan.nativeOffFleetIds.length) plan.notes.push('发送前关闭所选舰队的原生委任：' + plan.nativeOffFleetIds.map(nameOf).join('、'));
-  const roles = new Set(p.fleetIds.map(id => fleetRole(p, id)));
-  const selected = snapshot.targets.filter(row => cityWarTargetSelected(p, row) && roles.has(targetRole(row)));
-  const fewest = target => targetPreferences(p, targetRole(target)).targetPriority === 'fewestAllied';
   const targetTotal = target => integer(target.alliedCount) && integer(target.transitCount) ? target.alliedCount + target.transitCount : null;
-  for (const target of selected) {
-    if (fewest(target) && targetTotal(target) === null) plan.notes.push(target.name + '：' + (target.countReason || (target.transitCount == null ? target.transitReason : '') || '对应攻守队列、交战或在途数量未确认') + '，本次不按人数选择此点');
+  const fleetChoices = new Map();
+  for (const view of plan.fleets) {
+    const preferences = targetPreferences(p, view.role, view.buildingId);
+    const selected = snapshot.targets.filter(target => cityWarTargetSelected(p, target, view.buildingId));
+    const fewest = preferences.targetPriority === 'fewestAllied';
+    for (const target of selected) {
+      if (fewest && targetTotal(target) === null) plan.notes.push(view.name + ' · ' + target.name + '：' + (target.countReason || (target.transitCount == null ? target.transitReason : '') || '对应攻守队列、交战或在途数量未确认') + '，本次不按人数选择此点');
+    }
+    const candidates = selected.filter(target => !fewest || targetTotal(target) !== null);
+    fleetChoices.set(view.buildingId, { preferences, candidates });
+    if (!candidates.length) view.reason ||= '没有符合选择的' + (view.role === 'defence' ? '本盟受宣战防守城市' : '本盟进攻宣战目标');
   }
-  const candidates = selected.filter(row => !fewest(row) || targetTotal(row) !== null);
   // 本轮已安排的舰队计入总数，但不再重复计算已同步在途舰队；在途数量已在读取时汇总。
-  const assigned = new Map(candidates.map(target => [target.id, 0]));
+  const assigned = new Map(snapshot.targets.map(target => [target.id, 0]));
   const totalOf = target => targetTotal(target) + (assigned.get(target.id) ?? 0);
   // 驻防己城汽油为零，仍用实际距离区分远近；进攻保留既有费用排序。
   const proximity = target => targetRole(target) === 'defence' ? target.distance : target.petrol;
-  const originalOrder = (a, b) => {
-    const preferences = targetPreferences(p, targetRole(a));
+  const originalOrder = (a, b, preferences) => {
     return preferences.targetMode === 'selected' ? preferences.cityRefs.indexOf(a.ref) - preferences.cityRefs.indexOf(b.ref)
       : Number(b.assemble) - Number(a.assemble) || proximity(a) - proximity(b) || a.id - b.id;
   };
   // 队数最少的城为基准：相差 0–9 队时就近，差 10 队及以上时优先人少的城。
-  const order = (a, b, choices) => {
-    if (!fewest(a)) return originalOrder(a, b);
+  const order = (a, b, choices, preferences) => {
+    if (preferences.targetPriority !== 'fewestAllied') return originalOrder(a, b, preferences);
     const ta = totalOf(a), tb = totalOf(b), min = Math.min(...choices.map(totalOf));
     const bandA = ta - min <= 9 ? 0 : 1, bandB = tb - min <= 9 ? 0 : 1;
     if (bandA !== bandB) return bandA - bandB;
-    if (bandA === 0) return proximity(a) - proximity(b) || ta - tb || originalOrder(a, b);
-    return ta - tb || proximity(a) - proximity(b) || originalOrder(a, b);
+    if (bandA === 0) return proximity(a) - proximity(b) || ta - tb || originalOrder(a, b, preferences);
+    return ta - tb || proximity(a) - proximity(b) || originalOrder(a, b, preferences);
   };
-  for (const view of plan.fleets) if (!candidates.some(target => targetRole(target) === view.role)) {
-    view.reason ||= '没有符合选择的' + (view.role === 'defence' ? '本盟受宣战防守城市' : '本盟进攻宣战目标');
-  }
-  if (!candidates.length) { plan.notes.push('没有符合所选舰队攻守职责的本联盟有效宣战目标'); return plan; }
+  if (![...fleetChoices.values()].some(choice => choice.candidates.length)) { plan.notes.push('没有符合所选舰队攻守职责的本联盟有效宣战目标'); return plan; }
   if (!integer(snapshot.fuel) || !integer(pendingPetrol)) { plan.notes.push('无法确认汽油及未决预算'); return plan; }
   let fuel = snapshot.fuel - pendingPetrol, spent = usage.counters.cityWarPetrol ?? 0, dispatches = usage.counters.cityWarDispatches ?? 0;
   if (![spent, dispatches].every(n => integer(n))) { plan.notes.push('城战当日用量记录异常'); return plan; }
@@ -293,8 +299,8 @@ export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys
     if (!reason) reason = fleetRecordReason(keys,id);
     if (!reason && dispatches >= p.dailyDispatchLimit) reason = '已达今日工具接续出征上限';
     if (reason) { view.reason = reason; plan.notes.push(view.name + '：' + reason); continue; }
-    const choices = candidates.filter(target => targetRole(target) === view.role);
-    choices.sort((a, b) => order(a, b, choices));
+    const { candidates: choices, preferences } = fleetChoices.get(id);
+    choices.sort((a, b) => order(a, b, choices, preferences));
     const target = choices.find(row => row.id !== fleet.cityId);
     if (!target) { view.reason = '已在所选目标城市'; plan.notes.push(view.name + '：' + view.reason); continue; }
     if (!integer(snapshot.attackDura, 1)) { plan.notes.push(view.name + '：无法确认城战耐久消耗'); continue; }

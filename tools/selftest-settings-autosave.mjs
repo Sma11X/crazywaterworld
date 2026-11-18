@@ -73,7 +73,7 @@ function fixture({ catalog = {} } = {}) {
     const configWeeklyRankingSync = () => {};
     const clear = node => node, el = () => ({});
     return {
-      editor: configEditor, groups: configGroups, set: configSet, load: configLoad, save: configSave, flush: configFlush,
+      editor: configEditor, groups: configGroups, strategyFields: cityWarStrategyFields, set: configSet, load: configLoad, save: configSave, flush: configFlush,
       dirty: configIsDirty, importFile: configImportFile, mayChange: configMayChangeAccount,
       revision: () => loopSettingsRevision,
       setLoopRevision(revision) { loopSettingsRevision = revision; },
@@ -475,19 +475,47 @@ await test('城战逐队职责自动保存，取消参与同时移除防守职�
   assert.deepEqual(f.view('a').settings.cityWar.defenceFleetIds, []);
 });
 
+await test('逐队策略首次编辑继承旧值，独立保存且取消参与、切换职责和账号不丢失', async () => {
+  const f = fixture(); await f.load();
+  f.set('cityWar.cityRefs', ['1:2']); f.set('cityWar.targetMode', 'selected');
+  f.set('cityWar.defenceCityRefs', ['1:3']); f.set('cityWar.fleetIds', ['1远征船', '2远征船']);
+  f.set('cityWar.fleetStrategies.1远征船.targetPriority', 'original');
+  f.set('cityWar.fleetStrategies.2远征船.targetMode', 'alliance');
+  await f.tick(600);
+  const policies = f.view('a').settings.cityWar.fleetStrategies;
+  assert.deepEqual(policies['1远征船'].cityRefs, ['1:2']);
+  assert.deepEqual(policies['1远征船'].defenceCityRefs, ['1:3']);
+  assert.equal(policies['1远征船'].targetMode, 'selected');
+  assert.equal(policies['1远征船'].targetPriority, 'original');
+  assert.equal(policies['2远征船'].targetMode, 'alliance');
+  assert.equal(policies['2远征船'].targetPriority, 'fewestAllied');
+  f.set('cityWar.fleetStrategies.1远征船.cityRefs', ['1:4']);
+  f.set('cityWar.defenceFleetIds', ['1远征船']); f.set('cityWar.fleetIds', ['2远征船']);
+  await f.tick(600); await f.load(true);
+  assert.deepEqual(f.editor.draft.cityWar.fleetStrategies['1远征船'].cityRefs, ['1:4']);
+  assert.deepEqual(f.editor.draft.cityWar.fleetStrategies['2远征船'].cityRefs, ['1:2']);
+  assert.deepEqual(f.editor.draft.cityWar.cityRefs, ['1:2']);
+  f.set('cityWar.fleetIds', ['1远征船', '2远征船']); await f.tick(600);
+  assert.equal(await f.mayChange('b'), true); f.change('b'); await f.load();
+  assert.deepEqual(f.editor.draft.cityWar.fleetStrategies, {});
+  assert.equal(await f.mayChange('a'), true); f.change('a'); await f.load();
+  assert.deepEqual(f.editor.draft.cityWar.fleetStrategies['1远征船'].cityRefs, ['1:4']);
+});
+
 await test('城战职责控件逐队切换，参与名单变化即刷新且不改英雄编队', () => {
   const draft = defaultSettings(), catalog = { expeditionFleets: [{ value: '1远征船', label: '远征舰队 1 队' }, { value: '2远征船', label: '远征舰队 2 队' }] };
   draft.cityWar.fleetIds = ['1远征船', '2远征船'];
-  const node = (tag, className, textContent = '') => ({ tag, className, textContent, children: [], attributes: {}, value: '',
+  const node = (tag, className, textContent = '') => ({ tag, className, textContent, children: [], attributes: {}, dataset: {}, value: '',
+    contains(target) { return this === target || this.children.some(child => child.contains(target)); }, focus() {},
     append(...items) { this.children.push(...items); }, setAttribute(key, value) { this.attributes[key] = value; } });
   const clear = root => { root.children = []; return root; };
-  const read = key => key.split('.').reduce((value, part) => value[part], draft);
+  const read = newStateFunction('configEditor', section('function configGet(', 'function configClearErrors(') + '\nreturn configGet;')({ draft });
   const writes = [];
   const write = (key, value) => { writes.push(key); draft.cityWar.defenceFleetIds = value; root.refresh(); };
   const render = newStateFunction('el', 'clear', 'configGet', 'configSet', 'configEditor',
-    section('function configCityWarRoles(', 'function configMultiselect(') + '\nreturn configCityWarRoles;')(node, clear, read, write, { data: { catalog } });
+    'const cityWarStrategyFields = [], configRenderFields = () => {}, configField = (key,label,kind,options) => ({key,label,kind,...options}), document = { activeElement: null };\n' + section('function configCityWarRoles(', 'function configMultiselect(') + '\nreturn configCityWarRoles;')(node, clear, read, write, { draft, data: { catalog }, errors: {}, widgets: new Map() });
   const root = render({ key: 'cityWar.defenceFleetIds', label: '各舰队城战职责' }, 'roles');
-  const selects = () => root.children.flatMap(row => row.children).filter(child => child.tag === 'select');
+  const selects = () => root.children.filter(branch => !branch.hidden).flatMap(branch => branch.children.flatMap(row => row.children)).filter(child => child.tag === 'select');
   assert.deepEqual(selects().map(select => select.value), ['attack', 'attack']);
   assert.equal(selects()[1].attributes['aria-label'], '远征舰队 2 队城战职责');
   selects()[1].value = 'defence'; selects()[1].onchange();
@@ -498,7 +526,7 @@ await test('城战职责控件逐队切换，参与名单变化即刷新且不�
   draft.cityWar.fleetIds = ['2远征船']; root.refresh();
   assert.equal(selects().length, 1); assert.equal(selects()[0].value, 'attack');
   draft.cityWar.fleetIds = []; root.refresh();
-  assert.equal(selects().length, 0); assert.match(root.children[0].textContent, /先选择城战参与舰队/);
+  assert.equal(selects().length, 0); assert.match(root.children.find(child => child.tag === 'p').textContent, /先选择城战参与舰队/);
   assert(writes.every(key => key === 'cityWar.defenceFleetIds'));
 });
 
@@ -527,7 +555,7 @@ await test('攻守目标控件独立显示、校验和自动保存，刷新及�
     return { render: configRenderField, updateVisibility: configUpdateVisibility };
   `)(f.editor, f.set, node, clear, () => node('span'), () => {});
   const keys = ['targetMode', 'targetPriority', 'cityRefs', 'defenceTargetMode', 'defenceTargetPriority', 'defenceCityRefs'];
-  const fields = f.groups.find(group => group.id === 'cityWar').fields.filter(field => keys.includes(field.key.split('.')[1]));
+  const fields = f.strategyFields.filter(field => keys.includes(field.key.split('.')[1]));
   assert.equal(fields.length, 6);
   assert.deepEqual(fields.map(field => field.label), ['进攻目标来源', '进攻目标优先', '指定进攻城市', '防守目标来源', '防守目标优先', '指定防守城市']);
   for (const field of fields) renderer.render(field);

@@ -10,6 +10,7 @@ import { activityAutomationDefaults } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
 import { validateLineupSettings } from './saved-lineups.mjs';
 import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
+import { cityWarFleetStrategy, cityWarUsesGlobalStrategy, validateCityWarFleetStrategies } from './city-war-settings.mjs';
 import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyActivitySettings, migrateWeeklyActivitySettings } from './weekly-activity-settings.mjs';
 
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
@@ -79,9 +80,9 @@ export const DEFAULT_SETTINGS = {
     marchSpeedUp: false, marchTargetSeconds: 60, dailyDiamondLimit: 0,
     fallbackEnabled: false, fallbackAfter: '21:00', fallbackTargetRewards: 3,
     fallbackQualities: ['PURPLE', 'BLUE'], fallbackMediumRewardPriority: [], fallbackSmallRewardPriority: [] },
-  // 原目标字段用于进攻，防守单独保存；旧共享设置通过版本迁移复制到防守侧。
+  // 攻守目标由跟随全局的舰队共用；每队还可独立保存两套策略。
   cityWar: { enabled: false, fleetIds: [], defenceFleetIds: [], targetMode: 'alliance', targetPriority: 'fewestAllied', cityRefs: [],
-    defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], autoRepair: false,
+    defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], fleetStrategies: {}, autoRepair: false,
     nativeCommissionLimit: -1, repairBelowPercent: 80, petrolReserve: 0, maxRepairCost: 15000, dailyPetrolLimit: 20000,
     dailyDispatchLimit: 10, reserveDuringWar: false, checkEverySeconds: 15 },
   forge: { decompose: false, decomposeQualities: [], enabled: false, buildingIds: [], recipeIds: [], universal: false, materialReserve: 0,
@@ -156,6 +157,7 @@ const constraints = {
   'cityWar.defenceTargetMode': { kind: 'choice', values: ['alliance', 'selected'] },
   'cityWar.defenceTargetPriority': { kind: 'choice', values: ['fewestAllied', 'original'] },
   'cityWar.defenceCityRefs': strings(100),
+  'cityWar.fleetStrategies': { kind: 'cityWarFleetStrategies' },
   'cityWar.repairBelowPercent': int(100, 1), 'cityWar.petrolReserve': int(),
   'cityWar.maxRepairCost': int(10000000), 'cityWar.dailyPetrolLimit': int(100000000),
   'cityWar.dailyDispatchLimit': int(1000, 1), 'cityWar.checkEverySeconds': int(300, 5),
@@ -284,6 +286,8 @@ export function validateSettings(input, { partial = false, catalog = null } = {}
       } else if (rule?.kind === 'fleetSpeeds') {
         const fleets = validateFleetSpeeds(value, errors);
         if (fleets) output[group][key] = fleets;
+      } else if (rule?.kind === 'cityWarFleetStrategies') {
+        output[group][key] = validateCityWarFleetStrategies(value, errors, catalog);
       } else if (rule?.kind === 'crops') {
         if (!Array.isArray(value) || value.length > 100) errors[name] = '作物列表不合法';
         else {
@@ -327,12 +331,17 @@ export function validateSettings(input, { partial = false, catalog = null } = {}
   if (output.cityWar.enabled && !output.cityWar.fleetIds.length) errors['cityWar.fleetIds'] = '请明确选择参与城战接续的舰队';
   if (output.cityWar.fleetIds.some(value => !/^[1-9]\d*远征船$/.test(value))) errors['cityWar.fleetIds'] = '请选择有效的远征舰队';
   if (output.cityWar.defenceFleetIds.some(value => !output.cityWar.fleetIds.includes(value))) errors['cityWar.defenceFleetIds'] = '防守舰队必须包含在城战参与舰队中';
-  const attackFleets = output.cityWar.fleetIds.filter(id => !output.cityWar.defenceFleetIds.includes(id));
-  for (const [mode, refs, fleets, label] of [
-    ['targetMode', 'cityRefs', attackFleets, '进攻'],
-    ['defenceTargetMode', 'defenceCityRefs', output.cityWar.defenceFleetIds, '防守'],
-  ]) {
-    if (output.cityWar.enabled && fleets.length && output.cityWar[mode] === 'selected' && !output.cityWar[refs].length) errors['cityWar.' + refs] = '请至少选择一座' + label + '目标城市';
+  const legacyCityRefs = new Set();
+  for (const id of output.cityWar.fleetIds) {
+    const defence = output.cityWar.defenceFleetIds.includes(id);
+    const mode = defence ? 'defenceTargetMode' : 'targetMode', refs = defence ? 'defenceCityRefs' : 'cityRefs';
+    const independent = !cityWarUsesGlobalStrategy(output.cityWar, id);
+    const prefix = independent ? 'cityWar.fleetStrategies.' + id + '.' : 'cityWar.';
+    const strategy = cityWarFleetStrategy(output.cityWar, id);
+    if (!independent) legacyCityRefs.add(refs);
+    if (output.cityWar.enabled && strategy[mode] === 'selected' && !strategy[refs].length) errors[prefix + refs] = '请至少选择一座' + (defence ? '防守' : '进攻') + '目标城市';
+  }
+  for (const refs of ['cityRefs', 'defenceCityRefs']) {
     if (output.cityWar[refs].some(value => !/^[1-9]\d{0,3}:[1-9]\d{0,5}$/.test(value))) errors['cityWar.' + refs] = '城市选项必须包含有效场景和城市编号';
   }
   if (output.forge.enabled && !output.forge.buildingIds.length) errors['forge.buildingIds'] = '请选择装备锻造工厂';
@@ -345,7 +354,7 @@ export function validateSettings(input, { partial = false, catalog = null } = {}
       'heroes.heroIds': 'heroes', 'pet.species': 'petSpecies',
       'treasure.fleetIds': 'expeditionFleets', 'treasure.rewardItems': 'materials',
       'treasure.fallbackMediumRewardPriority': 'materials', 'treasure.fallbackSmallRewardPriority': 'materials',
-      'cityWar.fleetIds': 'expeditionFleets', 'cityWar.cityRefs': 'cityTargets', 'cityWar.defenceCityRefs': 'cityTargets',
+      'cityWar.fleetIds': 'expeditionFleets', ...Object.fromEntries([...legacyCityRefs].map(refs => ['cityWar.' + refs, 'cityTargets'])),
       'radar.fleetIds':'expeditionFleets','worldBoss.fleetIds':'expeditionFleets',
       'pirateHunt.fleetIds': 'expeditionFleets', 'pirateHunt.types': 'pirateTypes',
       'forge.buildingIds': 'forgeBuildings', 'forge.recipeIds': 'forgeRecipes',
@@ -453,6 +462,7 @@ export function migrateSettingsVersion(settings, version, { source = 'import' } 
   }
   if (plain(input.cityWar)) {
     input.cityWar = { ...input.cityWar };
+    if (!Object.hasOwn(input.cityWar, 'fleetStrategies')) input.cityWar.fleetStrategies = {};
     for (const [field, legacy] of [['defenceTargetMode', 'targetMode'], ['defenceTargetPriority', 'targetPriority'], ['defenceCityRefs', 'cityRefs']]) {
       if (!Object.hasOwn(input.cityWar, field)) {
         input.cityWar[field] = copy(Object.hasOwn(input.cityWar, legacy) ? input.cityWar[legacy] : DEFAULT_SETTINGS.cityWar[legacy]);

@@ -301,12 +301,14 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['treasure.marchTargetSeconds', 'treasure.marchSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.marchSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
 });
-test('一级分区默认展开，二级参数默认收起，维修与派遣省钻仍各自嵌套',()=>{
+test('全局策略按需展开，其余一级分区展开，维修与派遣省钻仍各自嵌套',()=>{
   const f=fixture({navigation:true});f.editor.draft.cityWar.enabled=true;
   f.editor.draft.fleetSpeed.enabled=true;Object.assign(f.editor.draft.fleetSpeed.fleets[0],{repair:true,march:true});
   f.renderPage();f.activate('world');f.activateGroup('cityWar');
   const sections=f.env.node('config-group-cityWar').querySelectorAll('.config-field-section');
-  assert(sections.length>=5);assert(sections.every(section=>section.open));
+  const global=f.env.node('config-section-cityWar-targetMode');
+  assert(sections.length>=5);assert.equal(global.open,false);
+  assert(sections.filter(section=>section!==global).every(section=>section.open));
   for(const mode of ['repair','march']){
     const smart=f.widget('fleetSpeed.fleets.0.'+mode+'SmartSave');
     assert.equal(smart.parentKey,'fleetSpeed.fleets.0.'+mode);assert(!visible(smart.node));
@@ -314,9 +316,9 @@ test('一级分区默认展开，二级参数默认收起，维修与派遣省�
   }
   assert(!f.editor.fields.has('fleetSpeed.fleets.0.smartSave'));
   assert.equal(f.env.saves,0);
-  sections[0].open=false;sections[0].ontoggle();
+  const first=sections.find(section=>section!==global);first.open=false;first.ontoggle();
   f.renderPage();
-  assert.equal(f.env.node(sections[0].id).open,false,'普通重绘保留手动收起');
+  assert.equal(f.env.node(first.id).open,false,'普通重绘保留手动收起');
   assert.equal(f.env.saves,0,'展开收起不保存配置');
 });
 

@@ -80,6 +80,10 @@
 .config-dispatch-sortable[data-drop=before]::after { top:-1px }
 .config-dispatch-sortable[data-drop=after]::after { bottom:-1px }
 .config-war-role { grid-template-columns:minmax(0,1fr) 84px auto }
+.config-war-fleet { min-width:0 }
+.config-war-strategy { margin-top:0 }
+.config-war-inherited { margin:0; padding:10px 0 }
+.config-war-strategy .config-row[data-kind=choice] { grid-template-columns:minmax(0,1fr) minmax(0,320px) }
 .config-dispatch-row .config-order-tools { grid-column:auto; flex-wrap:nowrap }
 .config-dispatch-row .config-order-name { overflow-wrap:normal; word-break:normal }
 .config-order-num { color:var(--muted-foreground); font-size:12px; font-variant-numeric:tabular-nums }
@@ -152,6 +156,7 @@
 }
 @media (max-width:480px) {
   .config-children .config-row { grid-template-columns:minmax(0,1fr) }
+  .config-war-strategy .config-row[data-kind=choice] { grid-template-columns:minmax(0,1fr) }
   .config-children .config-row[data-kind=switch] { grid-template-columns:minmax(0,1fr) auto }
   .config-children .config-row.has-children[data-kind=switch] { grid-template-columns:minmax(0,1fr) }
   .config-children .config-row.has-children[data-kind=switch]>.config-control { justify-self:stretch; justify-content:space-between }

@@ -63,6 +63,190 @@ function multipleTargetsFixture() {
   return fixture;
 }
 
+const independentStrategy = changes => ({ targetMode: 'alliance', targetPriority: 'fewestAllied', cityRefs: [],
+  defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], ...changes });
+
+await check('跟随全局的舰队实时采用全局目标，独立舰队保持原目标，切回独立恢复缓存策略', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  Object.assign(settings.cityWar, { defenceFleetIds: [], targetMode: 'selected', cityRefs: ['1:4'] });
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ strategyMode: 'global', targetMode: 'selected', cityRefs: ['1:4'] }),
+    '2远征船': independentStrategy({ strategyMode: 'custom', targetMode: 'selected', cityRefs: ['1:2'] }),
+  };
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [4, 2]);
+  settings.cityWar.cityRefs = ['1:2'];
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [2, 2]);
+  settings.cityWar.cityRefs = ['1:3'];
+  let snapshot = await read(f, settings), preview = planCityWar(snapshot, settings);
+  assert.deepEqual(preview.actions.map(step => [step.buildingId, step.cityId]), [['2远征船', 2]]);
+  assert.deepEqual(cityWarReservedFleets(snapshot, settings), ['2远征船'], '无有效全局进攻目标时只释放跟随全局的舰队');
+  settings.cityWar.fleetStrategies['1远征船'].strategyMode = 'custom';
+  snapshot = await read(f, settings); preview = planCityWar(snapshot, settings);
+  assert.deepEqual(preview.actions.map(step => step.cityId), [4, 2], '恢复之前独立选择的城市，不以当前全局值覆盖缓存');
+  assert.deepEqual(cityWarReservedFleets(snapshot, settings), ['1远征船', '2远征船']);
+  settings.cityWar.fleetStrategies['1远征船'].strategyMode = 'global';
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.buildingId), ['2远征船']);
+  assert.deepEqual(settings.cityWar.fleetStrategies['1远征船'].cityRefs, ['1:4']);
+});
+
+await check('防守舰队也可跟随全局且与独立防守策略分别生效', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  Object.assign(settings.cityWar, { defenceFleetIds: ['1远征船', '2远征船'], defenceTargetMode: 'selected', defenceCityRefs: ['1:3'] });
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ strategyMode: 'global', defenceTargetMode: 'selected', defenceCityRefs: ['1:3'] }),
+    '2远征船': independentStrategy({ strategyMode: 'custom', defenceTargetMode: 'selected', defenceCityRefs: ['1:5'] }),
+  };
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [3, 5]);
+  settings.cityWar.defenceCityRefs = ['1:5'];
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [5, 5]);
+  settings.cityWar.fleetStrategies['1远征船'].strategyMode = 'custom';
+  await run(f, settings);
+  assert.deepEqual(f.client.writes.map(write => [write.body.buildingId[0], write.body.cityId]), [['1远征船', 3], ['2远征船', 5]]);
+});
+
+await check('发送复核时更新全局策略或切换策略来源取消该队旧目标，独立队仍可派遣', async () => {
+  for (const change of [
+    settings => { settings.cityWar.cityRefs = ['1:2']; },
+    settings => { settings.cityWar.fleetStrategies['1远征船'].strategyMode = 'custom'; },
+  ]) {
+    const { f, settings } = multipleTargetsFixture();
+    Object.assign(settings.cityWar, { defenceFleetIds: [], targetMode: 'selected', cityRefs: ['1:4'] });
+    settings.cityWar.fleetStrategies = {
+      '1远征船': independentStrategy({ strategyMode: 'global', targetMode: 'selected', cityRefs: ['1:2'] }),
+      '2远征船': independentStrategy({ strategyMode: 'custom', targetMode: 'selected', cityRefs: ['1:4'] }),
+    };
+    assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [4, 4]);
+    let reads = 0;
+    f.beforeRead = name => { if (name === 'WarDeclarationRequest' && ++reads === 2) change(settings); };
+    await run(f, settings);
+    assert.deepEqual(f.client.writes, [{ name: 'MoveFleetsToCityRequest', body: { buildingId: ['2远征船'], cityId: 4 } }]);
+  }
+});
+
+await check('同为进攻的两队按独立城市名单预览与实际派遣，旧全局名单不覆盖逐队配置', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  settings.cityWar.targetMode = 'selected'; settings.cityWar.cityRefs = ['1:3'];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4'] }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'] }),
+  };
+  const preview = await plan(f, settings);
+  assert.deepEqual(preview.actions.map(step => [step.buildingId, step.cityId]), [['1远征船', 4], ['2远征船', 2]]);
+  assert.deepEqual(preview.reservedFleetIds, ['1远征船', '2远征船']);
+  await run(f, settings);
+  assert.deepEqual(f.client.writes, [
+    { name: 'MoveFleetsToCityRequest', body: { buildingId: ['1远征船'], cityId: 4 } },
+    { name: 'MoveFleetsToCityRequest', body: { buildingId: ['2远征船'], cityId: 2 } },
+  ]);
+});
+
+await check('同职责舰队可以分别跟随联盟或指定城市，修改一队不改变另一队选择', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'alliance', targetPriority: 'original', cityRefs: ['1:4'] }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4'] }),
+  };
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [2, 4]);
+  settings.cityWar.fleetStrategies['1远征船'].targetMode = 'selected';
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [4, 4]);
+  settings.cityWar.fleetStrategies['2远征船'].targetMode = 'alliance';
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [4, 2]);
+});
+
+await check('同职责舰队的名单顺序与人数距离优先各自独立，本轮派遣人数仍共同累计', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4', '1:2'], targetPriority: 'original' }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4', '1:2'], targetPriority: 'fewestAllied' }),
+  };
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [4, 2]);
+  settings.cityWar.fleetStrategies['1远征船'].cityRefs = ['1:2', '1:4'];
+  f.state.cities.find(city => city.id === 2).attackFleetNum = 9;
+  assert.deepEqual((await plan(f, settings)).actions.map(step => step.cityId), [2, 4], '第一队发向近城后达到相差10队，第二队应选择远城');
+});
+
+await check('人数未知时只阻止本队的人数优先策略，同目标其他队可沿用顺序且两队继续预留', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  f.state.war.declarations.push({ attackGuildIdx: 9, defenceGuildIdx: 8, cityId: 2 });
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'], targetPriority: 'original' }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'], targetPriority: 'fewestAllied' }),
+  };
+  const preview = await plan(f, settings);
+  assert.deepEqual(preview.actions.map(step => step.buildingId), ['1远征船']);
+  assert.deepEqual(preview.reservedFleetIds, ['1远征船', '2远征船']);
+});
+
+await check('每队目标名单单独约束预留，无效场景或职责不符不借用同职责其他队的城市', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['2:2', '1:3'] }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4'] }),
+  };
+  const snapshot = await read(f, settings), preview = planCityWar(snapshot, settings);
+  assert.deepEqual(preview.actions.map(step => [step.buildingId, step.cityId]), [['2远征船', 4]]);
+  assert.deepEqual(cityWarReservedFleets(snapshot, settings), ['2远征船']);
+  assert.deepEqual(preview.reservedFleetIds, ['2远征船']);
+});
+
+await check('同为防守的两队使用各自防守城市，切回进攻保留每队自己的进攻设置', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = ['1远征船', '2远征船'];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4'], defenceTargetMode: 'selected', defenceCityRefs: ['1:3'] }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'], defenceTargetMode: 'selected', defenceCityRefs: ['1:5'] }),
+  };
+  assert.deepEqual((await plan(f, settings)).actions.map(step => [step.role, step.cityId]), [['defence', 3], ['defence', 5]]);
+  settings.cityWar.defenceFleetIds = ['2远征船'];
+  assert.deepEqual((await plan(f, settings)).actions.map(step => [step.role, step.cityId]), [['attack', 4], ['defence', 5]]);
+  settings.cityWar.defenceFleetIds = ['1远征船', '2远征船'];
+  await run(f, settings);
+  assert.deepEqual(f.client.writes.map(write => [write.body.buildingId[0], write.body.cityId]), [['1远征船', 3], ['2远征船', 5]]);
+});
+
+await check('发送复核时修改单队策略取消该队旧目标，另一队仍按自己的策略派遣', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4'] }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'] }),
+  };
+  let reads = 0;
+  f.beforeRead = name => {
+    if (name === 'WarDeclarationRequest' && ++reads === 2) settings.cityWar.fleetStrategies['1远征船'].cityRefs = ['1:2'];
+  };
+  await run(f, settings);
+  assert.deepEqual(f.client.writes, [{ name: 'MoveFleetsToCityRequest', body: { buildingId: ['2远征船'], cityId: 2 } }]);
+});
+
+await check('地图单城详情只预览选中该城的舰队，目标范围按各队策略并集解释', async () => {
+  const { f, settings } = multipleTargetsFixture();
+  settings.cityWar.defenceFleetIds = [];
+  settings.cityWar.fleetStrategies = {
+    '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:4'] }),
+    '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'] }),
+  };
+  const mapFile = path.join(directory, 'fleet-strategy-map.json');
+  fs.writeFileSync(mapFile, JSON.stringify([null, null, null, null, null, [[null, null,
+    { mapInfo: f.map, cityInfo: f.map.cityInfo, mapData: Array(f.map.width * f.map.height).fill(0) }]]]));
+  f.config.resources = { mapFiles: { 1: mapFile } };
+  for (const [city, fleet] of [[2, '2远征船'], [4, '1远征船']]) {
+    const result = await readWorldTarget(f.client, f.protocol, f.config, f.player, settings, ledger(), { layer: 'cities', key: 'city-' + city });
+    assert.deepEqual(result.actions.map(step => step.buildingId), [fleet]);
+    assert(!result.notes.some(note => note.includes('此城市不在已保存的')));
+  }
+  settings.cityWar.fleetStrategies['1远征船'].cityRefs = ['1:2'];
+  const excluded = await readWorldTarget(f.client, f.protocol, f.config, f.player, settings, ledger(), { layer: 'cities', key: 'city-4' });
+  assert.equal(excluded.actions.length, 0);
+  assert(excluded.notes.includes('此城市不在已保存的进攻目标范围'));
+  assert.equal(f.client.writes.length, 0);
+});
+
 await check('旧设置未指定防守队时仍只进攻，不自动改变已有舰队任务', async () => {
   const { f, settings } = defenceFixture();
   delete settings.cityWar.defenceFleetIds;

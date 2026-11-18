@@ -396,7 +396,7 @@ const configGroups = [
     configField('schedule.worldOnlineRewards', '领取城战在线奖励', 'switch', { help: '在服务器城战时段内，按实际计时逐档领取免费在线奖励。独立于下方城战接续开关；默认关闭，保存后随挂机检查，不自动启动挂机。请求结果未知时等待计数确认，不重复领取。' }),
     configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟城战”；不会宣战或改变集结目标。' }),
     configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队' }),
-    configField('cityWar.defenceFleetIds', '各舰队城战职责', 'cityWarRoles', { wide: true, help: '为已选舰队分别选择进攻或防守；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
+    configField('cityWar.defenceFleetIds', '舰队职责与策略', 'cityWarRoles', { wide: true, help: '为已选舰队分别选择进攻或防守；展开后可选择跟随全局，或独立设置本队的目标来源、城市和优先策略。切换职责保留本队另一套策略；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
     configField('cityWar.nativeCommissionLimit', '原生委任次数', 'number', { unit: '次', help: '-1 表示按服务器 VIP 规则等待额度用尽。0 表示关闭所选舰队的原生委任，由工具立即接续。N 表示先让原生委任使用 N 次（不超过 VIP 额度），再关闭开关并由工具接续。原生委任跟随联盟集结，攻守职责与各自目标配置在工具接管后生效。需要立即按设置执行时设为 0，工具会先回读确认关闭。' }),
     configField('cityWar.targetMode', '进攻目标来源', 'choice', { options: [['alliance', '跟随联盟有效进攻目标'], ['selected', '只选择指定城市']], help: '进攻队使用本组目标来源、城市和优先策略。目标须为本盟已宣战且当前属于敌方的城市。攻守目标设置在工具接管后生效，需要立即执行时将原生委任次数设为 0。' }),
     configField('cityWar.targetPriority', '进攻目标优先', 'choice', { options: [['fewestAllied', '按队数与距离选择'], ['original', '沿用集结／指定城市顺序']], help: '按攻方队列、本盟正在交战和已同步在途舰队总数选城，本轮安排也计入。以队数最少的城为基准，相差 0–9 队时选较近目标，差 10 队及以上时优先队列较少的城。多联盟同攻时进攻人数无法拆分，或数量无法确认时跳过。发送前重新核对。' }),
@@ -483,14 +483,28 @@ const configGroups = [
 // 世界页常用玩法置前；不覆盖用户已保存的实际派遣顺序。
 const worldFirst = ['cityWar','treasure','silicon'];
 configGroups.sort((a,b)=>(worldFirst.includes(a.id)?worldFirst.indexOf(a.id):3)-(worldFirst.includes(b.id)?worldFirst.indexOf(b.id):3));
+// 全局攻守策略与逐队编辑共用字段定义；独立策略切回全局时保留原值。
+const cityWarStrategyKeys = ['targetMode','targetPriority','cityRefs','defenceTargetMode','defenceTargetPriority','defenceCityRefs'];
+const cityWarGroup = configGroups.find(group => group.id === 'cityWar');
+const cityWarStrategyFields = cityWarGroup.fields.filter(field => cityWarStrategyKeys.includes(field.key.split('.')[1]));
+cityWarGroup.fields = [
+  ...cityWarStrategyFields.map(field => ({ ...field, parent: undefined, section: '全局策略', startCollapsed: true })),
+  ...cityWarGroup.fields.filter(field => !cityWarStrategyFields.includes(field)),
+];
 for (const field of configGroups.find(g=>g.id==='cityWar').fields) {
   field.section ||= field.key.startsWith('fleetSpeed.') ? '城战逐队加速' :
-    ['cityWar.targetMode','cityWar.targetPriority','cityWar.cityRefs'].includes(field.key) ? '进攻策略' :
-    ['cityWar.defenceTargetMode','cityWar.defenceTargetPriority','cityWar.defenceCityRefs'].includes(field.key) ? '防守策略' :
     ['cityWar.autoRepair','cityWar.repairBelowPercent','cityWar.maxRepairCost','cityWar.petrolReserve','cityWar.dailyPetrolLimit','cityWar.dailyDispatchLimit','cityWar.reserveDuringWar','cityWar.checkEverySeconds'].includes(field.key) ? '维修与派遣限制' : '参与舰队与职责';
 }
 
-function configGet(key) { return key.split('.').reduce((value, part) => value?.[part], configEditor.draft); }
+function configGet(key) {
+  const parts = key.split('.');
+  if (parts[0] === 'cityWar' && parts[1] === 'fleetStrategies' && parts.length === 4) {
+    const strategy = configEditor.draft.cityWar.fleetStrategies?.[parts[2]];
+    if (parts[3] === 'strategyMode') return strategy?.strategyMode ?? (strategy ? 'custom' : 'global');
+    return strategy?.[parts[3]] ?? configEditor.draft.cityWar[parts[3]];
+  }
+  return parts.reduce((value, part) => value?.[part], configEditor.draft);
+}
 function configClearErrors() {
   configEditor.errors = {};
   for (const widget of configEditor.widgets.values()) widget.clearError?.();
@@ -500,6 +514,10 @@ function configSet(key, value) {
   // 组合主控一次保存所有关联字段，关闭模块不更改细项和参数。
   for (const path of configEditor.fields.get(key)?.controlFields ?? [key]) {
     const parts = path.split('.'), field = parts.pop();
+    if (parts[0] === 'cityWar' && parts[1] === 'fleetStrategies') {
+      draft.cityWar.fleetStrategies ??= {};
+      draft.cityWar.fleetStrategies[parts[2]] ??= Object.fromEntries(cityWarStrategyKeys.map(name => [name, structuredClone(draft.cityWar[name])]));
+    }
     const target = parts.reduce((object, part) => object[part], draft);
     target[field] = value;
   }
@@ -851,6 +869,7 @@ function configRenderFields(fields, host) {
 
 function configRevealSection(widget) {
   for(let node=widget?.node?.parentElement;node;node=node.parentElement){
+    node.revealConfig?.();
     if(node.classList?.contains('config-field-section')){
       node.open=true;configCollapsedSections.delete(node.id);
     }
@@ -1394,34 +1413,94 @@ function configPlayerPicker(spec, id) {
 
 function configCityWarRoles(spec, id) {
   const root = el('div'); root.id = id; root.tabIndex = -1; root.setAttribute('role', 'group'); root.setAttribute('aria-label', spec.label);
-  let signature = null;
-  const inputs = new Map();
+  const entries = new Map();
+  const empty = el('p', 'config-help', '先选择城战参与舰队，再逐队设置进攻或防守。');
+  const available = configEditor.data.catalog.expeditionFleets ?? [];
+  const availableIds = new Set(available.map(fleet => fleet.value));
+  // 未同步的旧舰队平时不展示；其保留策略报错时仍须提供可修正的控件。
+  const retained = Object.keys(configEditor.draft.cityWar.fleetStrategies ?? {}).filter(id => !availableIds.has(id));
+  const fleets = [...available, ...retained.map(value => ({ value, label: '远征舰队 ' + value.replace('远征船', '') + ' 队（未同步）' }))];
+  for (const fleet of fleets) {
+    const buildingId = fleet.value, name = fleet.label || buildingId;
+    const branch = el('div', 'config-war-fleet'); branch.dataset.fleetId = buildingId;
+    const row = el('div', 'config-dispatch-row config-war-role'), select = el('select', 'config-select');
+    const label = el('label', 'config-order-name', name); select.id = id + '-' + buildingId; label.htmlFor = select.id;
+    label.id = select.id + '-label'; select.setAttribute('aria-label', name + '城战职责');
+    for (const [value, text] of [['attack', '进攻'], ['defence', '防守']]) { const option = el('option', '', text); option.value = value; select.append(option); }
+    select.onchange = () => {
+      const others = (configGet(spec.key) ?? []).filter(value => value !== buildingId);
+      configSet(spec.key, select.value === 'defence' ? [...others, buildingId] : others);
+    };
+    const disclosure = el('button', 'config-disclosure'); disclosure.type = 'button';
+    const panel = el('div', 'config-children config-war-strategy'); panel.id = select.id + '-strategy';
+    panel.setAttribute('role', 'group'); panel.setAttribute('aria-labelledby', label.id);
+    disclosure.setAttribute('aria-controls', panel.id);
+    const note = el('p', 'config-help config-war-inherited');
+    const entry = { branch, select, disclosure, note, expanded: false, keys: [] }; entries.set(buildingId, entry);
+    const expand = value => {
+      if (!value && panel.contains(document.activeElement)) disclosure.focus({ preventScroll: true });
+      entry.expanded = value; panel.hidden = !value;
+      disclosure.textContent = value ? '收起设置' : '展开设置';
+      disclosure.setAttribute('aria-expanded', String(value));
+      disclosure.setAttribute('aria-label', name + (value ? '，收起设置' : '，展开设置'));
+    };
+    disclosure.onclick = () => expand(!entry.expanded);
+    panel.revealConfig = () => { branch.hidden = false; empty.hidden = true; expand(true); };
+    const prefix = 'cityWar.fleetStrategies.' + buildingId + '.';
+    const mode = configField(prefix + 'strategyMode', '策略配置', 'choice', {
+      category: spec.category, groupId: spec.groupId, options: [['global', '跟随全局'], ['custom', '独立配置']],
+      help: '跟随全局时使用上方的全局攻守策略。切换到独立配置可单独设置本队；切回全局会保留本队的独立设置。',
+    });
+    entry.keys.push(mode.key);
+    const fields = cityWarStrategyFields.map(template => {
+      const field = template.key.split('.')[1], defence = field.startsWith('defence');
+      const cityList = field === 'cityRefs' || field === 'defenceCityRefs';
+      const key = prefix + field; entry.keys.push(key);
+      return { ...template, key, parent: undefined, category: spec.category, groupId: spec.groupId,
+        help: template.help?.replaceAll('本组', '本队').replaceAll('进攻队', '本队进攻时').replaceAll('防守队', '本队防守时'),
+        when: draft => {
+          const isDefence = (draft.cityWar.defenceFleetIds ?? []).includes(buildingId);
+          return configGet(mode.key) === 'custom' && defence === isDefence && (!cityList || configGet(prefix + (defence ? 'defenceTargetMode' : 'targetMode')) === 'selected');
+        } };
+    });
+    configRenderFields([mode, ...fields], panel); panel.append(note);
+    row.append(label, select, disclosure); branch.append(row, panel); root.append(branch); expand(false);
+  }
+  root.append(empty);
   root.refresh = () => {
-    const available = configEditor.data.catalog.expeditionFleets ?? [];
-    const fleetIds = (configGet('cityWar.fleetIds') ?? []).filter(id=>available.some(row=>row.value===id)), defenceIds = configGet(spec.key) ?? [];
-    const next = JSON.stringify(fleetIds);
-    if (signature !== next) {
-      signature = next; clear(root); inputs.clear();
-      for (const [index, buildingId] of fleetIds.entries()) {
-        const name = (configEditor.data.catalog.expeditionFleets ?? []).find(item => item.value === buildingId)?.label || buildingId;
-        const row = el('div', 'config-dispatch-row config-war-role'), select = el('select', 'config-select');
-        const label = el('label', 'config-order-name', name); select.id = id + '-' + index; label.htmlFor = select.id;
-        select.setAttribute('aria-label', name + '城战职责');
-        for (const [value, text] of [['attack', '进攻'], ['defence', '防守']]) { const option = el('option', '', text); option.value = value; select.append(option); }
-        select.onchange = () => {
-          const others = (configGet(spec.key) ?? []).filter(value => value !== buildingId);
-          configSet(spec.key, select.value === 'defence' ? [...others, buildingId] : others);
-        };
-        const configure=el('button','config-small-button','配置策略');configure.type='button';configure.onclick=()=>{
-          const key=select.value==='defence'?'cityWar.defenceTargetMode':'cityWar.targetMode';
-          const target=configEditor.widgets.get(key);configRevealSection(target);target?.control.focus({preventScroll:true});target?.row.scrollIntoView({behavior:'smooth',block:'center'});
-        };
-        configure.setAttribute('aria-label',name+'配置攻守策略');
-        inputs.set(buildingId, select); row.append(label,select,configure); root.append(row);
+    const selected = configGet('cityWar.fleetIds') ?? [], defence = configGet(spec.key) ?? [];
+    let visible = false;
+    for (const [buildingId, entry] of entries) {
+      const prefix = 'cityWar.fleetStrategies.' + buildingId + '.', mode = configGet(prefix + 'strategyMode');
+      if (entry.mode !== mode) {
+        // 首次独立配置按切换当时的全局值初始化，同时同步已渲染的控件。
+        for (const key of entry.keys) {
+          const widget = configEditor.widgets.get(key);
+          if (widget?.spec.kind === 'choice') widget.control.value = configGet(key);
+          else widget?.control.refresh?.();
+        }
+        entry.mode = mode;
       }
-      if (!fleetIds.length) root.append(el('p', 'config-help', '先选择城战参与舰队，再逐队设置进攻或防守。'));
+      const defending = defence.includes(buildingId);
+      const globalMode = configGet('cityWar.' + (defending ? 'defenceTargetMode' : 'targetMode'));
+      const globalPriority = configGet('cityWar.' + (defending ? 'defenceTargetPriority' : 'targetPriority'));
+      const refs = configGet('cityWar.' + (defending ? 'defenceCityRefs' : 'cityRefs'));
+      const names = refs.map(ref => configEditor.data.catalog.cityTargets?.find(city => city.value === ref)?.label || ref);
+      entry.note.hidden = mode !== 'global';
+      entry.note.textContent = '跟随全局' + (defending ? '防守' : '进攻') + '策略：' + (globalMode === 'selected'
+        ? names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 座城市' : '') : '尚未指定城市'
+        : '跟随联盟有效目标') + '；' + (globalPriority === 'original' ? '沿用集结／指定城市顺序' : '按队数与距离选择') + '。';
+      const hasError = entry.keys.some(key => configEditor.errors[key] || configEditor.widgets.get(key)?.error.hidden === false);
+      const included = selected.includes(buildingId) && availableIds.has(buildingId);
+      if (!included && !hasError && entry.branch.contains(document.activeElement)) root.focus({ preventScroll: true });
+      else if (entry.keys.some(key => {
+        const widget = configEditor.widgets.get(key);
+        return widget?.row.hidden && widget.row.contains(document.activeElement);
+      })) entry.disclosure.focus({ preventScroll: true });
+      entry.branch.hidden = !included && !hasError; visible ||= !entry.branch.hidden;
+      entry.select.disabled = !included; entry.select.value = defence.includes(buildingId) ? 'defence' : 'attack';
     }
-    for (const [buildingId, select] of inputs) select.value = defenceIds.includes(buildingId) ? 'defence' : 'attack';
+    empty.hidden = visible;
   };
   root.refresh(); return root;
 }
@@ -1479,6 +1558,7 @@ function configMultiselect(spec, id, options = {}) {
   root.onkeydown = event => { if (event.key === 'Escape') { root.open = false; summary.focus(); event.stopPropagation(); } };
   const reset = configButton('清空选择', () => { if (!disabled) { write([]); paintSummary(); paintList(); } });
   reset.disabled = disabled; foot.append(count, reset);
+  root.refresh = () => { paintSummary(); if (root.open) paintList(); };
   panel.append(search, list, more, foot); root.append(panel); paintSummary(); return root;
 }
 
