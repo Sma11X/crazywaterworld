@@ -38,6 +38,10 @@
 .config-children { min-width:0; margin:0 0 12px 6px; padding:2px 14px }
 .config-children>.config-branch { margin:4px 0; padding:0 }
 .config-children .config-children { margin-left:6px; padding-right:8px }
+/* 装备主开关与普通设置齐平，仅从属参数保留缩进。 */
+#config-group-forge>.config-branch { margin:0; padding:0; border:0; border-radius:0; background:transparent }
+#config-group-forge>.config-branch>.config-row { padding-block:8px; border-bottom:1px solid var(--border) }
+#config-group-forge>.config-branch>.config-row>.config-label-line>.config-label { font-weight:400 }
 .config-row.has-children>.config-control { display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap }
 .config-row.has-children>.config-control>.config-select { flex:1; width:auto; min-width:0 }
 .config-row.has-children>.config-control>.config-field-error { flex-basis:100% }
@@ -142,7 +146,16 @@
   .config-row.has-children[data-kind=switch] { grid-template-columns:minmax(0,1fr) auto }
   .config-row.has-children[data-kind=switch]>.config-control { gap:4px }
   .config-row.is-wide,.config-row[data-kind=multi],.config-row[data-kind=names],.config-row[data-kind=players] { grid-template-columns:minmax(0,1fr) }
-  .config-number input { min-width:0; flex:0 1 108px }
+  /* 数字与单位按内容占宽，下级参数也不必强制换到下一行。 */
+  .config-row[data-kind=number],.config-children .config-row[data-kind=number] { grid-template-columns:minmax(0,1fr) auto; column-gap:6px }
+  .config-row[data-kind=number]>.config-control { display:contents }
+  .config-row[data-kind=number] .config-field-error { grid-column:1 / -1; overflow-wrap:anywhere }
+  .config-number { grid-column:2; grid-row:1; gap:4px }
+  .config-number span { white-space:nowrap }
+  .config-number input { width:4rem; min-width:3.5rem; max-width:8rem; flex:0 1 auto; padding-inline:8px }
+  @supports (field-sizing:content) {
+    .config-number input { field-sizing:content; width:auto }
+  }
   .config-preview { padding:16px }
 }
 @media (max-width:480px) {

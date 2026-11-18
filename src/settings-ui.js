@@ -286,10 +286,10 @@ const configGroups = [
   { id: 'forge', title: '装备自动锻造', category: 'equipment', fields: [
     configField('forge.enabled', '自动锻造总开关', 'switch', { help: '随每轮挂机检查，自动领取所选工厂已完成的装备，确认入库后再安排下一件；达到下单上限仍可领取。下方选择“装备锻造”预览；不会开启游戏原生自动锻造。' }),
     configField('forge.buildingIds', '锻造工厂', 'multi', { catalog: 'forgeBuildings', empty: '请选择装备工厂' }),
-    configField('forge.decompose','自动分解','switch',{help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
+    configField('forge.decompose','自动分解','switch',{collapsible:false,help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
     configField('forge.decomposeQualities','处理品质','multi',{ parent: 'forge.decompose',catalog:'equipQualities',empty:'未选择，不处理',when:d=>d.forge.decompose}),
     configField('forge.recipeIds', '配方优先顺序', 'multi', { catalog: 'forgeRecipes', empty: '请选择锻造配方', help: '按勾选先后依次尝试，使用首个满足赛季、材料和预算的配方。产出装备和星级遵守游戏随机规则。' }),
-    configField('forge.universal', '允许万能材料补足', 'switch', { help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
+    configField('forge.universal', '允许万能材料补足', 'switch', { collapsible: false, help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
     configField('forge.materialReserve', '普通材料保留量', 'number', { unit: '每种', help: '一次锻造后，每种消耗的普通材料不得低于此值。' }),
     configField('forge.universalReserve', '万能材料保留量', 'number', { parent: 'forge.universal', unit: '每种', when: d => d.forge.universal }),
     configField('forge.goldReserve', '锻造后保留金币', 'number', { unit: '金币' }),
@@ -922,6 +922,7 @@ function configRender() {
   for (const [category, label] of Object.entries(configCategories)) {
     const panel = el('div'); panel.id = 'config-panel-' + category; panel.dataset.configPanel = category; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', 'config-tab-' + category);
     const selected = groups.filter(group => group.category === category);
+    const singleGroup = category !== 'base' && selected.length === 1;
     let groupHost = panel;
     if (category === 'base') {
       const families = el('div', 'config-families'); families.setAttribute('role', 'tablist'); families.setAttribute('aria-label', '基地分类');
@@ -936,7 +937,7 @@ function configRender() {
     const tabs = el('div', 'config-subtabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', label + '分组');
     for (const group of selected) {
       const family = baseFamilies.find(item => item.groups.includes(group.id));
-      if (family?.groups.length === 1) continue;
+      if (singleGroup || family?.groups.length === 1) continue;
       const tab = el('button', '', group.title); tab.type = 'button'; tab.id = 'config-subtab-' + group.id; tab.dataset.configGroup = group.id;
       tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', 'config-group-' + group.id); tab.setAttribute('aria-selected', 'false'); tab.tabIndex = -1;
       tab.onclick = () => configActivateGroup(group.id);
@@ -950,13 +951,13 @@ function configRender() {
       };
       tabs.append(tab);
     }
-    groupHost.append(tabs);
+    if (!singleGroup) groupHost.append(tabs);
     for (const group of selected) {
       const family = baseFamilies.find(item => item.groups.includes(group.id));
-      const direct = family?.groups.length === 1;
+      const direct = singleGroup || family?.groups.length === 1;
       const section = el('section', 'config-section'); section.id = 'config-group-' + group.id;
       section.setAttribute('role', direct ? 'group' : 'tabpanel');
-      section.setAttribute('aria-labelledby', direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
+      section.setAttribute('aria-labelledby', singleGroup ? 'config-tab-' + category : direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
       if (group.description) section.append(el('p','config-section-intro',group.description));
       if (['cityWar','silicon','treasure'].includes(group.id)) {
         const known=configEditor.data.catalog?.fleetAvailability?.known;
