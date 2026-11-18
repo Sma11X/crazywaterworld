@@ -55,7 +55,7 @@ import {watchTreasureTravel,matchesFollowDeparture} from './treasure-follow.mjs'
 import {watchFleetMaintenance,fleetMaintenanceEnabled,fleetMaintenanceInterval,runFleetMaintenance} from './fleet-maintenance.mjs';
 import {watchFleetSpeed,fleetSpeedEnabled,runFleetSpeed} from './fleet-speed.mjs';
 import { cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations, runCityWar } from './city-war.mjs';
-import { forgeEnabled, hasOwnedNativeForge, runEquipmentForge } from './equipment-forge.mjs';
+import { forgeEnabled, runEquipmentForge } from './equipment-forge.mjs';
 import { antiqueEnabled, runAntiqueUpgrade } from './antique-upgrade.mjs';
 import { readHeroGrowthPlan, heroStepLabel, runHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
@@ -72,7 +72,7 @@ import { claimWeekly, runLinkage, weekSchedule, readWeekOrder, runAutomaticWeekO
 import { automationTasks, dailyTaskKey, defaultFishingGoldReserve, defaultCompassSpinCount, worldTaskKey } from './automation.mjs';
 import { automationControls } from './automation-controls.mjs';
 import { activityTimeTasks, isActivityTaskAvailable, nextActivityBoundary } from './activity-availability.mjs';
-import { weeklyManagedSettings, weeklyLegacyTaskAllowed, nextWeeklyActivityBoundary } from './weekly-activity.mjs';
+import { nextWeeklyActivityBoundary } from './weekly-activity.mjs';
 import { runWeeklyActivity } from './weekly-activity-runner.mjs';
 
 const automationControlLabels = new Map(automationControls.map(control => [control.key, control.label]));
@@ -113,9 +113,6 @@ export async function runLoop(client, protocol, {
   if (!allowMutate) throw new Error('循环会持续改变账号状态，需要 --yes');
   const getWeeklySettings = getSettings;
   const originalHeroSettings = getHeroSettings;
-  getSettings = () => weeklyManagedSettings(getWeeklySettings());
-  // CLI hero-only runs can supply a separate getter without the main settings.
-  getHeroSettings = originalHeroSettings === getWeeklySettings ? getSettings : originalHeroSettings;
   let runtimeError = null;
   const assertRuntime = () => {
     if (runtimeError) throw runtimeError;
@@ -246,7 +243,7 @@ export async function runLoop(client, protocol, {
     const empty = () => ({ planned: 0, results: [] });
     const summary = { round, startedAt: Math.floor(Date.now() / 1000), tasks: empty(), dailies: empty(), world: empty() };
     const settings = getSettings();
-    const enabled = key => !stop.aborted && runtimeActive() && weeklyLegacyTaskAllowed(getSettings(), key) && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || (isEnabled(key) && rewards.due(key)));
+    const enabled = key => !stop.aborted && runtimeActive() && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || (isEnabled(key) && rewards.due(key)));
     const guard = runtimeGuard(createActionGuard(client, getSettings, usageLedger, { player, enabled: () => !stop.aborted && client.connected }));
     const usage = () => usageLedger?.snapshot() ?? { counters: {} };
     let extraDemand = [];
@@ -274,7 +271,7 @@ export async function runLoop(client, protocol, {
     const logReward = (entry, category = '领奖') => stepLog('tasks')({ title: entry.label, ...entry, taskKey:entry.taskKey||entry.key, category });
     const allowDaily = (id, action) => !(getSettings() && action.request === 'ClickGoldRequest' && !action.body.free) && enabled(dailyTaskKey(id, action));
     const allowWorld = kind => enabled(worldTaskKey(kind));
-    const active = key => !stop.aborted && runtimeActive() && weeklyLegacyTaskAllowed(getSettings(), key) && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && Boolean(isEnabled?.(key));
+    const active = key => !stop.aborted && runtimeActive() && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && Boolean(isEnabled?.(key));
     const aliases = { vipDailyGift:['vipDaily'], worldOnlineRewards:['worldOnline'],
       festivalActiveRewards:['festivalActive'], battleReportRewards:['campaignReports'],
       weekSupplyFree:['weekChipFree','weekUniqueFree'],
@@ -585,14 +582,10 @@ export async function runLoop(client, protocol, {
       finally{rewards?.expect('联盟情报',rewards.now()+(getSettings()?.radar.checkEverySeconds??30));radarAt=Date.now()+(getSettings()?.radar.checkEverySeconds??30)*1000;}
     }
     async function checkForge() {
-      // Switching away from native must still turn it off outside the weekly
-      // forge day or after its score target, without running custom recipes.
-      const nativeOnly = !forgeEnabled(getSettings()) && forgeEnabled(getWeeklySettings()) && hasOwnedNativeForge(player, usageLedger);
-      const forgeSettings = nativeOnly ? getWeeklySettings : getSettings;
-      if (stop.aborted || !forgeEnabled(forgeSettings())) return;
+      if (stop.aborted || !forgeEnabled(getSettings())) return;
       try {
-        const result = await runEquipmentForge(client, protocol, config, player, { getSettings: forgeSettings, ledger: usageLedger, nativeOnly,
-          enabled: () => !stop.aborted && runtimeActive() && client.connected && forgeEnabled(forgeSettings()),
+        const result = await runEquipmentForge(client, protocol, config, player, { getSettings, ledger: usageLedger,
+          enabled: () => !stop.aborted && runtimeActive() && client.connected && forgeEnabled(getSettings()),
           onStep(entry) { summary.world.planned++; summary.world.results.push(entry); stepLog('world')({ ...entry, category: '装备锻造' }); },
         });
         const text = (result.notes ?? []).join('；');rewards?.observe('装备锻造',text||'本次已核对，锻造动作结果见日志');
@@ -640,6 +633,8 @@ export async function runLoop(client, protocol, {
     await scheduler.run(async () => {
       if (stop.aborted) return;
       beginAdRound(client);
+      // 活动有独立开关；先执行当天活动，普通任务随后重读状态并共用预算，避免沿用消费前的快照。
+      await checkWeeklyActivity();
       await checkAppointments();
       await checkFactoryDue({ checkpoint: true });
       if (!isEnabled && enabled('tasks')) {
@@ -1112,7 +1107,6 @@ export async function runLoop(client, protocol, {
       await checkForge();
       await checkFactoryDue({ checkpoint: true });
       await checkAntique();
-      await checkWeeklyActivity();
       await checkExtended();
       await checkDispatch();
       await checkFactoryDue({ checkpoint: true });

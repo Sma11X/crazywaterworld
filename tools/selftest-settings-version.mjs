@@ -450,7 +450,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 13);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 14);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
@@ -485,6 +485,33 @@ try {
     saveAutomationSettings('other', otherBefore.settings, { file, revision: otherBefore.revision });
     assert.equal(JSON.parse(fs.readFileSync(file)).accounts.other.settingsVersion, SETTINGS_SCHEMA_VERSION);
   });
+  test('旧配置升级后连续保存只递增revision，格式版本不随保存次数增长', () => {
+    for (const version of [SETTINGS_SCHEMA_VERSION - 1, SETTINGS_SCHEMA_VERSION]) {
+      const settings = defaultSettings();
+      if (version < SETTINGS_SCHEMA_VERSION) delete settings.treasure.followMode;
+      const other = { revision: 901, settingsVersion: version, settings: defaultSettings() };
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: {
+        account: { revision: 244, settingsVersion: version, settings }, other,
+      } }));
+      for (let count = 1; count <= 40; count++) {
+        const loaded = loadAutomationSettings('account', { file });
+        assert.equal(loaded.revision, 244 + count - 1);
+        const edited = structuredClone(loaded.settings); edited.loop.everySeconds = 30 + count;
+        const saved = saveAutomationSettings('account', edited, { file, revision: loaded.revision });
+        assert.equal(saved.revision, 244 + count);
+        const bytes = fs.readFileSync(file), store = JSON.parse(bytes);
+        assert.equal(store.version, SETTINGS_SCHEMA_VERSION, '文件格式编号不能随保存次数增长');
+        assert.equal(store.accounts.account.settingsVersion, SETTINGS_SCHEMA_VERSION, '账号格式编号不能使用revision');
+        assert.deepEqual(store.accounts.other, other, '保存不改其他账号的格式和修订号');
+        assert.equal(exportAutomationSettings(saved.settings).version, SETTINGS_SCHEMA_VERSION);
+        assert.deepEqual(loadAutomationSettings('account', { file }), saved, '重新读取保持保存值和修订号');
+        assert.deepEqual(fs.readFileSync(file), bytes, '读取不能改变格式版本或修订号');
+      }
+      const bytes = fs.readFileSync(file);
+      assert.throws(() => saveAutomationSettings('account', defaultSettings(), { file, revision: 244 }), /其他页面更新/);
+      assert.deepEqual(fs.readFileSync(file), bytes, '过期修订号仍拒绝覆盖');
+    }
+  });
   test('当前版本缺项不能借历史迁移静默补全，旧版部分设置仍兼容', () => {
     for (const version of [2, 3, SETTINGS_SCHEMA_VERSION]) for (const remove of [
       settings => { delete settings.login; },
@@ -507,15 +534,60 @@ try {
     assert.deepEqual(migrated, validateSettings(settings, { partial: true }));
     assert.equal(migrated.factory.checkEverySeconds, defaultSettings().factory.checkEverySeconds);
   });
-  test('未知版本与损坏文件拒绝写入，保留原文件', () => {
-    const future = SETTINGS_SCHEMA_VERSION + 1;
-    for (const version of [0, future, '2', null]) {
+  test('更高合法版本先校验内容，完整兼容的配置可迁移导入且不修改输入', () => {
+    const settings = defaultSettings();
+    settings.resources.diamondDailyLimit = 4321;
+    settings.treasure.followMode = 'eachTime';
+    settings.loop.everySeconds = 91;
+    for (const version of [SETTINGS_SCHEMA_VERSION + 1, SETTINGS_SCHEMA_VERSION + 100, Number.MAX_SAFE_INTEGER]) {
+      const document = { format: SETTINGS_FORMAT, version, settings: structuredClone(settings) };
+      const before = structuredClone(document);
+      assert.deepEqual(migrateSettingsVersion(document.settings, version), settings);
+      assert.deepEqual(importAutomationSettings(document), settings);
+      assert.deepEqual(document, before, '高版本兼容验证不修改输入');
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: { newer: {
+        settingsVersion: version, revision: 4, settings: structuredClone(settings), metadata: { writer: 'future' },
+      } } }));
+      const bytes = fs.readFileSync(file), loaded = loadAutomationSettings('newer', { file });
+      assert.deepEqual(loaded.settings, settings); assert.deepEqual(fs.readFileSync(file), bytes);
+      const saved = saveAutomationSettings('newer', loaded.settings, { file, revision: 4 });
+      const store = JSON.parse(fs.readFileSync(file));
+      assert.equal(store.version, version); assert.equal(store.accounts.newer.settingsVersion, version);
+      assert.deepEqual(store.accounts.newer.metadata, { writer: 'future' });
+      assert.deepEqual(saved.settings, settings);
+    }
+  });
+  test('高版本导入报告不兼容字段，未知字段与有损规范化均不能静默丢弃', () => {
+    const version = SETTINGS_SCHEMA_VERSION + 1;
+    for (const [field, mutate] of [
+      ['factory.newerRule', settings => { settings.factory.newerRule = true; }],
+      ['resources.diamondDailyLimit', settings => { settings.resources.diamondDailyLimit = -1; }],
+      ['treasure.petrolReserve', settings => { settings.treasure.petrolReserve = 100; }],
+      ['fleetSpeed.fleets.0.repairMaxDiamonds', settings => { settings.fleetSpeed.fleets[0].repairMaxDiamonds = 7; }],
+      ['lineups.presets.0.name', settings => { settings.lineups.presets = [{ id: 'one', name: ' 测试阵容 ',
+        formation: { presetId: 1, heroPositions: [{ heroId: 'a', pos: { x: 4, y: 4 } }], petUid: '0' } }]; }],
+    ]) {
+      const document = { format: SETTINGS_FORMAT, version, settings: defaultSettings() }; mutate(document.settings);
+      const before = structuredClone(document);
+      assert.throws(() => importAutomationSettings(document), error => {
+        assert.equal(error.code, 'SETTINGS_INCOMPATIBLE');
+        assert.equal(error.settingsVersion, version); assert.equal(error.supportedVersion, SETTINGS_SCHEMA_VERSION);
+        assert(error.fields?.[field], '缺少具体字段诊断：' + field);
+        assert(error.message.includes(field)); assert(error.message.includes(String(version)));
+        assert(error.message.includes(String(SETTINGS_SCHEMA_VERSION)));
+        return true;
+      });
+      assert.deepEqual(document, before);
+    }
+  });
+  test('非法版本值与损坏文件拒绝写入，保留原文件', () => {
+    for (const version of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, '2', null]) {
       assert.throws(() => migrateSettingsVersion(defaultSettings(), version), /版本不支持/);
       assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version, settings: defaultSettings() }), /版本/);
     }
-    for (const content of ['{broken', JSON.stringify({ version: future, accounts: {} }),
-      JSON.stringify({ version: 2, accounts: { old: { settingsVersion: future, revision: 0, settings: defaultSettings() } } }),
-      JSON.stringify({ version: 2, accounts: { other: { settingsVersion: future, revision: 0, settings: defaultSettings() } } }),
+    for (const content of ['{broken', JSON.stringify({ version: 0, accounts: {} }),
+      JSON.stringify({ version: 2, accounts: { old: { settingsVersion: '15', revision: 0, settings: defaultSettings() } } }),
+      JSON.stringify({ version: 2, accounts: { other: { settingsVersion: 1.5, revision: 0, settings: defaultSettings() } } }),
     ]) {
       fs.writeFileSync(file, content);
       assert.throws(() => loadAutomationSettings('old', { file }));

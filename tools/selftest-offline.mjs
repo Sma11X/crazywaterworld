@@ -99,6 +99,10 @@ const cases = [
   ['selftest-alipay-login.mjs'],
   ['selftest-alipay-login-http.mjs'],
   ['selftest-alipay-login-ui.mjs'],
+  ['selftest-douyin-login.mjs'],
+  ['selftest-douyin-game-auth.mjs'],
+  ['selftest-douyin-login-http.mjs'],
+  ['selftest-douyin-login-ui.mjs'],
 ];
 
 try {

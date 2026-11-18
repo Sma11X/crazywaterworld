@@ -841,7 +841,10 @@ try {
     const f=warForgeFixture(),session=app.sessions.get('a');f.alignScenarioOne();session.client=f.client;session.player=f.player;session.paused=false;
     const war=await api('settings/preview','a',{category:'cityWar'}),forge=await api('settings/preview','a',{category:'forge'});
     assert.equal(war.status,200,JSON.stringify(war.data));assert.equal(forge.status,200,JSON.stringify(forge.data));assert.equal(war.data.cityWar.nativeLimit,4);
-    assert.equal(war.data.actions.length,2,'真实场景配置下也应生成两项有效城战计划');assert(forge.data.actions.length);assert(forge.data.forge.factories.length);assert.equal(f.client.writes.length,0);assert.deepEqual(fs.readFileSync(path.join(directory,'accounts.json')),before);
+    assert.equal(war.data.actions.length,2,'真实场景配置下也应生成两项有效城战计划');assert(forge.data.actions.length);assert(forge.data.forge.factories.length);assert.equal(f.client.writes.length,0);
+    const expectedAccounts = JSON.parse(before);
+    expectedAccounts.accounts.find(account => account.id === 'a').automation.settingsConfigured = true;
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory,'accounts.json'))), expectedAccounts, '保存仅登记本账号已配置，不改变凭据、其他账号或挂机开关');
   });
   await check('真实场景2配置与地图可通过HTTP预览，且按真实汽油库存规划行军',async()=>{
     const f=warForgeFixture(),session=app.sessions.get('a');f.player.scenarioId=2;
@@ -1043,7 +1046,7 @@ await check('取消工厂选择仍关闭本工具原生开关，其他角色记�
   assert.equal(f.client.writes.length, 3, '同世界另一角色不能关闭原角色的原生开关');
   assert.deepEqual(usage.keyRecords(), prior);
 });
-await check('周活动接管期间原生模式可开启关闭再开启，非打造日或积分达标不恢复工具制作', async () => {
+await check('周活动等待时原生模式可开启关闭再开启，普通工具制造按自身开关恢复', async () => {
   const originalNow = Date.now;
   let clock = Date.UTC(2026, 10, 18, 4);
   Date.now = () => clock;
@@ -1076,11 +1079,11 @@ await check('周活动接管期间原生模式可开启关闭再开启，非打�
             settings = { ...settings, forge: { ...settings.forge, nativeAuto: rounds.length === 3 } };
         },
       });
-      const on = ['SetBuildingAutoWorkRequest', true], off = ['SetBuildingAutoWorkRequest', false];
-      assert.deepEqual(rounds, [[on], [on, off], [on, off], [on, off, on]], '周活动主题 ' + subjectId);
+      const on = ['SetBuildingAutoWorkRequest', true], off = ['SetBuildingAutoWorkRequest', false], craft = ['MakeEquipRequest', undefined];
+      assert.deepEqual(rounds, [[on], [on, off], [on, off, craft], [on, off, craft, on]], '周活动主题 ' + subjectId);
       assert.equal(f.state.factory.auto, true);
       assert(weeklyReads > 0, '真实主循环已进入周活动检查');
-      assert.equal(usage.snapshot().counters.forgeStarts ?? 0, 0, '周活动等待条件不被关停原生通道绕过');
+      assert.equal(usage.snapshot().counters.forgeStarts, 1, '普通制造独立执行且只扣一次预算');
     }
   } finally { Date.now = originalNow; }
 });

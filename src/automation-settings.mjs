@@ -18,7 +18,9 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 13;
+// 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
+// revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
+export const SETTINGS_SCHEMA_VERSION = 14;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -76,7 +78,7 @@ export const DEFAULT_SETTINGS = {
   radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
   pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, checkEverySeconds: 15 },
-  treasure: { enabled: false, autoJoin: false, onlyTenThousand: false, follow: false, fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
+  treasure: { enabled: false, autoJoin: false, onlyTenThousand: false, follow: false, followMode: 'trigger', fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
     rewardItems: [], avoidNames: [], allowHostile: false, minDurabilityPercent: 80,
     maxProgress: 90, personalProgressLimit: 20, dailyDispatchLimit: 0, checkEverySeconds: 15, participationMode: 'untilFull', repeatAttack: false,
     autoRepair: false,
@@ -155,6 +157,7 @@ const constraints = {
   'treasure.personalProgressLimit': int(100),
   'treasure.dailyDispatchLimit': int(1000), 'treasure.checkEverySeconds': int(300, 5),
   'treasure.avoidPlayerIds': strings(100), 'treasure.participationMode': { kind: 'choice', values: ['untilFull', 'always'] },
+  'treasure.followMode': { kind: 'choice', values: ['trigger', 'eachTime'] },
   'treasure.marchTargetSeconds': int(3600), 'treasure.dailyDiamondLimit': int(100000000),
   'treasure.fallbackAfter': { kind: 'time' }, 'treasure.fallbackTargetRewards': int(100, 1),
   'treasure.fallbackQualities': { ...strings(2), values: ['PURPLE', 'BLUE'] },
@@ -303,6 +306,8 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   // An already-open settings page can still submit the retired fields.
   // Ignore only these known fields; every other setting remains strict.
   input = migrateVersion10Settings(migrateVersion9Settings(migrateVersion8Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input)))))))));
+  // Additive follow preference: keep the existing behavior for older saved files and open pages.
+  input = migrateVersion13Settings(input);
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
@@ -503,8 +508,8 @@ const validRecovery = recovery => plain(recovery) && recovery.required === true
 const validStoredEntry = entry => plain(entry) && supportedSettingsVersion(entrySettingsVersion(entry));
 
 // Read original bytes ourselves: readJson deliberately hides parse vs I/O failures,
-// but only known missing/corrupt settings may be recovered. Permissions and future
-// versions must stop execution without replacing the user's file.
+// but only known missing/corrupt settings may be recovered. A higher version is
+// checked by content first; incompatible content must never be reset to defaults.
 function inspectRecoverableSettings(file, key, expected) {
   let bytes, store;
   try { bytes = fs.readFileSync(file); }
@@ -518,13 +523,13 @@ function inspectRecoverableSettings(file, key, expected) {
     if (error instanceof SyntaxError) return { reason: 'corrupt', bytes, store: null };
     throw error;
   }
-  const future = version => typeof version === 'number' && version > SETTINGS_SCHEMA_VERSION;
-  if (future(store?.version) || plain(store?.accounts) && Object.values(store.accounts).some(entry => future(entry?.settingsVersion))) {
-    throw Object.assign(new Error('挂机配置来自更新版本，已停止操作且未覆盖原文件，请使用对应版本的程序'), { code: 'SETTINGS_FUTURE_VERSION' });
-  }
+  assertCompatibleFutureSettingsStore(store);
   if (!plain(store) || !supportedSettingsVersion(store.version) || !plain(store.accounts)) return { reason: 'corrupt', bytes, store };
   const damagedHeaders = Object.values(store.accounts).some(entry => !validStoredEntry(entry));
   const present = Object.hasOwn(store.accounts, key), entry = present ? store.accounts[key] : null;
+  if (!present && expected && newestSettingsVersion(store) > SETTINGS_SCHEMA_VERSION) {
+    throw incompatibleSettingsError(new SettingsError({ accounts: '已配置账号的设置条目缺失' }), newestSettingsVersion(store));
+  }
   if (!present) return expected ? { reason: 'missing', bytes, store } : damagedHeaders
     ? { reason: 'corrupt', bytes, store, keepTarget: true } : { loaded: loadedSettingsEntry(null) };
   if (!validStoredEntry(entry)) return { reason: 'corrupt', bytes, store };
@@ -535,7 +540,7 @@ function inspectRecoverableSettings(file, key, expected) {
     return damagedHeaders ? { reason: 'corrupt', bytes, store, keepTarget: true } : { loaded };
   }
   catch (error) {
-    if (error.fields?.version) throw error; // A missing migration is a program/version problem.
+    if (error.fields?.version || error.code === 'SETTINGS_INCOMPATIBLE') throw error;
     return { reason: 'corrupt', bytes, store };
   }
 }
@@ -579,7 +584,7 @@ export function loadRecoverableAutomationSettings(accountId, { file = settingsFi
       if (backupFile) entry.recovery.backupFile = backupFile;
       Object.defineProperty(accounts, id, { value: entry, enumerable: true, configurable: true, writable: true });
     }
-    const next = { ...(plain(state.store) ? state.store : {}), version: SETTINGS_SCHEMA_VERSION, accounts };
+    const next = { ...(plain(state.store) ? state.store : {}), version: newestSettingsVersion(state.store), accounts };
     atomicJson(file, next);
     return loadedSettingsEntry(accounts[key]);
   });
@@ -595,9 +600,11 @@ export function saveAutomationSettings(accountId, input, { revision, file = sett
     if (current?.recovery?.id !== expectedRecoveryId)
       throw new SettingsError({ revision: '配置恢复状态已变化，请重新载入配置后再保存' });
     if (!Number.isSafeInteger(revision) || revision !== (current?.revision ?? 0)) throw new SettingsError({ revision: '设置已在其他页面更新，请重新载入后再保存' });
-    const entry = { revision: revision + 1, savedAt: new Date().toISOString(), settingsVersion: SETTINGS_SCHEMA_VERSION, settings };
+    const entry = { ...current, revision: revision + 1, savedAt: new Date().toISOString(),
+      settingsVersion: Math.max(SETTINGS_SCHEMA_VERSION, current ? entrySettingsVersion(current) : 1), settings };
+    delete entry.recovery;
     Object.defineProperty(store.accounts, key, { value: entry, enumerable: true, configurable: true, writable: true });
-    store.version = SETTINGS_SCHEMA_VERSION;
+    store.version = newestSettingsVersion(store);
     atomicJson(file, store);
     return { revision: entry.revision, savedAt: entry.savedAt, settings: copy(settings) };
   });
@@ -605,14 +612,64 @@ export function saveAutomationSettings(accountId, input, { revision, file = sett
 
 export function exportAutomationSettings(settings) { return { format: SETTINGS_FORMAT, version: SETTINGS_SCHEMA_VERSION, settings: validateSettings(settings) }; }
 export function importAutomationSettings(document, options) {
-  if (!plain(document) || ![SETTINGS_FORMAT, LEGACY_SETTINGS_FORMAT].includes(document.format) || !supportedSettingsVersion(document.version) || Object.keys(document).some(k => !['format', 'version', 'settings'].includes(k))) throw new SettingsError({ import: `请选择本工具导出的配置文件（版本 1–${SETTINGS_SCHEMA_VERSION}），文件不能包含账号或凭据` });
+  if (!plain(document) || ![SETTINGS_FORMAT, LEGACY_SETTINGS_FORMAT].includes(document.format) || !supportedSettingsVersion(document.version) || Object.keys(document).some(k => !['format', 'version', 'settings'].includes(k))) throw new SettingsError({ import: '请选择本工具导出的配置文件，版本须为正整数，文件不能包含账号或凭据' });
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings]]);
-const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings]]);
+const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
+function newestSettingsVersion(store) {
+  const versions = [store?.version, ...(plain(store?.accounts) ? Object.values(store.accounts).map(entry => entry?.settingsVersion) : [])];
+  return versions.reduce((highest, version) => typeof version === 'number' && version > highest ? version : highest, SETTINGS_SCHEMA_VERSION);
+}
+function incompatibleSettingsError(cause, version) {
+  if (cause.code === 'SETTINGS_INCOMPATIBLE') return cause;
+  const fields = cause.fields ?? { settings: cause.message };
+  const error = new SettingsError(fields);
+  const details = Object.entries(fields).slice(0, 3).map(([field, message]) => `${field}：${message}`).join('；');
+  error.message = `挂机配置自动兼容失败（文件版本 ${version}，当前格式 ${SETTINGS_SCHEMA_VERSION}）：${details}；已停止操作且未覆盖原文件`;
+  return Object.assign(error, { code: 'SETTINGS_INCOMPATIBLE', settingsVersion: version, supportedVersion: SETTINGS_SCHEMA_VERSION, cause });
+}
+// Validation may add defaults, but a newer format must not silently lose any
+// supplied field or change an explicit value through an older normalizer.
+function assertSettingsPreserved(input, output, field = 'settings') {
+  if (plain(input) || Array.isArray(input)) {
+    if (Array.isArray(input) ? !Array.isArray(output) : !plain(output)) {
+      throw new SettingsError({ [field]: '设置结构无法无损兼容' });
+    }
+    for (const key of Object.keys(input)) {
+      const next = field === 'settings' ? key : field + '.' + key;
+      if (!Object.hasOwn(output, key)) throw new SettingsError({ [next]: '当前程序无法保留此设置项' });
+      assertSettingsPreserved(input[key], output[key], next);
+    }
+  } else if (!Object.is(input, output)) {
+    throw new SettingsError({ [field]: '当前程序无法保留此设置值' });
+  }
+}
+function compatibleFutureSettings(settings, version) {
+  try {
+    const normalized = validateCurrentSettings(settings);
+    assertSettingsPreserved(settings, normalized);
+    return normalized;
+  } catch (error) { throw incompatibleSettingsError(error, version); }
+}
+function assertCompatibleFutureSettingsStore(store) {
+  const version = newestSettingsVersion(store);
+  if (version <= SETTINGS_SCHEMA_VERSION) return;
+  try {
+    if (!plain(store) || !supportedSettingsVersion(store.version)) throw new SettingsError({ version: '设置文件版本须为正整数' });
+    if (!plain(store.accounts)) throw new SettingsError({ accounts: '账号设置必须是对象' });
+    for (const entry of Object.values(store.accounts)) {
+      if (!validStoredEntry(entry)) throw new SettingsError({ settingsVersion: '账号设置版本须为正整数' });
+      if (!Number.isSafeInteger(entry.revision) || entry.revision < 0) throw new SettingsError({ revision: '账号设置修订号无效' });
+      if (entry.recovery !== undefined && !validRecovery(entry.recovery)) throw new SettingsError({ recovery: '账号设置恢复标记无效' });
+      loadedSettingsEntry(entry);
+    }
+  } catch (error) { throw incompatibleSettingsError(error, version); }
+}
 function validateSettingsStore(store) {
+  assertCompatibleFutureSettingsStore(store);
   if (!plain(store) || !supportedSettingsVersion(store.version) || !plain(store.accounts)
     || Object.values(store.accounts).some(entry => !plain(entry) || !supportedSettingsVersion(entrySettingsVersion(entry)))) {
     throw new Error('设置文件格式或版本不支持，未覆盖原文件');
@@ -624,6 +681,7 @@ function validateSettingsStore(store) {
 export function migrateSettingsVersion(settings, version, { source = 'import' } = {}) {
   if (!supportedSettingsVersion(version)) throw new SettingsError({ version: '设置文件版本不支持' });
   if (!['import', 'stored'].includes(source)) throw new TypeError('未知设置迁移来源');
+  if (version > SETTINGS_SCHEMA_VERSION) return compatibleFutureSettings(settings, version);
   let result = settings;
   for (let current = version; current < SETTINGS_SCHEMA_VERSION; current++) {
     const migrate = settingsMigrations.get(current);
@@ -883,4 +941,11 @@ function migrateVersion12Settings(settings) {
     delete row.repairMaxDiamonds; delete row.marchMaxDiamonds;
     return row;
   }) } };
+}
+
+// Version 14 records the follow mode. Keep the historical trigger behavior when
+// absent, and preserve an explicit choice from files already saved as version 14.
+function migrateVersion13Settings(settings) {
+  if (!plain(settings) || !plain(settings.treasure) || Object.hasOwn(settings.treasure, 'followMode')) return settings;
+  return { ...settings, treasure: { ...settings.treasure, followMode: 'trigger' } };
 }

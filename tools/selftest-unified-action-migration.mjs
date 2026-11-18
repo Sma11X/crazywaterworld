@@ -226,15 +226,21 @@ try {
     }
   });
 
-  test('未来版本拒绝读取、导入和覆盖', () => {
+  test('高版本按内容兼容，实际未知设置拒绝读取、导入和覆盖', () => {
     const future = SETTINGS_SCHEMA_VERSION + 1;
     const settings = defaultSettings();
-    assert.throws(() => migrateSettingsVersion(settings, future), /版本/);
-    assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: future, settings }), /版本/);
-    fs.writeFileSync(file, JSON.stringify({ version: future, accounts: {} }));
+    assert.deepEqual(migrateSettingsVersion(settings, future), settings);
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: future, settings }), settings);
+    const incompatible = structuredClone(settings); incompatible.schedule.newerTask = true;
+    const rejected = error => error.code === 'SETTINGS_INCOMPATIBLE' && !!error.fields?.['schedule.newerTask'];
+    assert.throws(() => migrateSettingsVersion(incompatible, future), rejected);
+    assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: future, settings: incompatible }), rejected);
+    fs.writeFileSync(file, JSON.stringify({ version: future, accounts: {
+      account: { revision: 1, settingsVersion: future, settings: incompatible },
+    } }));
     const before = fs.readFileSync(file);
-    assert.throws(() => loadAutomationSettings('account', { file }), /版本/);
-    assert.throws(() => saveAutomationSettings('account', settings, { file, revision: 0 }), /版本/);
+    assert.throws(() => loadAutomationSettings('account', { file }), rejected);
+    assert.throws(() => saveAutomationSettings('account', settings, { file, revision: 1 }), rejected);
     assert.deepEqual(fs.readFileSync(file), before);
   });
 

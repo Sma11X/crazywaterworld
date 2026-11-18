@@ -221,17 +221,54 @@ try {
     assertRecovery(ok(await api(id, 'settings')), 'corrupt'); assertStopped(id);
   });
 
-  await test('未来版本不是损坏配置，不得降级覆盖或自动连接', async () => {
+  await test('高版本但内容兼容的配置可读取、保存和挂机，版本与原选择保留', async () => {
+    const { id, otherId, state } = await seed({ autoStart: false, other: true });
+    const store = JSON.parse(fs.readFileSync(file)), version = SETTINGS_SCHEMA_VERSION + 1;
+    store.version = version; store.accounts[id].settingsVersion = version;
+    const settings = store.accounts[id].settings;
+    settings.loop.everySeconds = 77;
+    settings.resources.diamondDailyLimit = 3210;
+    settings.treasure.followMode = 'eachTime';
+    const otherEntry = structuredClone(store.accounts[otherId]);
+    fs.writeFileSync(file, JSON.stringify(store));
+    const bytes = fs.readFileSync(file), before = connections; await open();
+    const view = ok(await api(id, 'settings'));
+    assert(!view.recovery?.required); assert.deepEqual(view.settings, settings);
+    assert.deepEqual(fs.readFileSync(file), bytes, '兼容读取不应改写文件');
+    assert.equal(connections, before);
+    const edited = structuredClone(view.settings); edited.loop.everySeconds = 83;
+    const saved = ok(await api(id, 'settings', { settings: edited, revision: view.revision, baseRevision: view.baseRevision }));
+    assert(!saved.recovery?.required); assert.deepEqual(saved.settings, edited);
+    const persisted = JSON.parse(fs.readFileSync(file));
+    assert.equal(persisted.version, version); assert.equal(persisted.accounts[id].settingsVersion, version);
+    assert.deepEqual(persisted.accounts[id].settings, edited); assert.deepEqual(persisted.accounts[otherId], otherEntry);
+    ok(await api(id, 'loop/start', { rounds: 1 }));
+    await waitFor(() => !app.sessions.get(id).loop.running, '兼容配置的单轮挂机完成');
+    assert.equal(connections, before + 1); assert(state.reads.includes('EmailBoxRequest'));
+    const after = ok(await api(id, 'settings'));
+    assert(!after.recovery?.required); assert.equal(after.settings.schedule.mail, true);
+    assert.equal(after.settings.resources.diamondDailyLimit, 3210);
+    assert.equal(after.settings.treasure.followMode, 'eachTime'); assert.equal(after.settings.loop.everySeconds, 83);
+    const finalStore = JSON.parse(fs.readFileSync(file));
+    assert.equal(finalStore.version, version); assert.equal(finalStore.accounts[id].settingsVersion, version);
+    assert.deepEqual(finalStore.accounts[otherId], otherEntry);
+  });
+
+  await test('高版本含实际不兼容字段时提示具体位置，不覆盖配置或连接游戏', async () => {
     const { id } = await seed({ autoStart: false });
     const store = JSON.parse(fs.readFileSync(file)); store.version = SETTINGS_SCHEMA_VERSION + 1;
-    store.accounts[id].settingsVersion = SETTINGS_SCHEMA_VERSION + 1; fs.writeFileSync(file, JSON.stringify(store));
+    store.accounts[id].settingsVersion = SETTINGS_SCHEMA_VERSION + 1;
+    store.accounts[id].settings.resources.futureBudgetRule = 'new-rule';
+    fs.writeFileSync(file, JSON.stringify(store));
     const bytes = fs.readFileSync(file), before = connections; await open();
     const view = ok(await api(id, 'settings'));
     assert.equal(view.recovery?.required, true); assert.equal(view.recovery.reason, 'unavailable');
-    assert.match(view.recovery.message, /版本/);
-    assert.equal((await api(id, 'loop/start', { rounds: 1 })).status, 400);
-    assert.equal((await api(id, 'settings', { settings: runnableSettings(), revision: view.revision,
-      baseRevision: view.baseRevision, recoveryToken: view.recoveryToken })).status, 400);
+    assert.match(view.recovery.message, /resources\.futureBudgetRule/);
+    const start = await api(id, 'loop/start', { rounds: 1 });
+    assert.equal(start.status, 400); assert.match(start.data.error, /resources\.futureBudgetRule/);
+    const save = await api(id, 'settings', { settings: runnableSettings(), revision: view.revision,
+      baseRevision: view.baseRevision, recoveryToken: view.recoveryToken });
+    assert.equal(save.status, 400); assert.match(save.data.error, /resources\.futureBudgetRule/);
     assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(connections, before);
   });
 

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, exportAutomationSettings, importAutomationSettings, createUsageLedger, beijingDay, nativeTaskValues, applyNativeTask, settingsFromNative, settingsUiRules } from '../src/automation-settings.mjs';
+import { SETTINGS_SCHEMA_VERSION, defaultSettings, validateSettings, saveAutomationSettings, loadAutomationSettings, exportAutomationSettings, importAutomationSettings, createUsageLedger, beijingDay, nativeTaskValues, applyNativeTask, settingsFromNative, settingsUiRules } from '../src/automation-settings.mjs';
 import { createActionGuard, budgetPreview, exactAutomationId, automationWireId } from '../src/automation-policy.mjs';
 import { planWorld, runWorld } from '../src/world.mjs';
 import { planBaseAutomation, runBaseAutomation, watchBasePushes, gameSeason, previewNativeAutomation } from '../src/base-automation.mjs';
@@ -303,6 +303,64 @@ try {
     const bytes = fs.readFileSync(file); assert.throws(() => saveAutomationSettings('a', b, { file, revision: 0 }), /其他页面更新/); assert.deepEqual(fs.readFileSync(file), bytes);
     const broken = path.join(directory, 'broken.json'); fs.writeFileSync(broken, '{bad');
     assert.throws(() => loadAutomationSettings('a', { file: broken }), /停止/); assert.equal(fs.readFileSync(broken, 'utf8'), '{bad');
+  });
+
+  await check('巨轮后续跟随方式兼容旧配置、按账号保存且严格校验', () => {
+    const initial = defaultSettings();
+    assert.equal(initial.treasure.followMode, 'trigger');
+    const legacy = structuredClone(initial);
+    Object.assign(legacy.treasure, { enabled: true, follow: true, repeatAttack: true, followNames: ['海上的风'], fleetIds: ['1远征船'] });
+    delete legacy.treasure.followMode;
+    assert.equal(validateSettings(legacy).treasure.followMode, 'trigger', '已打开的旧页面保存保持原行为');
+    assert.equal(Object.hasOwn(legacy.treasure, 'followMode'), false, '兼容处理不修改输入');
+    const version13 = structuredClone(legacy);
+    version13.resources.diamondDailyLimit = 3210; version13.loop.everySeconds = 87;
+    const expected13 = structuredClone(version13); expected13.treasure.followMode = 'trigger';
+    assert.deepEqual(importAutomationSettings({ ...exportAutomationSettings(initial), version: 13, settings: version13 }), expected13,
+      '版本13导入仅补齐跟随方式，不改变其他设置');
+    const version14 = structuredClone(expected13); version14.treasure.followMode = 'eachTime';
+    assert.deepEqual(importAutomationSettings({ ...exportAutomationSettings(initial), version: 14, settings: version14 }), version14,
+      '已导出的版本14必须继续支持，且保留显式跟随方式');
+    const file = path.join(directory, 'treasure-follow-mode.json');
+    for (let version = 1; version <= SETTINGS_SCHEMA_VERSION; version++) {
+      const document = { ...exportAutomationSettings(initial), version, settings: legacy };
+      const expected = { ...legacy.treasure, followMode: 'trigger' };
+      assert.deepEqual(importAutomationSettings(document).treasure, expected, '旧版导入 ' + version);
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: { legacy: { settingsVersion: version, revision: 7, settings: legacy } } }));
+      const bytes = fs.readFileSync(file);
+      assert.deepEqual(loadAutomationSettings('legacy', { file }).settings.treasure, expected, '旧版读取 ' + version);
+      assert.deepEqual(fs.readFileSync(file), bytes, '只读升级不能覆盖原文件');
+    }
+    for (const mode of ['trigger', 'eachTime']) {
+      const custom = structuredClone(initial); custom.treasure.followMode = mode;
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings(custom)).treasure, custom.treasure);
+      saveAutomationSettings(mode, custom, { file, revision: 0 });
+      assert.deepEqual(loadAutomationSettings(mode, { file }).settings.treasure, custom.treasure);
+      const oldDocument = { ...exportAutomationSettings(custom), version: SETTINGS_SCHEMA_VERSION - 1 };
+      assert.equal(importAutomationSettings(oldDocument).treasure.followMode, mode, '迁移保留显式选择');
+    }
+    const bytes = fs.readFileSync(file);
+    for (const value of ['unknown', '', true, 1, null]) {
+      const invalid = structuredClone(initial); invalid.treasure.followMode = value;
+      const invalidField = error => !!error.fields?.['treasure.followMode'];
+      assert.throws(() => validateSettings(invalid), invalidField);
+      assert.throws(() => importAutomationSettings({ ...exportAutomationSettings(initial), settings: invalid }), invalidField);
+      assert.throws(() => saveAutomationSettings('eachTime', invalid, { file, revision: 1 }), invalidField);
+      assert.deepEqual(fs.readFileSync(file), bytes);
+    }
+  });
+
+  await check('后续跟随方式只在启用跟随及反复攻占时显示', () => {
+    const source = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
+    const groups = newStateFunction(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
+    const field = groups.find(group => group.id === 'treasure').fields.find(row => row.key === 'treasure.followMode');
+    assert.equal(field.kind, 'radio');
+    assert.equal(field.parent, 'treasure.follow');
+    assert.deepEqual(field.options.map(([value]) => value), ['trigger', 'eachTime']);
+    for (const follow of [false, true]) for (const repeatAttack of [false, true]) {
+      const draft = defaultSettings(); Object.assign(draft.treasure, { follow, repeatAttack });
+      assert.equal(field.when(draft), follow && repeatAttack);
+    }
   });
 
   await check('巨轮行军加速默认关闭、严格校验、旧版迁移和持久化', () => {
@@ -826,7 +884,7 @@ try {
         assert.equal(app.sessions.get('qa-a').loop.tasks[key], false);
       }
       const rewardIds = a.catalog.treasureRewards.slice(0, 2).map(item => item.value);
-      Object.assign(a.settings.treasure, { marchSpeedUp: true, marchTargetSeconds: 90, dailyDiamondLimit: 180,
+      Object.assign(a.settings.treasure, { followMode: 'eachTime', marchSpeedUp: true, marchTargetSeconds: 90, dailyDiamondLimit: 180,
         fallbackEnabled: true, fallbackAfter: '23:10', fallbackTargetRewards: 2,
         fallbackQualities: ['BLUE'], fallbackMediumRewardPriority: rewardIds, fallbackSmallRewardPriority: [...rewardIds].reverse() });
       const save = await api('qa-a', '/api/settings', { settings: a.settings, revision: a.revision, baseRevision: a.baseRevision }); assert.equal(save.status, 200); assert.equal(save.body.revision, 1);
@@ -839,6 +897,7 @@ try {
       assert.equal((await api('qa-b', '/api/settings')).body.settings.building.keepBlueprints, 0);
       assert.equal((await api('qa-b', '/api/settings')).body.settings.treasure.fallbackEnabled, false);
       assert.equal((await api('qa-b', '/api/settings')).body.settings.treasure.marchSpeedUp, false);
+      assert.equal((await api('qa-b', '/api/settings')).body.settings.treasure.followMode, 'trigger');
       const exported = (await api('qa-a', '/api/settings/export')).body; assert.deepEqual(Object.keys(exported), ['format', 'version', 'settings']);
       assert.deepEqual(exported.settings.treasure, a.settings.treasure);
       exported.settings.building.keepBlueprints = 200;

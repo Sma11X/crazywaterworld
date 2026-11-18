@@ -224,7 +224,8 @@ export function accountPage() {
           <Button type="button" variant="outline" className="account-channel h-auto pointer-coarse:h-auto items-start justify-start gap-3.5 p-5 has-[>svg]:px-5 whitespace-normal text-left" data-login-channel="alipay"><QrCode className="size-[22px]" aria-hidden="true" /><span><strong>支付宝</strong><span>扫码登录，选择游戏角色</span></span></Button>
           <Button type="button" variant="outline" className="account-channel h-auto pointer-coarse:h-auto items-start justify-start gap-3.5 p-5 has-[>svg]:px-5 whitespace-normal text-left" data-login-channel="phone"><Smartphone className="size-[22px]" aria-hidden="true" /><span><strong>益世界 APP</strong><span>账号密码或短信验证码</span></span></Button>
           <Button type="button" variant="outline" className="account-channel h-auto pointer-coarse:h-auto items-start justify-start gap-3.5 p-5 has-[>svg]:px-5 whitespace-normal text-left" data-login-channel="wechat"><MessageCircle className="size-[22px]" aria-hidden="true" /><span><strong>微信小游戏</strong><span>从电脑微信读取登录信息</span></span></Button>
-          <Button type="button" variant="outline" className="account-channel h-auto pointer-coarse:h-auto items-start justify-start gap-3.5 p-5 has-[>svg]:px-5 whitespace-normal text-left" data-login-channel="douyin"><Music2 className="size-[22px]" aria-hidden="true" /><span><strong>抖音小游戏</strong><span>从电脑抖音读取登录信息</span></span></Button>
+          <Button type="button" variant="outline" className="account-channel h-auto pointer-coarse:h-auto items-start justify-start gap-3.5 p-5 has-[>svg]:px-5 whitespace-normal text-left" data-login-channel="douyin-qr"><Music2 className="size-[22px]" aria-hidden="true" /><span><strong>抖音扫码</strong><span>扫码登录，选择游戏角色</span></span></Button>
+          <details className="col-span-full text-sm"><summary className="cursor-pointer py-2">备用登录方式</summary><Button type="button" variant="outline" className="mt-2 w-full justify-start whitespace-normal" data-login-channel="douyin">电脑抖音采集</Button><p className="dim mt-2">从已登录的电脑抖音读取，或恢复上次未完成的采集。</p></details>
         </div>
         <section id="account-add-alipay" hidden>
           <div id="alipay-flow" className="alipay-flow">
@@ -237,6 +238,18 @@ export function accountPage() {
             <div className="bar"><Button id="alipay-save" type="button" hidden disabled>保存所选角色</Button><Button id="alipay-roles-retry" type="button" variant="outline" hidden>重新读取角色</Button></div>
           </div>
           <p className="dim">本机需安装 Edge 或 Chrome。扫码后会进入游戏，可能让同账号的游戏客户端下线。</p>
+        </section>
+        <section id="account-add-douyin" hidden>
+          <div id="douyin-flow" className="alipay-flow">
+            <div className="bar"><Button id="douyin-start" type="button">生成二维码</Button><Button id="douyin-cancel" type="button" variant="outline" hidden>取消</Button></div>
+            <img id="douyin-qr" className="alipay-qr" alt="抖音扫码登录二维码" width="256" height="256" hidden />
+            <p id="douyin-hint" className="phone-feedback dim" role="status" aria-live="polite" aria-atomic="true">点击「生成二维码」，然后使用抖音扫一扫。</p>
+            <div id="douyin-roles" hidden />
+            <p id="douyin-result" hidden />
+            <p id="douyin-expiry" className="dim" />
+            <div className="bar"><Button id="douyin-save" type="button" hidden disabled>保存所选角色</Button><Button id="douyin-roles-retry" type="button" variant="outline" hidden>重新读取角色</Button></div>
+          </div>
+          <p className="dim">请使用游戏角色所属的抖音账号扫码。读取角色时会登录游戏，可能让同账号的游戏客户端下线。</p>
         </section>
         <section id="account-add-phone" hidden>
           <p id="phone-step" className="sr-only" role="status">登录验证 → 选择区服和角色 → 保存并切换</p>

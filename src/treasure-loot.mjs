@@ -45,7 +45,8 @@ const canRepeat = (record, fleet, preferences) => record?.confirmed === true && 
 const confirmedFollow = record => record?.confirmed === true && !record.expired &&
   ['treasureDispatch', 'treasureFollow'].includes(record.details?.kind) && ['departing', 'defending'].includes(record.details.followPhase);
 function repeatFollowRecord(keys, snapshot, target, fleet, preferences) {
-  if (!preferences.follow || !preferences.repeatAttack || !homeIdle(fleet)) return null;
+  // 每次重新跟随时，只接受 following() 本轮匹配到的行军或守军，不沿用历史确认。
+  if (!preferences.follow || !preferences.repeatAttack || preferences.followMode === 'eachTime' || !homeIdle(fleet)) return null;
   return [keys[treasureFollowKey(snapshot.worldId, target.uid, fleet.buildingId)],
     keys[treasureDispatchKey(snapshot.worldId, target.uid, fleet.buildingId)]].find(confirmedFollow) ?? null;
 }

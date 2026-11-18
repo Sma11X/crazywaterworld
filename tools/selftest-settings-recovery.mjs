@@ -112,13 +112,120 @@ try {
     assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(backups(dir).length, 0);
   });
 
-  await test('未来容器或任一账号版本都停止，不能降级覆盖', () => {
+  await test('版本13补齐跟随方式并保留全部选择，读取不触发恢复或写盘', () => {
+    const { dir, file } = fixture(), old = record(12);
+    old.settingsVersion = 13;
+    Object.assign(old.settings.treasure, { enabled: true, follow: true, repeatAttack: true, followNames: ['测试队友'], fleetIds: ['1远征船'] });
+    Object.assign(old.settings.resources, { allowDiamonds: true, diamondDailyLimit: 3210 });
+    old.settings.loop.everySeconds = 87;
+    const expected = structuredClone(old.settings);
+    delete old.settings.treasure.followMode;
+    write(file, { version: 13, accounts: { a: old } });
+    const bytes = fs.readFileSync(file), result = recover(file);
+    assert.deepEqual(result.settings, expected); assert.equal(result.revision, 12);
+    assert.equal(result.savedAt, old.savedAt); assert.equal(result.recovery, undefined);
+    assert.deepEqual(loadAutomationSettings('a', { file }), result);
+    assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(backups(dir).length, 0);
+  });
+
+  await test('已写入版本14与无版本旧账号混存时均可读取，保存保留另一个账号', () => {
+    const { dir, file } = fixture(), current = record(244);
+    current.settingsVersion = 14;
+    Object.assign(current.settings.treasure, { enabled: true, follow: true, repeatAttack: true, followMode: 'eachTime',
+      followNames: ['测试队友'], fleetIds: ['1远征船'] });
+    current.settings.resources.diamondDailyLimit = 4321;
+    const legacy = { revision: 1, savedAt: '2026-11-17T00:00:00.000Z', settings: {
+      treasure: { enabled: true, follow: true, followNames: ['旧账号队友'], fleetIds: ['2远征船'] }, resources: { allowDiamonds: false },
+    } };
+    write(file, { version: 14, accounts: { a: current, legacy } });
+    const bytes = fs.readFileSync(file), result = recover(file);
+    assert.deepEqual(result.settings, current.settings); assert.equal(result.revision, current.revision);
+    assert.equal(result.recovery, undefined); assert.deepEqual(loadAutomationSettings('a', { file }), result);
+    const old = loadRecoverableAutomationSettings('legacy', { file, expected: true });
+    assert.equal(old.recovery, undefined); assert.equal(old.revision, 1);
+    assert.equal(old.settings.treasure.enabled, true); assert.equal(old.settings.treasure.follow, true);
+    assert.equal(old.settings.treasure.followMode, 'trigger'); assert.deepEqual(old.settings.treasure.followNames, ['旧账号队友']);
+    assert.equal(old.settings.resources.allowDiamonds, false);
+    assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(backups(dir).length, 0);
+    const saved = saveAutomationSettings('a', result.settings, { file, revision: result.revision });
+    assert.deepEqual(saved.settings, current.settings); assert.equal(saved.revision, 245);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)).accounts.legacy, legacy);
+    assert.equal(recover(file).settings.treasure.followMode, 'eachTime'); assert.equal(backups(dir).length, 0);
+  });
+
+  await test('高版本容器或账号按内容兼容，保存不降级且保留元数据和其他账号', () => {
     for (const variant of ['store', 'target', 'other']) {
       const { dir, file } = fixture(), value = store({ a: record(), other: record() });
-      if (variant === 'store') value.version = SETTINGS_SCHEMA_VERSION + 1;
-      else value.accounts[variant === 'target' ? 'a' : 'other'].settingsVersion = SETTINGS_SCHEMA_VERSION + 1;
+      const future = SETTINGS_SCHEMA_VERSION + 5;
+      if (variant === 'store') value.version = future;
+      else value.accounts[variant === 'target' ? 'a' : 'other'].settingsVersion = future;
+      value.writerMetadata = { name: 'newer-program', revision: 2 };
+      value.accounts.a.editorMetadata = { author: 'synthetic', flags: [1, 2] };
+      value.accounts.a.settings.resources.diamondDailyLimit = 4321;
+      value.accounts.other.settings.loop.everySeconds = 91;
       write(file, value); const bytes = fs.readFileSync(file);
-      assert.throws(() => recover(file), error => error.code === 'SETTINGS_FUTURE_VERSION');
+      const loaded = recover(file);
+      assert.deepEqual(loaded.settings, value.accounts.a.settings); assert.equal(loaded.recovery, undefined);
+      assert.deepEqual(loadAutomationSettings('a', { file }), loaded);
+      assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(backups(dir).length, 0);
+      const edited = structuredClone(loaded.settings); edited.loop.everySeconds = 79;
+      const saved = saveAutomationSettings('a', edited, { file, revision: loaded.revision });
+      const next = JSON.parse(fs.readFileSync(file));
+      assert.deepEqual(saved.settings, edited); assert.equal(saved.revision, loaded.revision + 1);
+      assert(next.version >= value.version, '容器版本不得降级');
+      assert.equal(next.accounts.a.settingsVersion, value.accounts.a.settingsVersion, '账号版本不得降级');
+      assert.deepEqual(next.writerMetadata, value.writerMetadata);
+      assert.deepEqual(next.accounts.a.editorMetadata, value.accounts.a.editorMetadata);
+      assert.deepEqual(next.accounts.other, value.accounts.other);
+      assert.deepEqual(recover(file).settings, edited); assert.equal(backups(dir).length, 0);
+    }
+  });
+
+  await test('高版本未知字段、非法值和有损规范化按具体字段拒绝，三种入口均不覆盖', () => {
+    const mutations = [
+      ['factory.newerRule', settings => { settings.factory.newerRule = true; }],
+      ['resources.diamondDailyLimit', settings => { settings.resources.diamondDailyLimit = -1; }],
+      ['fleetSpeed.fleets.0.repairMaxDiamonds', settings => { settings.fleetSpeed.fleets[0].repairMaxDiamonds = 7; }],
+      ['lineups.presets.0.name', settings => { settings.lineups.presets = [{ id: 'one', name: ' 测试阵容 ',
+        formation: { presetId: 1, heroPositions: [{ heroId: 'a', pos: { x: 4, y: 4 } }], petUid: '0' } }]; }],
+    ];
+    for (const [field, mutate] of mutations) for (const target of ['a', 'other']) {
+      const { dir, file } = fixture(), value = store({ a: record(), other: record() });
+      value.accounts[target].settingsVersion = SETTINGS_SCHEMA_VERSION + 1;
+      mutate(value.accounts[target].settings);
+      write(file, value); const bytes = fs.readFileSync(file);
+      const incompatible = error => {
+        assert.equal(error.code, 'SETTINGS_INCOMPATIBLE');
+        assert.equal(error.settingsVersion, SETTINGS_SCHEMA_VERSION + 1);
+        assert.equal(error.supportedVersion, SETTINGS_SCHEMA_VERSION);
+        assert(error.fields?.[field], '缺少具体字段诊断：' + field);
+        assert(error.message.includes(field));
+        assert(error.message.includes(String(SETTINGS_SCHEMA_VERSION + 1)));
+        assert(error.message.includes(String(SETTINGS_SCHEMA_VERSION)));
+        assert.match(error.message, /未覆盖原文件/);
+        return true;
+      };
+      assert.throws(() => recover(file), incompatible);
+      assert.throws(() => loadAutomationSettings('a', { file }), incompatible);
+      assert.throws(() => saveAutomationSettings('a', defaultSettings(), { file, revision: value.accounts.a.revision }), incompatible);
+      assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(backups(dir).length, 0);
+    }
+  });
+
+  await test('高版本容器或条目结构不兼容时不能重置为默认配置', () => {
+    const future = SETTINGS_SCHEMA_VERSION + 1;
+    for (const mutate of [
+      value => { value.version = future; value.accounts = []; },
+      value => { value.version = future; value.accounts.a = null; },
+      value => { value.accounts.a.settingsVersion = future; value.accounts.a.revision = '4'; },
+      value => { value.accounts.a.settingsVersion = future; value.accounts.a.recovery = { required: true, reason: 'new-kind' }; },
+    ]) {
+      const { dir, file } = fixture(), value = store({ a: record(), other: record() }); mutate(value);
+      write(file, value); const bytes = fs.readFileSync(file);
+      const incompatible = error => error.code === 'SETTINGS_INCOMPATIBLE' && Object.keys(error.fields ?? {}).length > 0;
+      assert.throws(() => recover(file), incompatible);
+      assert.throws(() => loadAutomationSettings('a', { file }), incompatible);
+      assert.throws(() => saveAutomationSettings('a', defaultSettings(), { file, revision: 4 }), incompatible);
       assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(backups(dir).length, 0);
     }
   });
