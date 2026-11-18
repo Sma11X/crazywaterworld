@@ -35,10 +35,10 @@ let passed = 0;
 const check = async (name, run) => { await run(); passed++; console.log('通过：' + name); };
 
 try {
-  await check('30个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
+  await check('28个模块启停集中在所属配置，全部字段有唯一编辑位置', () => {
     const rendered = configFields.filter(field => field.moduleControl).map(field => field.key);
     const idleKeys = idleAutomationControls.map(control => control.key), movedFields = idleAutomationControls.flatMap(control => control.fields);
-    assert.equal(idleKeys.length, 30, '装备领取与续产统一使用装备自动锻造，其余模块入口保留');
+    assert.equal(idleKeys.length, 28, '海兽领取与培育统一由海兽模块管理，不保留兼容入口');
     assert.equal(rendered.length, new Set(rendered).size, '每个入口只显示一次');
     assert.deepEqual(new Set(rendered), new Set(idleKeys));
     assert.deepEqual(new Set(settingsUiRules().controlFields), new Set(movedFields));
@@ -81,7 +81,7 @@ try {
   await check('模块下方保留执行细项、资源权限、策略与预算', () => {
     const details = ['building.collect', 'building.upgrade', 'factory.produce', 'factory.demandFirst',
       'farm.harvest', 'farm.autoPlant', 'farm.customPlant', 'gather.fishing', 'gather.keyOpen',
-      'museum.enabled', 'museum.upgrade', 'schedule.museumCollect', 'radar.enabled', 'schedule.radarRepair',
+      'museum.enabled', 'museum.upgrade', 'museum.revenue', 'museum.achievements', 'museum.display', 'radar.enabled', 'radar.repairIdle',
       'heroes.level', 'heroes.star', 'heroes.skill', 'heroes.universal', 'resources.allowDiamonds',
       'alliance.autoHelp', 'silicon.fleets.0.enabled', 'silicon.fleets.1.huntEnabled'];
     const idleFields = new Set(idleAutomationControls.flatMap(control => control.fields));
@@ -92,6 +92,27 @@ try {
     for (const key of ['building.maxUpgrades', 'factory.keepStock', 'farm.crops', 'gather.targetLevel',
       'treasure.fleetIds', 'resources.diamondDailyLimit', 'heroes.heroIds']) {
       assert(configKeys.has(key), key + ' 参数应保留'); assert(!idleFields.has(key));
+    }
+  });
+
+  await check('博物馆五项功能同组管理，自动探宝不拆分领取派遣开关', () => {
+    const settings = defaultSettings(); settings.museum.runEnabled = true;
+    const note = () => automationControlView(settings).find(control => control.key === 'museum.runEnabled').configurationNote;
+    assert.match(note(), /尚未选择执行动作/);
+    settings.museum.enabled = true;
+    assert.equal(note(), '');
+    settings.museum.enabled = false; settings.museum.useGuide = true;
+    assert.match(note(), /尚未选择执行动作/, '指南不能独立于自动探宝执行');
+    for (const key of ['upgrade', 'revenue', 'achievements', 'display']) {
+      settings.museum[key] = true;
+      assert.equal(note(), '', key + ' 可独立于自动探宝执行');
+      const control = automationControlView(settings).find(row => row.key === 'museum.' + key);
+      assert(control); assert(control.gates.includes('museum.runEnabled')); assert(!control.gates.includes('museum.enabled'));
+      settings.museum[key] = false;
+    }
+    for (const key of ['museum.claim', 'museum.explore', 'schedule.museumRevenue', 'schedule.museumAchievements']) {
+      assert(!configKeys.has(key)); assert(!automationControlView(settings).some(control => control.key === key));
+      assert.throws(() => setAutomationControl(settings, key, true), /无效/);
     }
   });
 
@@ -140,7 +161,6 @@ try {
     original.farm.crops = [{ id: '小麦', target: 73 }];
     original.gather.fishing = true; original.gather.diving = false; original.gather.targetLevel = 5;
     original.museum.enabled = true; original.museum.upgrade = false; original.museum.factor = 3;
-    original.schedule.museumCollect = false; original.schedule.museumExplore = true;
     for (const key of ['building.enabled', 'factory.enabled', 'farm.enabled', 'gather.enabled', 'museum.runEnabled']) {
       const before = structuredClone(original); write(before, key, true);
       const frozen = structuredClone(before), expected = structuredClone(before); write(expected, key, false);

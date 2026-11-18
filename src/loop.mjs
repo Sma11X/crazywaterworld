@@ -45,6 +45,7 @@ import { createLoopScheduler } from './loop-scheduler.mjs';
 import { createActionGuard, nativePreferenceEnabled, needsCargoDemand, exactAutomationId } from './automation-policy.mjs';
 import { surveyBaseAutomation, planBaseAutomation, observeBaseAutomationPlan, runBaseAutomation, baseDemands } from './base-automation.mjs';
 import { hasBaseWork } from './automation-settings.mjs';
+import { runMuseumDisplay } from './museum-display.mjs';
 import { validateRuntimeSettings, guardRuntimeActions } from './settings-runtime.mjs';
 import { assertResourcesReady } from './resource-store.mjs';
 import { treasureAutomationEnabled, runTreasureLoot } from './treasure-loot.mjs';
@@ -57,9 +58,6 @@ import { antiqueEnabled, runAntiqueUpgrade } from './antique-upgrade.mjs';
 import { readHeroGrowthPlan, heroStepLabel, runHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
 import { serviceGuildOrders } from './guild-orders.mjs';
-import { serviceRadar } from './radar.mjs';
-import { serviceMuseum } from './museum.mjs';
-import { servicePetBreeding } from './pet-breeding.mjs';
 import { serviceGuildAid } from './guild-aid.mjs';
 import { serviceStageAuto } from './progress-automation.mjs';
 import { createChallengeRun, runChallengeRound } from './challenge-automation.mjs';
@@ -287,9 +285,6 @@ export async function runLoop(client, protocol, {
       && (active(key) || Boolean((getSettings() || key === 'battleReportRewards') && aliases[key]?.some(active)));
     const takeoverReason = key => {
       const s = getSettings();
-      if (s?.radar?.runEnabled !== false && s?.radar?.enabled && ['radarAuto','radarRepair'].includes(key)) return '联盟情报';
-      if (s?.loop?.world && s.museum?.runEnabled !== false && s.museum?.enabled && ['museumCollect','museumExplore','museumAchievements'].includes(key)) return '博物馆';
-      if (s?.loop?.world && s.pet?.enabled && ['petCollect','petBreed'].includes(key)) return '海兽';
       if (s?.treasure?.enabled && key === 'treasureLoot') return '巨轮';
       if (key === 'heroGrowth') return '指定英雄养成';
       return null;
@@ -570,8 +565,8 @@ export async function runLoop(client, protocol, {
     }
 
     async function checkRadar(){
-      if(stop.aborted || getSettings()?.radar.runEnabled === false || !getSettings()?.radar.enabled || Date.now()<radarAt)return;
-      try{await runAllianceRadar(client,config,player,{getSettings,ledger:usageLedger,canUseFleet:id=>runtimeActive()&&!dispatchReservationReason(client,getSettings(),'radar',id),enabled:()=>!stop.aborted&&runtimeActive()&&client.connected,report(entry){summary.world.results.push(entry);if(!entry.skipped)summary.world.planned++;stepLog('world')({...entry,title:entry.label,category:'联盟情报'});}});}
+      if(stop.aborted || getSettings()?.radar.runEnabled === false || !(getSettings()?.radar.enabled || getSettings()?.radar.repairIdle) || Date.now()<radarAt)return;
+      try{await runAllianceRadar(client,config,player,{protocol,getSettings,ledger:usageLedger,canUseFleet:id=>runtimeActive()&&!dispatchReservationReason(client,getSettings(),'radar',id),enabled:()=>!stop.aborted&&runtimeActive()&&client.connected,report(entry){summary.world.results.push(entry);if(!entry.skipped)summary.world.planned++;stepLog('world')({...entry,title:entry.label,category:'联盟情报'});}});}
       catch(error){phaseFailure('world','联盟情报',error);}
       finally{rewards?.expect('联盟情报',rewards.now()+(getSettings()?.radar.checkEverySeconds??30));radarAt=Date.now()+(getSettings()?.radar.checkEverySeconds??30)*1000;}
     }
@@ -815,7 +810,7 @@ export async function runLoop(client, protocol, {
             ...(error.code==='AUTOMATION_SKIP'?{skipped:true,reason:error.message}:{}),error:error.message}); }
         }
       }
-      for (const key of ['radarAuto','radarRepair','museumCollect','museumExplore','museumAchievements','petCollect','petBreed','treasureLoot','heroGrowth']) {
+      for (const key of ['treasureLoot','heroGrowth']) {
         const reason = takeoverReason(key);
         if (enabled(key) && reason) serviceReport('dailies', reason)({key, skipped:true, reason:'由游戏配置中的' + reason + '接管'});
       }
@@ -831,22 +826,13 @@ export async function runLoop(client, protocol, {
         catch (error) { phaseFailure('dailies', '联盟互助检查', error); }
       }
       await checkFactoryDue({ checkpoint: true });
-      if (isEnabled && ['radarAuto', 'radarRepair'].some(legacyEnabled)) {
-        try { await serviceRadar(client, protocol, config, { player, enabled: legacyActive, scheduler: rewards, report: serviceReport('dailies', '联盟情报') }); }
-        catch (error) { phaseFailure('dailies', '联盟情报检查', error); }
-      }
+
       if (isEnabled && legacyEnabled('treasureLoot')) {
         try { await serviceTreasureLoot(client, config, { player, protocol, getSettings, enabled: () => legacyActive('treasureLoot'), scheduler: rewards, report: serviceReport('dailies', '世界宝藏') }); }
         catch (error) { phaseFailure('dailies', '世界宝藏检查', error); }
       }
-      if (isEnabled && ['museumCollect', 'museumExplore'].some(legacyEnabled)) {
-        try { await serviceMuseum(client, protocol, config, { player, getSettings, enabled: legacyActive, scheduler: rewards, report: serviceReport('dailies', '博物馆') }); }
-        catch (error) { phaseFailure('dailies', '博物馆探险检查', error); }
-      }
-      if (isEnabled && ['petCollect', 'petBreed'].some(legacyEnabled)) {
-        try { await servicePetBreeding(client, protocol, config, { player, enabled: legacyActive, scheduler: rewards, report: serviceReport('world', '海兽培育') }); }
-        catch (error) { phaseFailure('world', '海兽培育检查', error); }
-      }
+
+
       await checkFactoryDue({ checkpoint: true });
       await runChallengeRound(client, config, { ...challengeOptions, mode: 'progression', report: serviceReport('dailies', '推关与试炼') });
       await checkFactoryDue({ checkpoint: true });
@@ -1083,6 +1069,24 @@ export async function runLoop(client, protocol, {
           summary.world.notes = [...(summary.world.notes ?? []), ...plan.notes];
         } catch (error) { phaseFailure('world', '基地设置执行', error); }
       }
+      if (getSettings()?.loop.world && getSettings()?.museum.runEnabled !== false && getSettings()?.museum.display) {
+        try {
+          const entries = await runMuseumDisplay(client, protocol, config, { player, getSettings, ledger: usageLedger,
+            enabled: () => !stop.aborted && runtimeActive() && client.connected,
+            report(entry) { summary.world.results.push(entry); if (!entry.skipped) summary.world.planned++;
+              stepLog('world')({ ...entry, title: entry.label, taskKey: 'museum.display' }); } });
+          const text = entries.map(entry => entry.reason || entry.error || entry.label).filter(Boolean).join('；');
+          if (text) {
+            const states = entries.map(entry => entry.status === 'pending' ? 'pending' : entry.ok === false && !entry.skipped ? 'error' : entry.skipped ? 'waiting' : 'ok');
+            const state = ['pending', 'error', 'waiting', 'ok'].find(value => states.includes(value)) ?? 'waiting';
+            rewards?.observe('museum.display', text, state);
+            const base = ['enabled', 'upgrade', 'revenue', 'achievements'].some(key => getSettings()?.museum[key]) ? rewards?.status('museum.runEnabled') : null;
+            const combined = ['pending', 'error', 'waiting', 'ok'].find(value => value === state || value === base?.state);
+            rewards?.observe('museum.runEnabled', [base?.text, text].filter(Boolean).join('；'), combined);
+          }
+          rewards?.expect('museum.display', rewards.now() + Math.ceil(getEveryMs() / 1000));
+        } catch (error) { phaseFailure('world', '博物馆自动上架', error); }
+      }
       await checkFactoryDue({ checkpoint: true });
       const heroSettings = getHeroSettings();
       if (heroSettings?.loop.heroes && heroSettings.heroes.enabled && heroSettings.heroes.heroIds.length && !stop.aborted) {
@@ -1126,7 +1130,7 @@ export async function runLoop(client, protocol, {
           const wakeAt = Math.min(nextRound, activityAt, weeklyAt, factorySchedule.nextAt(), siliconNext(), extendedNext(), merchantNext(), appointmentNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
             fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
-            getSettings()?.radar.runEnabled !== false && getSettings()?.radar.enabled ? radarAt : Infinity,
+            getSettings()?.radar.runEnabled !== false && (getSettings()?.radar.enabled || getSettings()?.radar.repairIdle) ? radarAt : Infinity,
             isEnabled && enabled('upgrade') ? upgradeAt : Infinity,
             treasureAutomationEnabled(getSettings()) ? treasureAt : Infinity,
             cityWarEnabled(getSettings()) ? cityWarAt : Infinity,
@@ -1150,7 +1154,7 @@ export async function runLoop(client, protocol, {
           const dispatchNext = () => Math.min(siliconNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
             fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
-            getSettings()?.radar.runEnabled !== false && getSettings()?.radar.enabled ? radarAt : Infinity,
+            getSettings()?.radar.runEnabled !== false && (getSettings()?.radar.enabled || getSettings()?.radar.repairIdle) ? radarAt : Infinity,
             cityWarEnabled(getSettings()) ? cityWarAt : Infinity,
             treasureAutomationEnabled(getSettings()) ? treasureAt : Infinity);
           await scheduler.runDue('dispatch', () => dispatchSettingsPending ? 0 : dispatchNext(), async () => {

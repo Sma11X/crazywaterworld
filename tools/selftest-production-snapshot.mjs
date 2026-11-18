@@ -179,6 +179,7 @@ await test('海兽消费备料遵守世界循环、模块、动作和来源开�
 await test('博物馆消费备料遵守世界循环、运行、探宝、升级和来源开关', () => {
   const museumConfig = { tables: { ...config.tables,
     MuseumExpeditionStageCfg: table([{ stageId: 1, areaLevelReq: [] }]),
+    MuseumExploreTimeFactorCfg: table([{ playerLevel: 1, factor: 1 }]),
     MuseumAreaCfg: table([{ areaId: 1, level: 2, playerLevelReq: 1, costArr: [['小麦', 3]] }]),
   } };
   for (const [name, change, expected] of [

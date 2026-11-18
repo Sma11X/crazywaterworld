@@ -136,7 +136,7 @@ try {
     assert.deepEqual(f.writes, []);
   });
 
-  await test('关闭周活动总开关后，原生任务按保存选择恢复读取与用券招募', async () => {
+  await test('关闭周活动总开关后恢复有效原生任务，已退役海兽入口保持移除', async () => {
     const f = fixture({ master: false });
     await f.run();
     assert(!f.calls.includes('CrossRankInfoRequest'));
@@ -144,7 +144,7 @@ try {
       assert(f.calls.includes(request), '关闭活动后恢复原入口 ' + request);
     }
     assert.deepEqual(f.writes, [['RecruitStartRequest', { way: 2 }]]);
-    assert(f.reports.some(entry => /培育室尚未建成/.test(entry.reason ?? '')), '旧海兽入口已真实读取并正常等待');
+    assert(!f.reports.some(entry => ['petCollect', 'petBreed'].includes(entry.key ?? entry.taskKey)), '残留旧海兽开关不能恢复已退役入口');
     assert(f.reports.some(entry => /没有联盟订单/.test(entry.reason ?? '')), '旧联盟订单入口已真实读取并正常等待');
   });
 } finally {

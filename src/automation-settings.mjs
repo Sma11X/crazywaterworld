@@ -3,10 +3,10 @@ import path from 'node:path';
 import { atomicJson, readJson, withFileLock } from './json-store.mjs';
 import { accountKey, dataDirectory } from './usage-ledger.mjs';
 export { beijingDay, createUsageLedger, usageFile } from './usage-ledger.mjs';
-import { taskSettings, retiredAutomationTasks } from './automation.mjs';
+import { taskSettings, retiredAutomationTasks, migratedAutomationTasks } from './automation.mjs';
 import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, validateSiliconFleets } from './extended-settings.mjs';
 import { treasureRewardOptions } from './treasure-reward-filter.mjs';
-import { activityAutomationDefaults } from './activity-automation.mjs';
+import { activityAutomationDefaults, activityAutomationFields } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
 import { validateLineupSettings } from './saved-lineups.mjs';
 import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
@@ -16,7 +16,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 4;
+export const SETTINGS_SCHEMA_VERSION = 8;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS = {
   cargo: { enabled: false, dailyLoadLimit: 0 },
   events: { enabled: false, otherOption: 1 },
   pet: { release: false, releaseQualities: [], enabled: false, claim: false, breed: false, species: [], quality: 'BLUE', universal: false, feed: false, advance: false },
-  museum: { runEnabled: false, enabled: false, upgrade: false, factor: 1, materialFactor: false, factorMaterials: [], stockThreshold: 0, matchedFactor: 1, maps: [], useGuide: false, dailyGuideLimit: 0 },
+  museum: { runEnabled: false, enabled: false, revenue: false, achievements: false, display: false, maxDispatches: 1, upgrade: false, factorMode: 'materials', fullRecommendedFactor: 3, partialRecommendedFactor: 2, noRecommendedFallback: false, noRecommendedFactor: 1, factor: 1, materialFactor: false, factorMaterials: [], stockThreshold: 0, matchedFactor: 1, maps: [], useGuide: false, dailyGuideLimit: 0 },
   resources: { keepAccelerators: 0, allowDiamonds: false, diamondThreshold: 0, diamondDailyLimit: 2000 },
   // noPrivilege 仅保留旧配置/导出的兼容字段；无权益账号统一走等待领取。
   ads: { noPrivilege: true, waitSeconds: 15 },
@@ -70,7 +70,7 @@ export const DEFAULT_SETTINGS = {
   fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon'] },
   fleetSpeed: { enabled: false, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
   worldBoss: { enabled: false, fleetIds: [], minDurabilityPercent: 80 },
-  radar: { runEnabled:false, enabled:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
+  radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
   pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, checkEverySeconds: 15 },
   treasure: { enabled: false, autoJoin: false, onlyTenThousand: false, follow: false, fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
@@ -128,7 +128,9 @@ const constraints = {
   'pet.releaseQualities': { ...strings(4), values: ['BLUE','PURPLE','ORANGE','RED'] },
   'forge.decomposeQualities': { ...strings(5), values: ['GREEN','BLUE','PURPLE','ORANGE','RED'] },
   'cargo.dailyLoadLimit': int(), 'pet.species': strings(), 'pet.quality': { kind: 'choice', values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
-  'museum.factor': int(3, 1), 'museum.factorMaterials': strings(), 'museum.stockThreshold': int(), 'museum.matchedFactor': int(3, 1),
+  'museum.factorMode': { kind: 'choice', values: ['materials', 'recommended'] },
+  'museum.fullRecommendedFactor': int(3, 1), 'museum.partialRecommendedFactor': int(3, 1), 'museum.noRecommendedFactor': int(3, 1),
+  'museum.maxDispatches': int(100), 'museum.factor': int(3, 1), 'museum.factorMaterials': strings(), 'museum.stockThreshold': int(), 'museum.matchedFactor': int(3, 1),
   'museum.maps': strings(), 'museum.dailyGuideLimit': int(), 'resources.keepAccelerators': int(), 'resources.diamondThreshold': int(),
   'resources.diamondDailyLimit': int(), 'gold.times': int(1000), 'heroes.heroIds': strings(), 'heroes.keepExp': int(),
   'heroes.targetLevel': int(10000), 'heroes.targetStar': int(1000),
@@ -198,6 +200,7 @@ const nativeFields = {
 };
 export function applyNativeTask(settings, key, enabled) {
   const result = copy(settings);
+  if (migratedAutomationTasks.has(key)) { delete result.schedule[key]; return result; }
   if (retiredAutomationTasks.has(key)) enabled = false;
   if (Object.hasOwn(result.schedule, key)) result.schedule[key] = enabled;
   for (const field of nativeFields[key] ?? []) { const [group, name] = field.split('.'); result[group][name] = enabled; }
@@ -214,27 +217,67 @@ export function settingsFromNative(tasks, { rounds = 0, everySeconds = 60, fishi
   result.loop.rounds = rounds;
   result.loop.everySeconds = Math.max(1, Number.isSafeInteger(everySeconds) ? everySeconds : 60);
   result.gather.fishingGoldReserve = fishingGoldReserve;
+  // Native-only accounts still need their original selections before the
+  // retired task registry discards them. Never reopen an existing module gate.
+  for (const key of migratedAutomationTasks) if (typeof tasks?.[key] === 'boolean') result.schedule[key] = tasks[key];
+  delete result.museum.revenue; delete result.museum.achievements;
+  return migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(result))));
+}
+
+// Only native-only accounts have no saved module gates. Infer these gates
+// from their explicit task choices once; current settings and new accounts
+// must keep the ordinary settingsFromNative defaults.
+export function settingsFromLegacyNative(tasks, options) {
+  const result = settingsFromNative(tasks, options);
+  const selected = keys => keys.some(key => tasks?.[key] === true);
+  const gates = {
+    'building.enabled': ['collect', 'finishUpgrade', 'build', 'buildSupply', 'upgrade', 'speedUp', 'adSpeedUpBuilding'],
+    'factory.enabled': ['collect', 'startProduce', 'buildSupply', 'speedUp', 'adSpeedUpProduce'],
+    'gather.enabled': ['autoFish', 'fishEnhance', 'floaters', 'antiqueFloaters', 'autoDive', 'diveEnhance', 'autoSalvage', 'salvageEnhance'],
+    'dailies.enabled': ['dailyRewards', 'chests', 'gift', 'freeGold', 'freeRecruit', 'ticketRecruit', 'arena', 'pirate', 'shop'],
+    'loop.dailies': ['freeGold', 'freeRecruit', 'ticketRecruit', 'arena', 'pirate', 'paidGold', 'shop'],
+    'museum.runEnabled': ['museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements'],
+    'radar.runEnabled': ['radarAuto', 'radarRepair'],
+    'progression.enabled': ['stageAuto'],
+    'heroes.enabled': ['heroGrowth'],
+  };
+  for (const [field, keys] of Object.entries(gates)) if (selected(keys)) {
+    const [group, name] = field.split('.'); result[group][name] = true;
+  }
+  for (const { key, taskKeys } of activityAutomationFields) if (selected(taskKeys)) {
+    const [group, name] = key.split('.'); result[group][name] = true;
+  }
+  if (tasks?.weekSupplyFree === true) {
+    result.activityAutomation.weekLottery = result.activityAutomation.weekChip = result.activityAutomation.weekUnique = true;
+  }
+  if (selected([...gates['building.enabled'], ...gates['factory.enabled'], ...gates['gather.enabled'],
+    'cargo', 'farm', 'finishOrder', 'denyOrder', 'adSpeedUpMuseum', 'petCollect', 'petBreed', 'museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements'])) result.loop.world = true;
+  // The native farm task explicitly included both harvesting and planting.
+  if (tasks?.farm === true) result.farm.harvest = result.farm.autoPlant = true;
   return result;
 }
+
 export function nativeTaskValues(settings, current) {
   const result = { ...current, ...settings.schedule };
   delete result.weekFactory;
   for (const [key, fields] of Object.entries(nativeFields)) result[key] = fields.some(field => { const [group, name] = field.split('.'); return settings[group][name]; });
   result.heroGrowth = false; // The old mainline-only job has been retired.
   for (const key of retiredAutomationTasks) result[key] = false;
+  for (const key of migratedAutomationTasks) delete result[key];
   result.startProduce = settings.factory.produce || settings.factory.cooperateNative;
   result.speedUp = settings.building.speedUp || settings.factory.speedUp || settings.farm.speedUp || settings.factory.speedUpSources.length > 0;
   return result;
 }
 
 export function hasExtraWork(settings) {
+  if (settings?.radar?.runEnabled && (settings.radar.enabled || settings.radar.repairIdle)) return true;
   if (settings?.weeklyActivity?.enabled && ['farm', 'pet', 'antique', 'order', 'forge', 'hero'].some(kind => settings.weeklyActivity[kind + 'Enabled'])) return true;
   if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
-  return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && (settings.museum.enabled || settings.museum.upgrade) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
+  return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && ['enabled', 'upgrade', 'revenue', 'achievements', 'display'].some(key => settings.museum[key]) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
     || (settings.progression?.enabled && (settings.progression.mainline || settings.progression.trials)) || settings.pirateHunt?.enabled);
 }
 export function hasBaseWork(settings) {
-  return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && (settings.museum.enabled || settings.museum.upgrade) || settings.events.enabled ||
+  return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && ['enabled', 'upgrade', 'revenue', 'achievements', 'display'].some(key => settings.museum[key]) || settings.events.enabled ||
     settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) ||
     (settings.loop.dailies && settings.gold.enabled));
 }
@@ -252,7 +295,7 @@ export function validateSettings(input, options = {}) {
 function validateCurrentSettings(input, { partial = false, catalog = null } = {}) {
   // An already-open settings page can still submit the retired fields.
   // Ignore only these known fields; every other setting remains strict.
-  input = migrateVersion3Settings(migrateVersion2Settings(input));
+  input = migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input))))));
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
@@ -333,7 +376,8 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   if (output.farm.autoPlant && output.farm.customPlant) errors['farm.customPlant'] = '自动种植和自定义种植只能开启一种';
   if (output.factory.speedUpSources.some(source => !output.factory.demandPriority.includes(source))) errors['factory.speedUpSources'] = '加速来源必须保留在需求优先级列表中';
   if (output.farm.customPlant && !output.farm.crops.length) errors['farm.crops'] = '启用自定义种植前，请至少添加一种作物';
-  if (output.pet.enabled && output.pet.breed && !output.pet.species.length) errors['pet.species'] = '启用自动培育前，请选择培育种类';
+  // An empty species selection pauses breeding, including migrated accounts
+  // which must choose their spending targets in the unified configuration.
   if (output.treasure.enabled && !output.treasure.autoJoin && !output.treasure.follow) errors['treasure.autoJoin'] = '请至少开启自动参加或跟随指定玩家';
   if (output.treasure.enabled && !output.treasure.fleetIds.length) errors['treasure.fleetIds'] = '请明确选择参与巨轮的舰队，空名单不会派遣';
   if (output.treasure.fallbackEnabled && !output.treasure.fallbackQualities.length) errors['treasure.fallbackQualities'] = '开启兜底前，请至少选择一种货轮';
@@ -458,7 +502,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function validateSettingsStore(store) {
@@ -582,4 +626,97 @@ function migrateVersion3Settings(settings) {
   const input = { ...settings, fleetSpeed: { ...settings.fleetSpeed } };
   delete input.fleetSpeed.dailyDiamondLimit;
   return input;
+}
+
+// Version 5 consolidates the duplicate museum, pet and radar task switches.
+// Modern settings already took precedence, so never merge dormant legacy
+// actions into an active module. Native selections without an exact modern
+// spending target wait for an explicit species/fleet selection.
+function migrateVersion4Settings(settings) {
+  if (!plain(settings)) return settings;
+  const input = { ...settings };
+  const schedule = plain(input.schedule) ? input.schedule : {};
+  const museumLegacy = schedule.museumCollect === true || schedule.museumExplore === true;
+  if (plain(input.museum) || !Object.hasOwn(input, 'museum') && museumLegacy) {
+    const museum = { ...(input.museum ?? DEFAULT_SETTINGS.museum) };
+    if (!Object.hasOwn(input, 'museum')) { delete museum.revenue; delete museum.achievements; }
+    if (museum.enabled === false && museumLegacy) {
+      Object.assign(museum, { enabled: true, claim: schedule.museumCollect === true, explore: schedule.museumExplore === true,
+        maxDispatches: 1, factor: 1, materialFactor: false, maps: [], useGuide: false, dailyGuideLimit: 0 });
+    } else {
+      for (const key of ['claim', 'explore']) if (!Object.hasOwn(museum, key)) museum[key] = museum.enabled === true;
+      if (!Object.hasOwn(museum, 'maxDispatches')) museum.maxDispatches = museum.enabled === true ? 0 : 1;
+    }
+    input.museum = museum;
+  }
+  const petLegacy = schedule.petCollect === true || schedule.petBreed === true;
+  if ((plain(input.pet) && input.pet.enabled === false || !Object.hasOwn(input, 'pet')) && petLegacy) {
+    input.pet = { ...(input.pet ?? DEFAULT_SETTINGS.pet), enabled: true, claim: schedule.petCollect === true,
+      breed: schedule.petBreed === true, species: [], quality: 'ORANGE', universal: false, feed: false, advance: false,
+      release: false, releaseQualities: [] };
+  }
+  const radarLegacy = schedule.radarAuto === true || schedule.radarRepair === true;
+  if (plain(input.radar) || !Object.hasOwn(input, 'radar') && radarLegacy) {
+    const radar = { ...(input.radar ?? DEFAULT_SETTINGS.radar) };
+    if (radar.enabled === false && radarLegacy) {
+      Object.assign(radar, { enabled: schedule.radarAuto === true, repairIdle: schedule.radarRepair === true,
+        fleetIds: [], types: [...DEFAULT_SETTINGS.radar.types], allowMaterials: false, minDurabilityPercent: 80 });
+    } else if (!Object.hasOwn(radar, 'repairIdle')) radar.repairIdle = false;
+    input.radar = radar;
+  }
+  if (plain(input.schedule)) {
+    input.schedule = { ...input.schedule };
+    for (const key of ['museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'radarAuto', 'radarRepair']) delete input.schedule[key];
+  }
+  return input;
+}
+
+// Version 6 makes exploration and reward collection one operation again.
+// A previously empty or paused configuration remains off; either selected
+// action under an enabled module becomes the unified exploration workflow.
+function migrateVersion5Settings(settings) {
+  if (!plain(settings) || !plain(settings.museum)) return settings;
+  const museum = { ...settings.museum };
+  if (museum.enabled === true && (Object.hasOwn(museum, 'claim') || Object.hasOwn(museum, 'explore'))) {
+    museum.enabled = museum.claim === true || museum.explore === true;
+  }
+  delete museum.claim;
+  delete museum.explore;
+  return { ...settings, museum };
+}
+
+// Version 7 gives the museum its own reward and display controls. Existing
+// exploration included popularity achievements; preserve that choice once,
+// then let the independent achievement switch own all future collections.
+function migrateVersion6Settings(settings) {
+  if (!plain(settings)) return settings;
+  const input = { ...settings };
+  if (plain(input.museum) || !Object.hasOwn(input, 'museum') && (input.schedule?.museumRevenue === true || input.schedule?.museumAchievements === true)) {
+    const museum = { ...(input.museum ?? DEFAULT_SETTINGS.museum) };
+    if (!Object.hasOwn(input.museum ?? {}, 'revenue')) museum.revenue = input.schedule?.museumRevenue === true;
+    if (!Object.hasOwn(input.museum ?? {}, 'achievements')) museum.achievements = museum.enabled === true || input.schedule?.museumAchievements === true;
+    if (!Object.hasOwn(museum, 'display')) museum.display = false;
+    if (!Object.hasOwn(museum, 'factorMode')) museum.factorMode = 'materials';
+    if (!Object.hasOwn(museum, 'fullRecommendedFactor')) museum.fullRecommendedFactor = 3;
+    if (!Object.hasOwn(museum, 'partialRecommendedFactor')) museum.partialRecommendedFactor = 2;
+    input.museum = museum;
+  }
+  if (plain(input.schedule)) {
+    input.schedule = { ...input.schedule };
+    delete input.schedule.museumRevenue;
+    delete input.schedule.museumAchievements;
+  }
+  return input;
+}
+
+// Version 8 separates zero recommended heroes from partially recommended
+// teams. Preserve the previous fallback only for saved recommendation mode;
+// new accounts keep it off and use a one-times factor when they opt in.
+function migrateVersion7Settings(settings) {
+  if (!plain(settings) || !plain(settings.museum)) return settings;
+  const museum = { ...settings.museum };
+  const legacyRecommended = museum.factorMode === 'recommended' && !Object.hasOwn(museum, 'noRecommendedFallback');
+  if (!Object.hasOwn(museum, 'noRecommendedFallback')) museum.noRecommendedFallback = legacyRecommended;
+  if (!Object.hasOwn(museum, 'noRecommendedFactor')) museum.noRecommendedFactor = legacyRecommended ? museum.partialRecommendedFactor ?? 2 : 1;
+  return { ...settings, museum };
 }

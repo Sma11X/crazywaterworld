@@ -29,13 +29,13 @@ settings.heroes.enabled = true; settings.loop.heroes = false; settings.heroes.le
 settings.heroes.needsSelection = true;
 settings.antique.maxActions = 7; settings.antique.checkEverySeconds = 90;
 settings.museum.runEnabled = true; settings.museum.enabled = settings.museum.upgrade = false;
-settings.schedule.museumCollect = settings.schedule.museumExplore = false;
 saveAutomationSettings('config-a', settings, { revision: 0 });
 const otherSettings = defaultSettings();
 otherSettings.heroes.heroIds = ['训练目标'];
 saveAutomationSettings('config-b', otherSettings, { revision: 0 });
 const otherBefore = loadAutomationSettings('config-b');
 const output = path.resolve('output/unified-config'); fs.mkdirSync(output, { recursive: true });
+const museumOutput = path.resolve('output/playwright/unified-config'); fs.mkdirSync(museumOutput, { recursive: true });
 const app = createConsole({ port: 0, protocol: {} });
 let browser;
 const errors = [];
@@ -72,9 +72,10 @@ try {
     assert.equal(await page.locator('#config-group-' + control.configTarget + ' ' + selector).count(), 1, control.key + ' 配置归属');
   }
   assert.equal(await page.locator('[data-config-key="loop.heroes"]').count(), 0);
-  for (const key of ['guildAidCollect', 'guildAidHelp']) {
-    assert.equal(await page.locator('[data-config-key="schedule.' + key + '"]').count(), 0, '退役互助开关不再显示');
+  for (const key of ['guildAidCollect', 'guildAidHelp', 'petCollect', 'petBreed', 'museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements', 'radarAuto', 'radarRepair']) {
+    assert.equal(await page.locator('[data-config-key="schedule.' + key + '"]').count(), 0, '退役开关不再显示：' + key);
   }
+  assert.equal(await page.locator('#config-root').getByText(/沿用原规则|旧规则/).count(), 0, '实际配置页面没有兼容规则文案');
   for (const key of ['alliance.mutual', 'alliance.autoHelp', 'alliance.autoAsk']) {
     assert.equal(await page.locator('#config-group-alliance [data-config-key="' + key + '"]').count(), 1, '互助只保留统一入口');
   }
@@ -159,9 +160,89 @@ try {
   assert.equal(stored.heroes.level, false); assert.equal(stored.heroes.star, true);
   await group('museum');
   assert.match(await page.locator('#config-field-museum-runEnabled-note').textContent(), /尚未选择执行动作/);
-  await page.locator('#config-field-museum-enabled').click(); await saved();
+  const museum = page.locator('#config-group-museum');
+  const autoExplore = museum.locator('#config-field-museum-enabled');
+  for (const key of ['upgrade', 'revenue', 'achievements', 'display']) {
+    const action = museum.locator('#config-field-museum-' + key);
+    assert(await action.isVisible(), key + ' 在同组直接展示');
+    assert.equal(await action.getAttribute('aria-checked'), 'false');
+    await action.click(); await saved();
+    assert.equal(loadAutomationSettings('config-a').settings.museum[key], true);
+    assert.equal(loadAutomationSettings('config-a').settings.museum.enabled, false, key + ' 不依赖自动探宝');
+    assert.equal(await page.locator('#config-field-museum-runEnabled-note').isVisible(), false);
+    await action.click(); await saved();
+  }
+  assert.equal(await museum.locator('#config-field-museum-claim, #config-field-museum-explore').count(), 0, '领奖和派遣使用同一个开关');
+  assert.equal(await museum.getByRole('switch', { name: '自动探宝', exact: true }).count(), 1);
+  assert.equal(await museum.locator('#config-field-museum-factor').isVisible(), false, '探宝关闭时参数隐藏');
+  await autoExplore.click(); await saved();
   assert.equal(await page.locator('#config-field-museum-runEnabled-note').isVisible(), false);
-  console.log('通过：英雄组合主控同时保存两层状态，博物馆未配置提示及时更新');
+  assert.equal(loadAutomationSettings('config-a').settings.museum.enabled, true);
+  assert.equal(await museum.locator('#config-field-museum-factor').isVisible(), false, '开启探宝后参数默认折叠');
+  await museum.getByRole('button', { name: '自动探宝，展开下级设置', exact: true }).click();
+  for (const key of ['factorMode', 'factor', 'maxDispatches', 'maps', 'useGuide']) {
+    assert.equal(await museum.locator('#config-field-museum-' + key).isVisible(), true, key + ' 参数直接随自动探宝展开');
+  }
+  await museum.locator('#config-field-museum-factor').selectOption('2');
+  await museum.locator('#config-field-museum-maxDispatches').fill('1'); await saved();
+  assert.equal(loadAutomationSettings('config-a').settings.museum.factor, 2, '常规倍率保存数字');
+  await museum.locator('#config-field-museum-materialFactor').click();
+  await museum.getByRole('button', { name: '根据材料调整倍数，展开下级设置', exact: true }).click();
+  await museum.locator('#config-field-museum-matchedFactor').selectOption('3'); await saved();
+  assert.equal(loadAutomationSettings('config-a').settings.museum.matchedFactor, 3, '命中倍率保存数字');
+  await museum.locator('#config-field-museum-materialFactor').click(); await saved();
+  await museum.locator('#config-field-museum-factorMode').selectOption('recommended'); await saved();
+  assert.equal(loadAutomationSettings('config-a').settings.museum.factorMode, 'recommended');
+  assert.equal(await museum.locator('#config-field-museum-factor').isVisible(), false);
+  assert.equal(await museum.locator('#config-field-museum-materialFactor').isVisible(), false);
+  assert.equal(await museum.locator('#config-field-museum-fullRecommendedFactor').inputValue(), '3');
+  assert.equal(await museum.locator('#config-field-museum-partialRecommendedFactor').inputValue(), '2');
+  const fallback = museum.locator('#config-field-museum-noRecommendedFallback');
+  const fallbackFactor = museum.locator('#config-field-museum-noRecommendedFactor');
+  assert.equal(await fallback.getAttribute('aria-checked'), 'false');
+  assert.equal(await fallbackFactor.isVisible(), false);
+  await fallback.click(); await saved();
+  await museum.getByRole('button', { name: '无推荐英雄时兜底，展开下级设置', exact: true }).click();
+  assert.equal(await fallbackFactor.inputValue(), '1');
+  await museum.screenshot({ path: path.join(museumOutput, 'museum-recommended-desktop.png'), animations: 'disabled' });
+  await museum.locator('#config-field-museum-fullRecommendedFactor').selectOption('2');
+  await museum.locator('#config-field-museum-partialRecommendedFactor').selectOption('1');
+  await fallbackFactor.selectOption('3'); await saved();
+  let factors = loadAutomationSettings('config-a').settings.museum;
+  assert.equal(factors.fullRecommendedFactor, 2); assert.equal(factors.partialRecommendedFactor, 1); assert.equal(factors.noRecommendedFactor, 3);
+  await fallback.click(); await saved();
+  assert.equal(await fallbackFactor.isVisible(), false);
+  assert.equal(loadAutomationSettings('config-a').settings.museum.noRecommendedFactor, 3, '关闭兜底保留倍率');
+  assert.equal(await museum.locator('#config-field-museum-maps').isVisible(), true);
+  await museum.locator('#config-field-museum-factorMode').selectOption('materials'); await saved();
+  assert.equal(await museum.locator('#config-field-museum-factor').inputValue(), '2');
+  assert.equal(await museum.locator('#config-field-museum-fullRecommendedFactor').isVisible(), false);
+  assert.equal(await fallback.isVisible(), false); assert.equal(await fallbackFactor.isVisible(), false);
+  assert.equal(loadAutomationSettings('config-a').settings.museum.fullRecommendedFactor, 2);
+  assert.equal(loadAutomationSettings('config-a').settings.museum.partialRecommendedFactor, 1);
+  await museum.screenshot({ path: path.join(museumOutput, 'museum-actions-desktop.png'), animations: 'disabled' });
+  await autoExplore.click(); await saved();
+  assert.equal(await museum.locator('#config-field-museum-factor').isVisible(), false);
+  assert.equal(loadAutomationSettings('config-a').settings.museum.factor, 2, '暂停自动探宝保留倍数');
+  assert.equal(loadAutomationSettings('config-a').settings.museum.enabled, false);
+  await page.reload(); await openConfig(); await group('museum');
+  assert.equal(await autoExplore.getAttribute('aria-checked'), 'false');
+  assert.equal(await museum.locator('#config-field-museum-factor').isVisible(), false);
+  await autoExplore.click(); await saved();
+  await museum.getByRole('button', { name: '自动探宝，展开下级设置', exact: true }).click();
+  assert.equal(await museum.locator('#config-field-museum-factor').inputValue(), '2');
+  const savedMuseum = loadAutomationSettings('config-a').settings.museum;
+  assert.equal(savedMuseum.enabled, true);
+  assert(!Object.hasOwn(savedMuseum, 'claim') && !Object.hasOwn(savedMuseum, 'explore'), '保存后没有拆分动作字段');
+  await museum.locator('#config-field-museum-factorMode').selectOption('recommended'); await saved();
+  assert.equal(await museum.locator('#config-field-museum-fullRecommendedFactor').inputValue(), '2');
+  assert.equal(await museum.locator('#config-field-museum-partialRecommendedFactor').inputValue(), '1');
+  assert.equal(await fallback.getAttribute('aria-checked'), 'false');
+  await fallback.click(); await saved();
+  await museum.getByRole('button', { name: '无推荐英雄时兜底，展开下级设置', exact: true }).click();
+  assert.equal(await fallbackFactor.inputValue(), '3');
+  console.log('通过：兼容开关和拆分动作开关移除，自动探宝一个开关控制领奖及派遣，参数直接展开且暂停刷新保留');
+  console.log('博物馆截图：' + path.join(museumOutput, 'museum-actions-desktop.png'));
 
   await page.locator('[data-config-tab=antique]').click();
   const antiques = page.locator('#config-group-antique');

@@ -243,10 +243,13 @@ try {
     const migrated = importAutomationSettings(document);
     assert.deepEqual(settings, before);
     assert.equal(migrated.progression.mainline, true);
-    assert.equal(migrated.schedule.radarAuto, true);
-    assert.equal(migrated.schedule.museumExplore, true);
-    assert.equal(migrated.radar.enabled, false);
-    assert.equal(migrated.museum.enabled, false);
+    assert.equal(migrated.schedule.radarAuto, undefined);
+    assert.equal(migrated.schedule.museumExplore, undefined);
+    assert.equal(migrated.radar.enabled, true);
+    assert.deepEqual(migrated.radar.fleetIds, []);
+    assert.equal(migrated.museum.enabled, true);
+    assert(!Object.hasOwn(migrated.museum, 'claim'));
+    assert(!Object.hasOwn(migrated.museum, 'explore'));
     assert.equal(migrated.building.collect, false);
     assert.equal(migrated.factory.gain, true);
     assert.equal(migrated.gather.fishing, false);
@@ -356,7 +359,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 4);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 8);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

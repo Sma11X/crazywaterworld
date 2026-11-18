@@ -82,10 +82,10 @@ import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
 import { createLogAccountLabels } from './log-accounts.mjs';
 import { operationLabels } from './operation-labels.mjs';
-import { automationTasks, retiredAutomationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
+import { automationTasks, retiredAutomationTasks, migratedAutomationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
 import { rewardSchedule } from './reward-schedule.mjs';
 import { rememberTournament } from './side-rewards.mjs';
-import { beijingDay, loadAutomationSettings, saveAutomationSettings, validateSettings, settingsCatalog, settingsFromNative, nativeTaskValues, applyNativeTask, hasExtraWork, createUsageLedger, exportAutomationSettings, importAutomationSettings, SettingsError, settingsUiRules } from './automation-settings.mjs';
+import { beijingDay, loadAutomationSettings, saveAutomationSettings, validateSettings, settingsCatalog, settingsFromNative, settingsFromLegacyNative, nativeTaskValues, applyNativeTask, hasExtraWork, createUsageLedger, exportAutomationSettings, importAutomationSettings, SettingsError, settingsUiRules } from './automation-settings.mjs';
 import { budgetPreview, exactAutomationId, createActionGuard, nativePreferenceEnabled, needsCargoDemand, AutomationSkip } from './automation-policy.mjs';
 import { guardRuntimeActions, validateRuntimeSettings } from './settings-runtime.mjs';
 import { assertResourcesReady, resourceReadiness } from './resource-store.mjs';
@@ -487,9 +487,15 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const accounts = loadStore().accounts;
     rememberLogAccounts(accounts);
     const saved = accounts.find(account => account.id === id)?.automation;
-    const detailed = loadAutomationSettings(id);
+    let detailed = loadAutomationSettings(id);
+    if (!detailed.revision && [...migratedAutomationTasks].some(key => saved?.tasks?.[key] === true)) {
+      // Persist the complete conversion before native flags are normalized;
+      // otherwise a pause or restart could discard the only migration input.
+      detailed = saveAutomationSettings(id, settingsFromLegacyNative(saved.tasks, saved), { revision: 0 });
+      saveAutomation(id, { tasks: nativeTaskValues(detailed.settings, saved.tasks) });
+    }
     // 新账号首次保存前也使用完整的关闭配置，避免旧任务接口绕过模块和细项开关。
-    // 只有已保存原生任务的旧账号继续沿用原有兼容执行路径。
+    // 重复动作在读取旧原生任务时立即迁移，随后只使用统一配置。
     const preferences = detailed.revision ? detailed.settings
       : !saved?.tasks ? settingsFromNative(undefined, saved ?? {}) : null;
     return {
@@ -608,7 +614,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   function settingsView(session) {
     const saved = loadAutomationSettings(session.id);
     if (saved.revision && saved.revision !== session.preferencesRevision) adoptPreferences(session, saved);
-    const settings = saved.revision ? saved.settings : settingsFromNative(session.loop.tasks, {
+    const settings = saved.revision ? saved.settings : session.preferences ?? settingsFromNative(session.loop.tasks, {
       rounds: session.loop.rounds, everySeconds: session.loop.everyMs / 1000, fishingGoldReserve: session.loop.fishingGoldReserve,
     });
     const baseRevision = createHash('sha256').update(JSON.stringify([session.loop.tasks, session.loop.rounds, session.loop.everyMs, session.loop.fishingGoldReserve])).digest('hex');

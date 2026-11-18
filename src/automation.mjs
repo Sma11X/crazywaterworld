@@ -7,7 +7,8 @@ export const maxCompassSpinCount = 999;
 
 // 旧字段仅兼容导入，统一停用，不能在新模块关闭后恢复执行。
 // 装备由 forge.enabled 控制；联盟互助由 alliance.enabled / mutual / autoHelp 控制。
-export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft', 'guildAidCollect', 'guildAidHelp']);
+export const migratedAutomationTasks = new Set(['museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'radarAuto', 'radarRepair', 'museumRevenue', 'museumAchievements']);
+export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft', 'guildAidCollect', 'guildAidHelp', ...migratedAutomationTasks]);
 
 export const automationTasks = [
   ['armsRaceRewards', '自动领奖', '周期活动', false],
@@ -38,21 +39,13 @@ export const automationTasks = [
   ['crossRankDaily', '跨服排行每日奖励', '周期活动', false],
   ['worldBossDamage', '世界 Boss 伤害奖励', '挑战', false],
   ['passStageRewards', '闯关基金奖励', '领奖', false],
-  ['museumRevenue', '博物馆营收', '博物馆', false],
-  ['museumAchievements', '博物馆人气成就', '博物馆', false],
   ['guildAidHelp', '响应联盟互助', '联盟', false],
   ['treasureLoot', '万吨巨轮派遣', '世界', false],
   ['heroGrowth', '主线英雄自动养成', '英雄', false],
   ['stageAuto', '主线自动推图', '挑战', false],
   ['guildOrders', '联盟订单自动执行', '联盟', false],
-  ['radarAuto', '联盟情报自动派遣', '联盟', false],
-  ['radarRepair', '联盟情报舰队维修', '联盟', false],
   ['equipmentCollect', '装备制造自动领取', '英雄', false],
   ['equipmentCraft', '装备制造自动续产', '英雄', false],
-  ['museumCollect', '博物馆探险自动领取', '藏品', false],
-  ['museumExplore', '博物馆自动派遣', '藏品', false],
-  ['petCollect', '海兽成熟自动领取', '藏品', false],
-  ['petBreed', '海兽自动培育', '藏品', false],
   ['worldOnlineRewards', '领取城战在线奖励', '联盟', false],
   ['weekHeroStar', '升星达标奖励', '周期活动', false],
   ['festivalSign', '酆都诡事每日签到（不补签）', '限时活动', false],

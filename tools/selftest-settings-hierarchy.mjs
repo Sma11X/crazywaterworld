@@ -310,6 +310,64 @@ test('设置页不再出现汽油保留量或消费上限，其他资源约束�
   assert(f.widget('resources.diamondDailyLimit'));assert(f.widget('cityWar.dailyDispatchLimit'));
 });
 
+test('海兽、博物馆和情报只展示统一配置，探宝单开关直接展开参数', () => {
+  const f = fixture(); f.renderPage();
+  for (const name of ['petCollect', 'petBreed', 'museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements', 'radarAuto', 'radarRepair']) {
+    assert.equal(f.widget('schedule.' + name), undefined, name + ' 不能被动态配置重新生成');
+  }
+  assert(![...f.editor.fields.values()].some(field => /沿用原规则|旧规则/.test(field.label + (field.help ?? ''))));
+  for (const key of ['museum.claim', 'museum.explore']) assert.equal(f.widget(key), undefined, '探宝不拆分领奖和派遣开关');
+  assert.match(f.widget('museum.enabled').spec.help, /领取.*奖励.*派遣/);
+  const museumFields = f.editor.groups.get('museum').fields;
+  assert.deepEqual(museumFields.filter(field => !field.parent).map(field => field.key),
+    ['museum.runEnabled', 'museum.upgrade', 'museum.revenue', 'museum.achievements', 'museum.display', 'museum.enabled']);
+  for (const [child, parent] of [['museum.factorMode', 'museum.enabled'], ['museum.factor', 'museum.enabled'], ['museum.fullRecommendedFactor', 'museum.enabled'], ['museum.partialRecommendedFactor', 'museum.enabled'], ['museum.maxDispatches', 'museum.enabled'], ['museum.materialFactor', 'museum.enabled'],
+    ['museum.noRecommendedFallback', 'museum.enabled'], ['museum.noRecommendedFactor', 'museum.noRecommendedFallback'],
+    ['museum.maps', 'museum.enabled'], ['museum.useGuide', 'museum.enabled'],
+    ['museum.dailyGuideLimit', 'museum.useGuide']]) assert.equal(f.widget(child).parentKey, parent, child);
+  assert.equal(f.widget('radar.repairIdle').parentKey, null, '空闲维修可独立于情报派遣开启');
+  assert.deepEqual(f.widget('museum.factorMode').spec.options, [['materials', '材料筛选模式'], ['recommended', '按推荐英雄选择']]);
+  for (const key of ['factor', 'matchedFactor', 'fullRecommendedFactor', 'partialRecommendedFactor', 'noRecommendedFactor']) {
+    const spec = f.widget('museum.' + key).spec;
+    assert.equal(spec.kind, 'choice'); assert.equal(spec.numeric, true);
+    assert.deepEqual(spec.options, [[1, '1倍'], [2, '2倍'], [3, '3倍']]);
+  }
+  assert.match(f.widget('pet.species').spec.empty, /不自动培育/);
+  assert.match(f.widget('radar.fleetIds').spec.empty, /选择后才派遣/);
+  assert(!visible(f.widget('museum.factor').node));
+  f.set('museum.enabled', true); f.expand('museum.enabled');
+  assert(visible(f.widget('museum.factor').node));
+  f.set('museum.factor', 3); f.set('museum.enabled', false);
+  assert(!visible(f.widget('museum.factor').node)); assert.equal(f.editor.draft.museum.factor, 3);
+  f.set('museum.enabled', true);
+  assert(visible(f.widget('museum.factor').node)); assert.equal(f.editor.draft.museum.factor, 3);
+  f.set('museum.materialFactor', true); f.expand('museum.materialFactor');
+  f.set('museum.stockThreshold', 25);
+  assert(visible(f.widget('museum.stockThreshold').node));
+  f.set('museum.factorMode', 'recommended');
+  for (const key of ['factor', 'materialFactor', 'factorMaterials', 'stockThreshold', 'matchedFactor']) {
+    assert(!visible(f.widget('museum.' + key).node), key + ' 材料参数在推荐模式隐藏');
+  }
+  for (const key of ['factorMode', 'fullRecommendedFactor', 'partialRecommendedFactor', 'noRecommendedFallback', 'maxDispatches', 'maps', 'useGuide']) assert(visible(f.widget('museum.' + key).node));
+  assert.equal(f.editor.draft.museum.fullRecommendedFactor, 3); assert.equal(f.editor.draft.museum.partialRecommendedFactor, 2);
+  assert.equal(f.editor.draft.museum.noRecommendedFallback, false); assert.equal(f.editor.draft.museum.noRecommendedFactor, 1);
+  assert(!visible(f.widget('museum.noRecommendedFactor').node));
+  f.set('museum.noRecommendedFallback', true); f.expand('museum.noRecommendedFallback');
+  assert(visible(f.widget('museum.noRecommendedFactor').node)); f.set('museum.noRecommendedFactor', 3);
+  f.set('museum.noRecommendedFallback', false);
+  assert(!visible(f.widget('museum.noRecommendedFactor').node)); assert.equal(f.editor.draft.museum.noRecommendedFactor, 3);
+  f.set('museum.fullRecommendedFactor', 2); f.set('museum.partialRecommendedFactor', 1);
+  assert.equal(f.editor.draft.museum.factor, 3); assert.equal(f.editor.draft.museum.stockThreshold, 25);
+  f.set('museum.factorMode', 'materials');
+  assert(visible(f.widget('museum.factor').node)); assert(visible(f.widget('museum.stockThreshold').node));
+  assert(!visible(f.widget('museum.fullRecommendedFactor').node)); assert(!visible(f.widget('museum.partialRecommendedFactor').node));
+  assert(!visible(f.widget('museum.noRecommendedFallback').node)); assert(!visible(f.widget('museum.noRecommendedFactor').node));
+  f.set('museum.factorMode', 'recommended');
+  assert.equal(f.editor.draft.museum.fullRecommendedFactor, 2); assert.equal(f.editor.draft.museum.partialRecommendedFactor, 1);
+  f.set('museum.noRecommendedFallback', true);
+  assert(visible(f.widget('museum.noRecommendedFactor').node)); assert.equal(f.editor.draft.museum.noRecommendedFactor, 3);
+});
+
 test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省钻仍各自嵌套',()=>{
   const f=fixture({navigation:true});f.editor.draft.cityWar.enabled=true;
   f.editor.draft.fleetSpeed.enabled=true;Object.assign(f.editor.draft.fleetSpeed.fleets[0],{repair:true,march:true});

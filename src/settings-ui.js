@@ -18,6 +18,7 @@ const configCollapsed = new Set();
 const configDisclosureSeen = new Set();
 const configCollapsedSections = new Set();
 const configField = (key, label, kind = 'switch', options = {}) => ({ key, label, kind, ...options });
+const museumFactorOptions = [[1, '1倍'], [2, '2倍'], [3, '3倍']];
 function configPlacePanel(root, panel) {
   if (!root.open || !panel || !root.isConnected) return;
   const summary = root.querySelector('summary');
@@ -272,10 +273,8 @@ const configGroups = [
     configField('events.enabled', '自动处理', 'switch', { help: '海上资源补给选择“建造居民房”；居民离开选择“让他离开”；其他服务器事件按上方默认选项处理，不等待手选。' }),
   ] },
   { id: 'pet', title: '海兽培育室', category: 'base', fields: [
-    configField('schedule.petCollect', '沿用原规则领取成熟海兽', 'switch', { help: '保留原挂机设置。开启海兽培育总开关后，改用本组领取、品质与用料参数。' }),
-    configField('schedule.petBreed', '沿用原规则培育海兽', 'switch', { help: '每轮最多一只，最高橙色并保留一万金币。开启海兽培育总开关后，改用本组品种、品质与材料参数。' }),
     configField('pet.enabled', '总开关'), configField('pet.claim', '自动领取'), configField('pet.breed', '自动培育'),
-    configField('pet.species', '培育种类', 'multi', { parent: 'pet.breed', catalog: 'petSpecies', empty: '请选择要培育的海兽', when: d => d.pet.breed }),
+    configField('pet.species', '培育种类', 'multi', { parent: 'pet.breed', catalog: 'petSpecies', empty: '未选择品种，不自动培育', when: d => d.pet.breed }),
     configField('pet.release','自动放生','switch',{help:'每轮核对全部库存及上阵、值守、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
     configField('pet.releaseQualities','处理品质','multi',{ parent: 'pet.release',catalog:'petQualities',empty:'未选择，不处理',when:d=>d.pet.release}),
     configField('pet.quality', '培育品质上限', 'choice', { parent: 'pet.breed', options: [['BLUE', '蓝色'], ['PURPLE', '紫色'], ['ORANGE', '橙色'], ['RED', '红色']], when: d => d.pet.breed, help: '在所选品质及以下，从材料足够的低品质开始尝试。' }),
@@ -297,15 +296,23 @@ const configGroups = [
     configField('forge.dailyGoldLimit', '每日锻造金币预算', 'number', { unit: '金币', help: '至少1金币，跨轮和重启保留；不自动购买材料、不消耗钻石或加速器。' }),
   ] },
   { id: 'museum', title: '博物馆探宝', category: 'base', fields: [
-    configField('museum.runEnabled', '博物馆探宝总开关', 'switch', { help: '统一暂停本组探宝、领奖、旧规则派遣和升级，保留细项选择。未选择任何执行动作时不会操作。' }),
-    configField('schedule.museumCollect', '沿用原规则领取探险奖励', 'switch', { help: '保留原挂机设置。开启本组自动探宝后，改用本组规则统一领取和派遣。' }),
-    configField('schedule.museumExplore', '沿用原规则派遣探险', 'switch', { help: '每轮一队并预留订单材料。开启本组自动探宝后，改用本组地图、倍数与指南规则。' }),
-    configField('museum.enabled', '自动探宝'), configField('museum.upgrade', '自动升级技能与展区'),
-    configField('museum.factor', '常规探宝倍数', 'number', { parent: 'museum.enabled', unit: '倍', help: '可选 1–3 倍；未解锁时按当前最高可用倍数执行，保留已选设置。' }),
-    configField('museum.materialFactor', '根据材料调整倍数', 'switch', { parent: 'museum.enabled' }),
+    configField('museum.runEnabled', '博物馆探宝总开关', 'switch', { help: '统一暂停博物馆升级、领奖、藏品上架和探宝，保留细项选择。未选择任何执行动作时不会操作。' }),
+    configField('museum.upgrade', '自动升级技能与展区'),
+    configField('museum.revenue', '自动领取人气币', 'switch', { help: '领取博物馆已积累的营收。' }),
+    configField('museum.achievements', '自动领取人气奖励', 'switch', { help: '领取已达成人气档位的成就奖励。' }),
+    configField('museum.display', '自动上架藏品', 'switch', { help: '按展柜适配条件自动上架可展示的藏品。' }),
+    configField('museum.enabled', '自动探宝', 'switch', { help: '自动领取已完成探险的奖励，并按所选地图、倍数规则继续派遣探险。' }),
+    configField('museum.factorMode', '探宝倍数模式', 'choice', { parent: 'museum.enabled', options: [['materials', '材料筛选模式'], ['recommended', '按推荐英雄选择']], help: '按推荐英雄选择时，优先选择符合地图推荐条件的英雄，分别设置满队、不足满队和无推荐英雄时的处理方式。探险时长按游戏地图配置计算。' }),
+    configField('museum.factor', '常规探宝倍数', 'choice', { parent: 'museum.enabled', when: d => d.museum.factorMode === 'materials', numeric: true, options: museumFactorOptions, help: '未解锁时按当前最高可用倍数执行，保留已选设置。' }),
+    configField('museum.fullRecommendedFactor', '推荐英雄满队倍数', 'choice', { parent: 'museum.enabled', when: d => d.museum.factorMode === 'recommended', numeric: true, options: museumFactorOptions, help: '推荐英雄足以组成完整队伍时使用；未解锁时按当前最高可用倍数执行。' }),
+    configField('museum.partialRecommendedFactor', '推荐英雄不足满队倍数', 'choice', { parent: 'museum.enabled', when: d => d.museum.factorMode === 'recommended', numeric: true, options: museumFactorOptions, help: '有推荐英雄但不足一队时使用，其余位置由可用英雄补齐；未解锁时按当前最高可用倍数执行。' }),
+    configField('museum.noRecommendedFallback', '无推荐英雄时兜底', 'switch', { parent: 'museum.enabled', when: d => d.museum.factorMode === 'recommended', help: '没有可用推荐英雄时，按兜底倍率派遣其他可用英雄；关闭则跳过该地图的新派遣。' }),
+    configField('museum.noRecommendedFactor', '无推荐英雄兜底倍率', 'choice', { parent: 'museum.noRecommendedFallback', when: d => d.museum.factorMode === 'recommended' && d.museum.noRecommendedFallback, numeric: true, options: museumFactorOptions, help: '未解锁时按当前最高可用倍数执行，保留已选设置。' }),
+    configField('museum.maxDispatches', '每轮最多派遣队伍', 'number', { parent: 'museum.enabled', unit: '队', help: '0 表示不限，仍需有空闲队伍、英雄和足够材料。' }),
+    configField('museum.materialFactor', '根据材料调整倍数', 'switch', { parent: 'museum.enabled', when: d => d.museum.factorMode === 'materials' }),
     configField('museum.factorMaterials', '命中材料名单', 'multi', { parent: 'museum.materialFactor', catalog: 'materials', empty: '未选择，仅检查库存阈值', when: d => d.museum.materialFactor }),
     configField('museum.stockThreshold', '库存阈值', 'number', { parent: 'museum.materialFactor', when: d => d.museum.materialFactor, help: '任一所需材料库存不高于此值时使用命中倍数；0 关闭库存条件。' }),
-    configField('museum.matchedFactor', '命中时倍数', 'number', { parent: 'museum.materialFactor', unit: '倍', when: d => d.museum.materialFactor }),
+    configField('museum.matchedFactor', '命中时倍数', 'choice', { parent: 'museum.materialFactor', numeric: true, options: museumFactorOptions, when: d => d.museum.materialFactor }),
     configField('museum.maps', '探宝地图', 'multi', { parent: 'museum.enabled', catalog: 'maps', empty: '未选择，不限制地图', help: '控制新派遣与指南使用；已经完成的探宝仍可领取。' }),
     configField('museum.useGuide', '使用探险指南', 'switch', { parent: 'museum.enabled' }),
     configField('museum.dailyGuideLimit', '每日指南上限', 'number', { parent: 'museum.useGuide', unit: '本', help: '每本缩短 30 分钟，填 0 表示不使用；保存配置或重启不会清零当日记录。' }),
@@ -350,11 +357,10 @@ const configGroups = [
     configField('treasure.checkEverySeconds', '检查间隔', 'number', { unit: '秒', help: '挂机运行时每 5–300 秒检查一次。保存配置不会开始挂机。' }),
   ] },
   { id:'radar',title:'联盟情报',category:'world',fields:[
-    configField('radar.runEnabled','联盟情报总开关','switch',{help:'统一暂停本组自动处理、旧规则派遣和维修，保留细项选择。未选择任何执行动作时不会操作。'}),
-    configField('schedule.radarAuto', '沿用原规则领奖与派遣', 'switch', { help: '保留原挂机设置，按战力余量20%和实际汽油库存执行。开启按配置自动处理后，改用本组舰队、类型与耐久设置。' }),
-    configField('schedule.radarRepair', '沿用原规则维修空闲舰队', 'switch', { help: '仅普通维修耐久低于80%的空闲舰队，并检查实际汽油库存。' }),
-    configField('radar.enabled','按配置自动处理情报'),
-    configField('radar.fleetIds','情报参与舰队','multi',{ parent: 'radar.enabled',catalog:'expeditionFleets',empty:'未选择，仅领取完成奖励',help:'使用空闲且已编队舰队；可与巨轮、城战、首杀共用舰队，只使用实际空闲且无待确认任务的舰队。'}),
+    configField('radar.runEnabled','联盟情报总开关','switch',{help:'统一暂停情报处理和舰队维修，保留细项选择。未选择任何执行动作时不会操作。'}),
+    configField('radar.enabled','自动处理情报'),
+    configField('radar.repairIdle','自动维修空闲舰队','switch',{help:'普通维修耐久低于80%的空闲舰队，按实际汽油库存检查。'}),
+    configField('radar.fleetIds','情报参与舰队','multi',{ parent: 'radar.enabled',catalog:'expeditionFleets',empty:'未选择舰队，仅领取奖励；选择后才派遣',help:'使用空闲且已编队舰队；可与巨轮、城战、首杀共用舰队，只使用实际空闲且无待确认任务的舰队。'}),
     configField('radar.types','情报类型','multi',{ parent: 'radar.enabled',catalog:'radarTypes',empty:'未选择，暂停新派遣'}),
     configField('radar.allowMaterials','允许交付难民情报材料','switch',{ parent: 'radar.enabled',help:'仅使用现有足量材料，不购买，不交付钻石。'}),
     configField('radar.minDurabilityPercent','最低舰队耐久','number',{ parent: 'radar.enabled',unit:'%'}),
