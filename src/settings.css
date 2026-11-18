@@ -24,6 +24,8 @@
 .config-label { line-height:1.45; cursor:pointer; min-width:0 }
 .config-help { display:block; color:var(--muted-foreground); font-weight:400; line-height:1.6; margin-top:4px; max-width:65ch }
 .config-control { min-width:0 }
+.config-row[data-kind=time]>.config-control { display:grid; justify-items:end }
+.config-row[data-kind=time] input { width:10rem; max-width:100% }
 .config-row[data-kind=switch] .config-control { justify-self:end }
 .config-control>button[role=switch] { margin-left:0 }
 .config-module-control { padding-block:12px }
@@ -38,6 +40,11 @@
 .config-row.has-children>.config-control { display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap }
 .config-row.has-children>.config-control>.config-select { flex:1; width:auto; min-width:0 }
 .config-row.has-children>.config-control>.config-field-error { flex-basis:100% }
+/* 多行优先级列表独占控件列，展开入口固定在列表上方。 */
+.config-row.has-children[data-kind=priority] { align-items:start }
+.config-row.has-children[data-kind=priority]>.config-label-line { padding-top:6px }
+.config-row.has-children[data-kind=priority]>.config-control { display:grid; grid-template-columns:minmax(0,1fr); gap:4px }
+.config-row.has-children[data-kind=priority]>.config-control>.config-disclosure { justify-self:end }
 .config-disclosure { flex:none; display:inline-flex; align-items:center; gap:4px; min-height:32px; padding:4px 0; font-size:12px; white-space:nowrap }
 .config-disclosure::after { content:''; width:6px; height:6px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg) translateY(-2px) }
 .config-disclosure[aria-expanded=true]::after { transform:rotate(225deg) translate(-2px,-1px) }
