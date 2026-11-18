@@ -1032,6 +1032,7 @@ function configRenderField(spec) {
   if (spec.moduleControl) row.classList.add('config-module-control');
   const id = 'config-field-' + spec.key.replaceAll('.', '-');
   const name = el('div', 'config-label-line'); const label = el('label', 'config-label', spec.label); label.htmlFor = id; name.append(label);
+  name.hidden = spec.kind === 'cityWarRoles';
   label.id = id + '-label';
   if (spec.help) { const help = el('span', '', spec.help); help.id = id + '-help'; help.hidden = true; name.append(makeHelpTip(spec.label, spec.help), help); }
   const box = el('div', 'config-control'); const error = el('div', 'config-field-error'); error.id = id + '-error'; error.hidden = true;
@@ -1459,8 +1460,7 @@ function configCityWarRoles(spec, id) {
     const panel = el('div', 'config-children config-war-strategy'); panel.id = select.id + '-strategy';
     panel.setAttribute('role', 'group'); panel.setAttribute('aria-labelledby', label.id);
     disclosure.setAttribute('aria-controls', panel.id);
-    const note = el('p', 'config-help config-war-inherited');
-    const entry = { branch, select, disclosure, note, expanded: false, keys: [], speedStates: [] }; entries.set(buildingId, entry);
+    const entry = { branch, select, disclosure, expanded: false, keys: [], speedStates: [] }; entries.set(buildingId, entry);
     const expand = value => {
       if (!value && panel.contains(document.activeElement)) disclosure.focus({ preventScroll: true });
       entry.expanded = value; panel.hidden = !value;
@@ -1487,7 +1487,7 @@ function configCityWarRoles(spec, id) {
           return configGet(mode.key) === 'custom' && defence === isDefence && (!cityList || configGet(prefix + (defence ? 'defenceTargetMode' : 'targetMode')) === 'selected');
         } };
     });
-    configRenderFields([mode, ...fields], panel); panel.append(note);
+    configRenderFields([mode, ...fields], panel);
     const speedFields = (spec.speedFields ?? []).filter(field =>
       availableIds.has(buildingId) && configGet('fleetSpeed.fleets.' + field.fleetIndex + '.id') === buildingId
     ).map(field => ({ ...field, section: undefined, label: field.label.replace(/^舰队\d+ · /, '') }));
@@ -1527,15 +1527,6 @@ function configCityWarRoles(spec, id) {
         }
         entry.mode = mode;
       }
-      const defending = defence.includes(buildingId);
-      const globalMode = configGet('cityWar.' + (defending ? 'defenceTargetMode' : 'targetMode'));
-      const globalPriority = configGet('cityWar.' + (defending ? 'defenceTargetPriority' : 'targetPriority'));
-      const refs = configGet('cityWar.' + (defending ? 'defenceCityRefs' : 'cityRefs'));
-      const names = refs.map(ref => configEditor.data.catalog.cityTargets?.find(city => city.value === ref)?.label || ref);
-      entry.note.hidden = mode !== 'global';
-      entry.note.textContent = '跟随全局' + (defending ? '防守' : '进攻') + '策略：' + (globalMode === 'selected'
-        ? names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 座城市' : '') : '尚未指定城市'
-        : '跟随联盟有效目标') + '；' + (globalPriority === 'original' ? '沿用集结／指定城市顺序' : '按队数与距离选择') + '。';
       for (const state of entry.speedStates) {
         const issues = [];
         if (!configGet('cityWar.enabled')) issues.push(['cityWar.enabled', '城战接续总开关已关闭']);
@@ -1544,9 +1535,9 @@ function configCityWarRoles(spec, id) {
         if (!(configGet('resources.diamondDailyLimit') > 0)) issues.push(['resources.diamondDailyLimit', '全局每日钻石预算为 0']);
         if (!(configGet(state.key + 'MaxDiamonds') > 0)) issues.push([state.key + 'MaxDiamonds', '本项' + (state.mode === 'repair' ? '每次维修' : '整段派遣航程') + '钻石上限为 0']);
         if (!(configGet(state.key + 'DailyDiamonds') > 0)) issues.push([state.key + 'DailyDiamonds', '本项每日钻石上限为 0']);
-        state.notice.hidden = !configGet(state.key);
+        state.notice.hidden = !configGet(state.key) || !issues.length;
         state.status.textContent = issues.length ? '尚未生效：' + issues.map(([, reason]) => reason).join('；') + '。'
-          : '已允许使用钻石；挂机时仍按剩余时间、实际费用和可用预算检查。';
+          : '';
         state.targetKey = issues[0]?.[0] ?? null; state.fix.hidden = !state.targetKey;
       }
       const hasError = entry.keys.some(key => configEditor.errors[key] || configEditor.widgets.get(key)?.error.hidden === false);

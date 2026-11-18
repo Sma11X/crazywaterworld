@@ -89,6 +89,7 @@ try{
     assert.equal(await participantDisclosure.textContent(),'收起设置');
     assert.equal(await participantDisclosure.getAttribute('aria-expanded'),'true');
     assert.equal(await participants.locator('#config-field-cityWar-defenceFleetIds').isVisible(),true);
+    assert.equal(await page.locator('#config-field-cityWar-defenceFleetIds-label').isVisible(),false);
     assert.equal(await city.locator('[id^="config-section-fleetSpeed-fleets-"]').count(),0);
     for(const number of [1,2])for(const mode of ['repair','march']){
       const selector='#config-field-fleetSpeed-fleets-'+(number-1)+'-'+mode;
@@ -142,7 +143,7 @@ try{
       await speedStatus(mode).getByRole('button').click();
       assert.equal(await limit.evaluate(node=>node===document.activeElement),true);
       await limit.fill(String(max));await limit.blur();await saved();
-      assert.match(await speedStatus(mode).textContent(),/^已允许使用钻石/);
+      assert.equal(await speedStatus(mode).isVisible(),false,'允许加速时不显示常态说明');
       assert.equal(await speedStatus(mode).getByRole('button').isVisible(),false);
       assert.doesNotMatch(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds-help').textContent(),/城战加速日上限/);
     }
@@ -234,7 +235,7 @@ try{
     assert.equal(configured.fleetStrategies['2远征船'].targetMode,ownSecond.targetMode);
     assert.equal(configured.fleetStrategies['2远征船'].targetPriority,ownSecond.targetPriority);
     assert.deepEqual(configured.fleetStrategies['2远征船'].cityRefs,ownSecond.cityRefs);
-    assert.match(await fleet(2).textContent(),/城市乙/,'跟随全局的提示即时反映新目标');
+    assert.equal(await fleet(2).locator('.config-war-inherited').count(),0,'跟随全局不再显示重复策略说明');
     assert.equal(await strategy(1,'targetMode').inputValue(),'selected');
     assert.match(await strategy(1,'cityRefs').locator('summary').textContent(),/城市甲/);
     await page.reload();await page.locator('#tabs [data-tab=settings]').click();
@@ -242,7 +243,7 @@ try{
     await open(1);await open(2);
     assert.equal(await strategy(1,'strategyMode').inputValue(),'custom');
     assert.equal(await strategy(2,'strategyMode').inputValue(),'global');
-    assert.equal(await strategy(2,'targetMode').isVisible(),false);assert.match(await fleet(2).textContent(),/城市乙/);
+    assert.equal(await strategy(2,'targetMode').isVisible(),false);
     await strategy(2,'strategyMode').selectOption('custom');await saved();
     assert.equal(await strategy(2,'targetMode').inputValue(),ownSecond.targetMode);
     assert.equal(await strategy(2,'targetPriority').inputValue(),ownSecond.targetPriority);
