@@ -831,7 +831,10 @@ try {
         fallbackQualities: ['BLUE'], fallbackMediumRewardPriority: rewardIds, fallbackSmallRewardPriority: [...rewardIds].reverse() });
       const save = await api('qa-a', '/api/settings', { settings: a.settings, revision: a.revision, baseRevision: a.baseRevision }); assert.equal(save.status, 200); assert.equal(save.body.revision, 1);
       assert.deepEqual((await api('qa-a', '/api/settings')).body.settings.treasure, a.settings.treasure);
-      assert.deepEqual(fs.readFileSync(path.join(directory, 'accounts.json')), before);
+      const expectedAccounts = JSON.parse(before);
+      expectedAccounts.accounts.find(account => account.id === 'qa-a').automation.settingsConfigured = true;
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'accounts.json'))), expectedAccounts,
+        '保存仅登记本账号已配置，不修改凭据、其他账号或挂机开关');
       assert.equal(app.sessions.get('qa-a').client, null); assert.equal(app.sessions.get('qa-a').loop.running, false);
       assert.equal((await api('qa-b', '/api/settings')).body.settings.building.keepBlueprints, 0);
       assert.equal((await api('qa-b', '/api/settings')).body.settings.treasure.fallbackEnabled, false);

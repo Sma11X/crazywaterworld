@@ -591,7 +591,10 @@ try {
       const response = await api('巨轮甲', '/api/settings/preview', { settings: s, category: 'world' });
       assert.equal(response.status, 200); assert.equal(response.body.scopeLabel, '万吨巨轮'); assert.equal(response.body.actions[0].kind, 'treasureDispatch');
       assert.deepEqual(f.client.writes, []); assert.equal(session.loop.running, false);
-      assert.deepEqual(fs.readFileSync(path.join(directory, 'accounts.json')), original);
+      const expectedAccounts = JSON.parse(original);
+      expectedAccounts.accounts.find(account => account.id === '巨轮甲').automation.settingsConfigured = true;
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'accounts.json'))), expectedAccounts,
+        '保存仅登记本账号已配置，不修改凭据、其他账号或挂机开关');
       assert.deepEqual(Object.keys(exportAutomationSettings(s)), ['format', 'version', 'settings']);
       Object.assign(s.treasure, { fallbackEnabled: true, fallbackAfter: '00:00', fallbackTargetRewards: 1, fleetIds: ['1远征船', '2远征船'] });
       f.state.targets = [{ ...f.state.targets[1], color: 4 }];

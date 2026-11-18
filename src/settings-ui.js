@@ -1,5 +1,5 @@
 // 游戏配置编辑器：按账号合并连续输入，校验后自动保存，预览仍使用独立只读接口。
-const configEditor = { owner: null, data: null, draft: null, baseline: null, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
+const configEditor = { owner: null, data: null, draft: null, baseline: null, recoveryBlocked: false, category: 'base', busy: false, loading: false, serial: 0, saveTimer: null, savePromise: null, saving: false, saveError: null, saveRetries: 0, fields: new Map(), widgets: new Map(), groups: new Map(), selectedGroups: {}, errors: {}, playerData: null, playerRequest: null, playerError: '', playerWidgets: [] };
 // 排行是独立的只读视图，不参与配置草稿、版本和自动保存。
 const configWeeklyRanking = { owner: null, serial: 0, data: null, error: '', pending: null, at: 0 };
 bindConsoleObject('configuration', configEditor, ['owner', 'data', 'draft', 'baseline', 'category', 'busy', 'loading', 'saving', 'saveError', 'saveRetries', 'selectedGroups', 'errors', 'playerData', 'playerError', 'previewSummary']);
@@ -421,8 +421,7 @@ const configGroups = [
           configField(key+mode+'SmartWaitSeconds',label+title+'省钻最多等待','number',{unit:'秒',parent:key+mode+'SmartSave',when:d=>when(d)&&d.fleetSpeed.fleets[i][mode+'SmartSave'],help:'默认5秒。每次维修或整段航程只允许一次短等，截止时间固定，避免反复等待耽误效率；重连不重新计时。'}),
           configField(key+mode+'SkipSeconds',label+title+'剩余多少秒不加速','number',{unit:'秒',parent:key+mode,when,help:'剩余时间小于等于此值直接等待，不花钻。默认60秒；0表示以完成为目标，智能省钻开启时仍可短等。'}),
           ...(mode==='march'?[configField(key+'marchMinSavedSeconds',label+'每次至少节省多少秒','number',{unit:'秒',parent:key+'marchSmartSave',when:d=>when(d)&&d.fleetSpeed.fleets[i].marchSmartSave,help:'仅派遣智能省钻开启时生效。行军每次速度翻倍；预计节省不足此值就不花钻，防止为几秒钟反复付费。'})]:[]),
-          configField(key+mode+'MaxDiamonds',label+(mode==='repair'?'每次维修':'整段派遣航程')+'钻石上限','number',{unit:'钻石',parent:key+mode,when,help:mode==='repair'?'0 禁止。钻石维修一次完成，按分钟进位及全角色共享的当天阶梯费率计价，不能指定部分加速。其他队伍或硅矿维修加速也会推高档位；累计量缺失或前次结果未知时按最高档预算。':'0 禁止。同一航程多次加速累计计入此上限，每次回读确认后才决定下一次，达到剩余时间目标立即停止。'}),
-          configField(key+mode+'DailyDiamonds',label+title+'每日钻石上限','number',{unit:'钻石',parent:key+mode,when,help:'0 禁止。该队此种加速独立计数，与本项单次上限、全局钻石日预算同时生效；北京时间换日。'})];
+          configField(key+mode+'DailyDiamonds',label+title+'每日钻石上限','number',{unit:'钻石',parent:key+mode,when,help:'0 禁止。该队此种加速独立计数，与全局钻石日预算同时生效；北京时间换日。'+(mode==='repair'?'钻石维修一次完成，按分钟进位及全角色共享的当天阶梯费率计价，不能指定部分加速；累计量缺失或前次结果未知时按最高档预算。':'同一航程多次加速均计入本项每日用量，每次回读确认后才决定下一次，达到剩余时间目标立即停止。')})];
       }).map(field=>({...field,fleetIndex:i,fleetGroup:'fleetSpeed',section:label+'加速'}));
     })
   ] },
@@ -534,6 +533,22 @@ function configSet(key, value) {
   configEditor.saveRetries = 0;
   configScheduleSave();
 }
+function configPageStale() { return typeof window !== 'undefined' && window.cwConsoleVersion?.isStale() === true; }
+function configHasDraft() { return !!configEditor.draft; }
+function configVersionStale() {
+  configCancelSaveTimer();
+  configEditor.saveError = { code: 'CLIENT_VERSION_MISMATCH', fields: { revision: '页面已过期，请先保留草稿再刷新。' } };
+  configMessage(''); configBusy(configEditor.busy); configUpdateState();
+}
+function configDownloadDraft() {
+  if (!configEditor.draft) return;
+  const document = { ...consoleDraftFormat, settings: structuredClone(configEditor.draft) };
+  const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob), link = window.document.createElement('a');
+  link.href = url; link.download = '疯狂水世界-未保存草稿.json'; window.document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  configMessage('已下载当前游戏配置草稿，未发送到服务器；其中未通过校验的值需在新页面修正。');
+}
 function configIsDirty() { return !!configEditor.draft && JSON.stringify(configEditor.draft) !== JSON.stringify(configEditor.baseline); }
 function configCancelSaveTimer() {
   if (configEditor.saveTimer !== null) clearTimeout(configEditor.saveTimer);
@@ -541,7 +556,7 @@ function configCancelSaveTimer() {
 }
 function configScheduleSave(delay = 600) {
   configCancelSaveTimer();
-  if (configIsDirty() && configEditor.owner === current && !configEditor.saveError?.fields) {
+  if (configIsDirty() && configEditor.owner === current && !configPageStale() && !configEditor.recoveryBlocked && !configEditor.saveError?.fields) {
     const account = current;
     configEditor.saveTimer = setTimeout(() => {
       configEditor.saveTimer = null;
@@ -553,6 +568,7 @@ function configScheduleSave(delay = 600) {
 async function configFlush() {
   const account = current;
   configCancelSaveTimer();
+  if (configPageStale() || configEditor.recoveryBlocked) { configMessage(''); return false; }
   while (account === current) {
     const intervalSave = loopIntervalSaves.get(account);
     if (intervalSave?.writing) {
@@ -574,24 +590,53 @@ function configIntervalSaved(account, everySeconds, revision, nextRevision) {
   mutateConsoleValue('configuration', 'draft', value => { value.loop.everySeconds = everySeconds; });
 }
 function configVisible() { return !$('tab-settings').classList.contains('hidden'); }
+function configRecoveryMessage(recovery, compact = false) {
+  if (compact) return recovery?.reason === 'unavailable' ? '配置暂不可用，自动挂机已停止，原文件未覆盖；请到挂机配置查看原因并修复。'
+    : '配置' + (recovery?.reason === 'missing' ? '丢失' : recovery?.reason === 'corrupt' ? '损坏' : '异常') + '，自动挂机已停止；请在挂机配置重新配置保存后手动启动。';
+  if (recovery?.reason === 'unavailable') return recovery.message || '配置暂不可用，自动挂机已停止，原文件未覆盖。请修复配置或使用兼容版本后重新载入。';
+  let text = '配置' + (recovery?.reason === 'missing' ? '丢失' : recovery?.reason === 'corrupt' ? '损坏' : '丢失或损坏') + '，已恢复关闭的默认配置，自动挂机已停止。请重新配置并保存后手动启动。';
+  if (recovery?.backupFile) text += ' 原文件备份：' + recovery.backupFile + '。';
+  return text;
+}
 function configMessage(text, kind = 'info') {
-  const node = $('config-message'); node.textContent = text || ''; node.hidden = !text; node.dataset.kind = kind;
+  const node = $('config-message'), recovery = configEditor.recoveryNotice ?? configEditor.data?.recovery;
+  const recovering = recovery?.required || configEditor.recoveryBlocked;
+  let warning = '';
+  if (recovering) {
+    warning = configRecoveryMessage(recovery);
+    if (configEditor.recoveryBlocked) warning += recovery?.reason === 'unavailable' ? ' 当前页面配置未生效，自动保存已暂停；请修复后重新载入配置。'
+      : ' 当前保留的是未生效的旧草稿，自动保存已暂停；请重新载入默认配置后再编辑。';
+  }
+  configEditor.recoveryReloadButton = null;
+  node.textContent = [configPageStale() ? '当前页面已过期，旧草稿未保存且已保留。请先下载或复制未保存的修改，再刷新页面。' : '', warning, text].filter(Boolean).join('\n'); node.hidden = !node.textContent; node.dataset.kind = recovering || configPageStale() ? 'error' : kind;
+  if (configEditor.recoveryBlocked) {
+    const reload = el('button', 'config-small-button', recovery?.reason === 'unavailable' ? '重新载入配置' : '重新载入默认配置'); reload.type = 'button';
+    reload.disabled = configPageStale() || configEditor.busy || configEditor.loading; reload.onclick = () => { void configReload(); }; node.append(reload);
+    configEditor.recoveryReloadButton = reload;
+  }
 }
 function configCompatibilityMessage(data) {
-  if (!configEditor.saveError) configMessage(data.compatibility?.error || '', data.compatibility ? 'error' : 'info');
+  if (!configEditor.saveError || data.recovery?.required || configEditor.recoveryBlocked) configMessage(configEditor.saveError?.message || data.compatibility?.error || '', data.compatibility ? 'error' : 'info');
 }
 function configBusy(value) {
   configEditor.busy = value;
   for (const id of ['config-retry', 'config-import', 'config-export', 'config-preview']) $(id).disabled = value || configEditor.loading || !configEditor.draft;
+  if (configEditor.recoveryBlocked) $('config-import').disabled = true;
+  if (configPageStale()) {
+    for (const id of ['config-retry', 'config-import', 'config-preview']) $(id).disabled = true;
+    $('config-export').disabled = !configEditor.draft;
+  }
+  if (configEditor.recoveryReloadButton) configEditor.recoveryReloadButton.disabled = configPageStale() || value || configEditor.loading;
   if (!value && !configEditor.savePromise && !configEditor.saveError && configIsDirty()) configScheduleSave();
 }
 function configUpdateState() {
   const dirty = configIsDirty();
   const node = $('config-state'); node.dataset.dirty = String(dirty);
   node.setAttribute('aria-busy', String(configEditor.saving));
-  node.textContent = configEditor.loading ? '正在载入…' : configEditor.saving ? '正在自动保存…' : configEditor.busy ? '正在处理…' : dirty ? configEditor.saveError ? configEditor.saveError.fields?.revision ? '配置有冲突，尚未保存' : configEditor.saveError.fields ? '请修正配置，尚未保存' : configEditor.saveTimer !== null ? '保存失败，正在等待重试…' : '自动保存失败，更改仍保留' : '等待自动保存…' : configEditor.draft ? '自动保存已开启 · 配置已同步' : '尚未载入';
+  node.textContent = configEditor.loading ? '正在载入…' : configEditor.saving ? '正在自动保存…' : configEditor.busy ? '正在处理…' : (configEditor.recoveryNotice ?? configEditor.data?.recovery)?.reason === 'unavailable' ? '配置暂不可用 · 请修复后重新载入' : configEditor.recoveryBlocked ? '旧草稿未生效 · 请重新载入默认配置' : dirty ? configEditor.saveError ? configEditor.saveError.fields?.revision ? '配置有冲突，尚未保存' : configEditor.saveError.fields ? '请修正配置，尚未保存' : configEditor.saveTimer !== null ? '保存失败，正在等待重试…' : '自动保存失败，更改仍保留' : '等待自动保存…' : configEditor.data?.recovery?.required ? '已载入关闭的默认配置 · 请重新配置保存' : configEditor.draft ? '自动保存已开启 · 配置已同步' : '尚未载入';
+  if (configPageStale()) node.textContent = '页面已过期 · 旧草稿已保留，请先下载再刷新';
   node.title = node.textContent;
-  $('config-retry').hidden = !dirty || !configEditor.saveError || !!configEditor.saveError.fields || configEditor.saveTimer !== null;
+  $('config-retry').hidden = configEditor.recoveryBlocked || !dirty || !configEditor.saveError || !!configEditor.saveError.fields || configEditor.saveTimer !== null;
 }
 function configRevealTab(tab) {
   const bar = tab.parentElement, item = tab.getBoundingClientRect(), bounds = bar.getBoundingClientRect();
@@ -1260,7 +1305,32 @@ function configRenderUsage() {
   root.append(el('div','','任务类型：'+type),el('div','','进度：'+progress+(usePreview?'；本次'+(preview.viewOnly?'只读查看':preview.actions.length+'项待执行（仅预览）'):'')),el('div','','受限：'+(reasons.length?reasons.slice(0,3).join('；')+(reasons.length>3?'；其余见下方条件':''):usePreview?'无已报限制':'预览后核对')));
 }
 
+function configSyncRecovery(runtime) {
+  if (configPageStale() || !current || !configVisible()) return;
+  const recovery = runtime.settingsRecovery ?? null, loaded = configEditor.owner === current ? configEditor.data : null;
+  if (!recovery?.required && !loaded?.recovery?.required && !configEditor.recoveryNotice) return;
+  const marker = JSON.stringify([runtime.settingsRevision, recovery]);
+  const observed = configEditor.recoverySync;
+  if (!configEditor.recoveryNotice && marker === JSON.stringify([loaded?.revision, loaded?.recovery ?? null])) return;
+  if (observed?.account === current && observed.marker === marker && (observed.pending || observed.complete)) return;
+  // 先取消旧草稿的定时保存，再等读取；网络缓慢时也不能把已失效的草稿写回。
+  if (recovery?.required) {
+    configEditor.recoveryNotice = recovery;
+    if (recovery.reason === 'unavailable' || configEditor.owner === current && configIsDirty()) {
+      configEditor.recoveryBlocked = true; configCancelSaveTimer();
+    }
+    configMessage(''); configUpdateState();
+  }
+  if (configEditor.busy || configEditor.loading) return;
+  const check = { account: current, marker, pending: true, complete: false }; configEditor.recoverySync = check;
+  void configLoad().then(data => {
+    if (configEditor.recoverySync !== check) return;
+    check.pending = false; check.complete = !!data;
+  });
+}
+
 async function configLoad(force = false) {
+  if (configPageStale()) { configMessage(''); return; }
   if (configEditor.busy || configEditor.loading) return;
   if (!current) { configMessage('请先添加或选择账号。'); return; }
   const account = current, version = ++configEditor.serial, original = JSON.stringify(configEditor.draft);
@@ -1268,28 +1338,42 @@ async function configLoad(force = false) {
   configEditor.loading = true; configBusy(true); configMessage(''); configUpdateState();
   try {
     const [data,runtime]=await Promise.all([call('/api/settings?fleets=1'),call('/api/loop').catch(()=>null)]);
-    if (account !== current || version !== configEditor.serial) return;
-    if((!force || JSON.stringify(configEditor.draft)!==original)&&configEditor.owner===account&&configEditor.draft&&
-      (configIsDirty() || (data.revision===configEditor.data?.revision && data.baseRevision===configEditor.data?.baseRevision && JSON.stringify(data.settings)===JSON.stringify(configEditor.baseline) && JSON.stringify(data.catalog)===JSON.stringify(configEditor.data.catalog)))){
+    if (configPageStale() || account !== current || version !== configEditor.serial) return;
+    const recoveryChanged = data.recovery?.required && (data.recoveryToken !== configEditor.data?.recoveryToken || JSON.stringify(data.recovery) !== JSON.stringify(configEditor.data?.recovery));
+    if((!force || JSON.stringify(configEditor.draft)!==original)&&configEditor.owner===account&&configEditor.draft&&!(recoveryChanged&&!configIsDirty()&&!configEditor.recoveryBlocked)&&
+      (configEditor.recoveryBlocked || configIsDirty() || (data.revision===configEditor.data?.revision && data.baseRevision===configEditor.data?.baseRevision && JSON.stringify(data.settings)===JSON.stringify(configEditor.baseline) && JSON.stringify(data.catalog)===JSON.stringify(configEditor.data.catalog)))){
+      if (recoveryChanged) {
+        configEditor.recoveryBlocked = true; configCancelSaveTimer();
+      }
       configEditor.runtime=runtime;configEditor.data={...configEditor.data,usage:data.usage,pendingUsage:data.pendingUsage};
       const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
-      configEditor.data={...configEditor.data,rules:data.rules,tasks:data.tasks,compatibility:data.compatibility};
+      configEditor.data={...configEditor.data,rules:data.rules,tasks:data.tasks,compatibility:data.compatibility,
+        recovery:configEditor.recoveryBlocked ? data.recovery ?? configEditor.data.recovery : data.recovery,recoveryToken:data.recoveryToken};
+      configEditor.recoveryNotice = null;
       configCompatibilityMessage(data);
       // 活动开放状态独立于保存版本；更新入口时保留草稿和原基线，避免覆盖编辑或绕过版本冲突。
       if(displayChanged){configEditor.previewSummary=null;configRender();}else configRenderUsage();
-      return;
+      return data;
     }
     configEditor.runtime=runtime;configEditor.previewSummary=null;
     if(force||configEditor.owner!==account){configCollapsed.clear();configDisclosureSeen.clear();configCollapsedSections.clear();}
-    configEditor.owner = account; configEditor.data = data; configEditor.draft = structuredClone(data.settings); configEditor.baseline = structuredClone(data.settings); configEditor.errors = {};
+    configEditor.owner = account; configEditor.data = data; configEditor.draft = structuredClone(data.settings); configEditor.baseline = structuredClone(data.settings); configEditor.errors = {}; configEditor.recoveryBlocked = data.recovery?.reason === 'unavailable'; configEditor.recoveryNotice = null;
     configCancelSaveTimer(); configEditor.saveError = null; configEditor.saveRetries = 0;
     configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = '';
     $('config-account-name').textContent = (accounts.find(row => row.id === account)?.title || '当前账号') + '的挂机配置';
     configRender(); configCompatibilityMessage(data);
+    return data;
   } catch (error) { if (account === current && version === configEditor.serial) configMessage(error.message, 'error'); }
   finally {
     if (version === configEditor.serial) { configEditor.loading = false; configBusy(false); configUpdateState(); configWeeklyRankingSync(); }
   }
+}
+
+async function configReload() {
+  if (configPageStale()) { configMessage(''); return; }
+  if (configEditor.busy || configEditor.loading) return;
+  if (configIsDirty() && !window.confirm('当前草稿未生效。重新载入会丢弃本页未保存的更改，并读取服务器当前配置，是否继续？')) return;
+  await configLoad(true);
 }
 
 async function configMayChangeAccount(next) {
@@ -1305,7 +1389,7 @@ function configAccountChanged() {
   if (configEditor.owner === current) return;
   configWeeklyRankingReset();
   configCancelSaveTimer(); configEditor.savePromise = null; configEditor.saving = false; configEditor.saveError = null; configEditor.saveRetries = 0; configEditor.busy = false;
-  configEditor.serial++; configEditor.owner = null; configEditor.data = null; configEditor.draft = null; configEditor.baseline = null; configEditor.loading = false; configEditor.errors = {};
+  configEditor.serial++; configEditor.owner = null; configEditor.data = null; configEditor.draft = null; configEditor.baseline = null; configEditor.loading = false; configEditor.errors = {}; configEditor.recoveryBlocked = false; configEditor.recoveryNotice = null; configEditor.recoverySync = null;
   configEditor.runtime=null;configEditor.previewSummary=null;
   configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = ''; configEditor.playerWidgets = [];
   configCollapsed.clear();configDisclosureSeen.clear();configCollapsedSections.clear();
@@ -1538,7 +1622,6 @@ function configCityWarRoles(spec, id) {
         if (!configGet('fleetSpeed.enabled')) issues.push(['fleetSpeed.enabled', '维修及派遣钻石加速总开关已关闭']);
         if (!configGet('resources.allowDiamonds')) issues.push(['resources.allowDiamonds', '全局自动钻石消耗已关闭']);
         if (!(configGet('resources.diamondDailyLimit') > 0)) issues.push(['resources.diamondDailyLimit', '全局每日钻石预算为 0']);
-        if (!(configGet(state.key + 'MaxDiamonds') > 0)) issues.push([state.key + 'MaxDiamonds', '本项' + (state.mode === 'repair' ? '每次维修' : '整段派遣航程') + '钻石上限为 0']);
         if (!(configGet(state.key + 'DailyDiamonds') > 0)) issues.push([state.key + 'DailyDiamonds', '本项每日钻石上限为 0']);
         state.notice.hidden = !configGet(state.key);
         state.status.textContent = issues.length ? '尚未生效：' + issues.map(([, reason]) => reason).join('；') + '。'
@@ -1694,8 +1777,10 @@ function configCropEditor(spec, id) {
 function configSave(event, { automatic = false } = {}) {
   event?.preventDefault();
   configCancelSaveTimer();
+  if (configPageStale()) { configVersionStale(); return Promise.resolve(false); }
   if (configEditor.savePromise) return configEditor.savePromise;
   if (!configEditor.draft || configEditor.busy || configEditor.loading || configEditor.owner !== current) return Promise.resolve(false);
+  if (configEditor.recoveryBlocked) { configMessage(''); configUpdateState(); return Promise.resolve(false); }
   if (!configIsDirty()) return Promise.resolve(true);
   if (configEditor.saveError?.fields?.revision) return Promise.resolve(false);
   const intervalSave = loopIntervalSaves.get(current);
@@ -1716,8 +1801,8 @@ function configSave(event, { automatic = false } = {}) {
   configEditor.saving = true; configEditor.saveError = null;
   configBusy(true); configMessage(''); configUpdateState();
   const job = (async () => { try {
-    const data = await call('/api/settings', { method: 'POST', body: JSON.stringify({ settings: JSON.parse(text), revision: configEditor.data.revision, baseRevision: configEditor.data.baseRevision }) });
-    if (!active()) return false;
+    const data = await call('/api/settings', { method: 'POST', body: JSON.stringify({ settings: JSON.parse(text), revision: configEditor.data.revision, baseRevision: configEditor.data.baseRevision, recoveryToken: configEditor.data.recoveryToken }) });
+    if (!active() || configPageStale()) return false;
     const edited = JSON.stringify(configEditor.draft) !== text;
     const normalized = !edited && JSON.stringify(data.settings) !== text;
     const displayChanged=JSON.stringify(data.rules)!==JSON.stringify(configEditor.data.rules)||JSON.stringify(data.tasks)!==JSON.stringify(configEditor.data.tasks);
@@ -1761,6 +1846,8 @@ function configSave(event, { automatic = false } = {}) {
 async function configImportFile(event) {
   const file = event.target.files?.[0]; event.target.value = '';
   if (!file || !configEditor.draft || configEditor.busy) return;
+  if (configPageStale()) { configMessage(''); return; }
+  if (configEditor.recoveryBlocked) { configMessage('请先重新载入默认配置，再导入配置。', 'error'); return; }
   if (file.size > 262144) { configMessage('配置文件不能超过 256 KB。', 'error'); return; }
   const account = current, serial = configEditor.serial, original = JSON.stringify(configEditor.draft);
   const active = () => account === current && serial === configEditor.serial;
@@ -1769,7 +1856,7 @@ async function configImportFile(event) {
     let document;
     try { document = JSON.parse(await file.text()); } catch { throw new Error('文件不是有效 JSON，请选择本工具导出的配置文件。'); }
     const data = await call('/api/settings/validate', { method: 'POST', body: JSON.stringify({ document }) });
-    if (!active()) return;
+    if (!active() || configPageStale()) return;
     if (JSON.stringify(configEditor.draft) !== original) { configMessage('导入期间草稿发生了更改，已保留当前草稿。需要替换时请再次导入。'); return; }
     configEditor.draft = data.settings; configEditor.errors = {}; configEditor.saveRetries = 0;
     if (!configEditor.saveError?.fields?.revision) configEditor.saveError = null;
@@ -1780,6 +1867,7 @@ async function configImportFile(event) {
 }
 
 async function configExport() {
+  if (configPageStale()) { configDownloadDraft(); return; }
   if (!configEditor.draft || configEditor.busy || !configCheckForm()) return;
   const account = current, draft = structuredClone(configEditor.draft);
   configBusy(true); configUpdateState();
@@ -1796,6 +1884,7 @@ async function configExport() {
 }
 
 async function configPreview() {
+  if (configPageStale()) { configMessage(''); return; }
   if (!configEditor.draft || configEditor.busy || !configCheckForm()) return;
   const account = current, original = JSON.stringify(configEditor.draft), category = configEditor.category, group = configEditor.selectedGroups[category], scope = $('config-preview-scope').value;
   const contextChanged = () => JSON.stringify(configEditor.draft) !== original || category !== configEditor.category || group !== configEditor.selectedGroups[category] || scope !== $('config-preview-scope').value;
@@ -1999,5 +2088,6 @@ document.addEventListener('toggle', event => {
   root.addEventListener('toggle', close); root.addEventListener('keydown', escape); root.addEventListener('focusout', blur);
   place();
 }, true);
+window.addEventListener('cw-console-version-stale', configVersionStale);
 window.addEventListener('beforeunload', event => { if (configIsDirty() || configEditor.saving) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('online', () => { if (configIsDirty() && configEditor.saveError && !configEditor.saveError.fields) { configEditor.saveRetries = 0; configScheduleSave(0); } });

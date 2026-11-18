@@ -17,7 +17,7 @@ const {observeOwnedFleets}=await import('../src/fleet-catalog.mjs');
 const {cityWarFleetStrategy}=await import('../src/city-war-settings.mjs');
 saveStore({activeId:'speed-browser',accounts:[{id:'speed-browser',label:'加速界面测试',url:'ws://invalid.invalid',login:{},automation:{enabled:false,paused:true}}]});
 const settings=defaultSettings();settings.cityWar.enabled=true;settings.cityWar.fleetIds=['1远征船','2远征船'];settings.cityWar.defenceFleetIds=['2远征船'];
-settings.fleetSpeed.enabled=true;for(const fleet of settings.fleetSpeed.fleets)Object.assign(fleet,{repairSmartSave:true,marchSmartSave:true});Object.assign(settings.fleetSpeed.fleets[0],{repair:true,march:true,repairMaxDiamonds:50,marchMaxDiamonds:90});
+settings.fleetSpeed.enabled=true;for(const fleet of settings.fleetSpeed.fleets)Object.assign(fleet,{repairSmartSave:true,marchSmartSave:true});Object.assign(settings.fleetSpeed.fleets[0],{repair:true,march:true});
 saveAutomationSettings('speed-browser',settings,{revision:0});
 const app=createConsole({port:0,protocol:{}}),base=await app.listen();let browser;const errors=[];
 const executablePath=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
@@ -30,7 +30,7 @@ try{
     Object.assign(before.settings.cityWar,{fleetStrategies:{},defenceFleetIds:['2远征船'],targetMode:'alliance',targetPriority:'fewestAllied',cityRefs:[],defenceTargetMode:'alliance',defenceTargetPriority:'fewestAllied',defenceCityRefs:[]});
     before.settings.fleetSpeed.enabled=false;before.settings.resources.allowDiamonds=false;
     before.settings.resources.diamondDailyLimit=2000;
-    Object.assign(before.settings.fleetSpeed.fleets[0],{repair:true,march:true,repairMaxDiamonds:50,marchMaxDiamonds:90,repairDailyDiamonds:0,marchDailyDiamonds:0});
+    Object.assign(before.settings.fleetSpeed.fleets[0],{repair:true,march:true,repairDailyDiamonds:0,marchDailyDiamonds:0});
     saveAutomationSettings('speed-browser',before.settings,{revision:before.revision});
     const context=await browser.newContext({viewport,deviceScaleFactor:1}),page=await context.newPage();
     let settingsWrites=0;
@@ -42,6 +42,10 @@ try{
     const globalSummary=globals.locator(':scope > summary');
     assert.equal(await page.locator('#config-field-fleetSpeed-dailyDiamondLimit').count(),0,'城战加速合计上限已移除');
     assert.equal(Object.hasOwn(loadAutomationSettings('speed-browser').settings.fleetSpeed,'dailyDiamondLimit'),false);
+    assert.equal(await city.locator('[data-config-number$="MaxDiamonds"]').count(),0,'维修和派遣不再显示单次或整段航程上限');
+    for(const fleet of loadAutomationSettings('speed-browser').settings.fleetSpeed.fleets){
+      assert.equal(Object.hasOwn(fleet,'repairMaxDiamonds'),false);assert.equal(Object.hasOwn(fleet,'marchMaxDiamonds'),false);
+    }
     assert.equal(await city.locator('details.config-field-section').count(),1);
     assert.equal(await globals.evaluate(section=>section.tagName),'DETAILS');
     assert.equal(await globalSummary.count(),1);
@@ -130,21 +134,16 @@ try{
     await speedStatus('repair').getByRole('button').click();
     assert.equal(await globalBudget.evaluate(node=>node===document.activeElement),true);
     await globalBudget.fill('2000');await globalBudget.blur();await saved();await returnToCity();
-    for(const [mode,max] of [['repair',50],['march',90]]){
+    for(const [mode,dailyLimit] of [['repair',100],['march',300]]){
       assert.match(await speedStatus(mode).textContent(),/本项每日钻石上限为 0/);
       await speedStatus(mode).getByRole('button').click();
       const daily=page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds');
       assert.equal(await daily.evaluate(node=>node===document.activeElement),true);
-      await daily.fill('100');await daily.blur();await saved();
-      const limit=page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'MaxDiamonds');
-      await limit.fill('0');await limit.blur();await saved();
-      assert.match(await speedStatus(mode).textContent(),/本项(?:每次维修|整段派遣航程)钻石上限为 0/);
-      await speedStatus(mode).getByRole('button').click();
-      assert.equal(await limit.evaluate(node=>node===document.activeElement),true);
-      await limit.fill(String(max));await limit.blur();await saved();
+      await daily.fill(String(dailyLimit));await daily.blur();await saved();
+      assert.equal(loadAutomationSettings('speed-browser').settings.fleetSpeed.fleets[0][mode+'DailyDiamonds'],dailyLimit);
       assert.match(await speedStatus(mode).textContent(),/^已允许使用钻石/);
       assert.equal(await speedStatus(mode).getByRole('button').isVisible(),false);
-      assert.doesNotMatch(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds-help').textContent(),/城战加速日上限/);
+      assert.doesNotMatch(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds-help').textContent(),/城战加速日上限|本项单次上限/);
     }
     const cityMaster=page.locator('#config-field-cityWar-enabled');
     await cityMaster.uncheck();await saved();
@@ -152,9 +151,11 @@ try{
     await cityMaster.check();await speedMaster.uncheck();await saved();
     await page.reload();await page.locator('#tabs [data-tab=settings]').click();await returnToCity();await open(1);
     assert.equal(await speedMaster.isChecked(),false,'刷新保留显式关闭');
-    for(const mode of ['repair','march']){
+    for(const [mode,dailyLimit] of [['repair',100],['march',300]]){
       assert.equal(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode).isChecked(),true,'暂停保留逐队选项');
       assert.match(await speedStatus(mode).textContent(),/钻石加速总开关已关闭/);
+      assert.equal(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'DailyDiamonds').inputValue(),String(dailyLimit),'刷新保留维修与派遣各自的每日上限');
+      assert.equal(await page.locator('#config-field-fleetSpeed-fleets-0-'+mode+'MaxDiamonds').count(),0);
     }
     await speedMaster.check();await saved();await close(1);
 

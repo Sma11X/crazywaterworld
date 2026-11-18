@@ -190,20 +190,22 @@ try {
     assert.throws(() => validateSettings(invalid), error => !!error.fields?.['silicon.fleets.0.dailyAttackLimit']);
   });
 
-  test('移除城战加速共享日限额，旧文件及旧页面保留逐队分项和全局钻石设置', () => {
+  test('移除城战加速共享日限额和单次上限，旧文件及旧页面保留逐队每日和全局钻石设置', () => {
     const expected = defaultSettings();
     Object.assign(expected.resources, { allowDiamonds: true, diamondDailyLimit: 1234, diamondThreshold: 80 });
     expected.fleetSpeed.enabled = true;
     Object.assign(expected.fleetSpeed.fleets[0], {
-      repair: true, march: false, repairMaxDiamonds: 25, marchMaxDiamonds: 10,
+      repair: true, march: false,
       repairDailyDiamonds: 200, marchDailyDiamonds: 120, repairSmartSave: true,
     });
-    Object.assign(expected.fleetSpeed.fleets[1], { march: true, marchMaxDiamonds: 40, marchDailyDiamonds: 300 });
+    Object.assign(expected.fleetSpeed.fleets[1], { march: true, marchDailyDiamonds: 300 });
     assert(!Object.hasOwn(defaultSettings().fleetSpeed, 'dailyDiamondLimit'));
     assert(!Object.hasOwn(settingsUiRules().numbers, 'fleetSpeed.dailyDiamondLimit'));
-    for (const dailyDiamondLimit of [0, 1, 999999]) for (const version of [1, 2, 3, SETTINGS_SCHEMA_VERSION]) {
+    for (const dailyDiamondLimit of [0, 1, 999999]) for (const version of [1, 2, 3, 12, SETTINGS_SCHEMA_VERSION]) {
       const legacy = structuredClone(expected);
       legacy.fleetSpeed.dailyDiamondLimit = dailyDiamondLimit;
+      Object.assign(legacy.fleetSpeed.fleets[0], { repairMaxDiamonds: dailyDiamondLimit, marchMaxDiamonds: 10 });
+      legacy.fleetSpeed.fleets[1].marchMaxDiamonds = 40;
       const before = structuredClone(legacy);
       fs.writeFileSync(file, JSON.stringify({ version, accounts: {
         speed: { settingsVersion: version, revision: 8, settings: legacy },
@@ -448,7 +450,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 12);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 13);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

@@ -384,7 +384,10 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   assert(city.children.indexOf(global)>city.children.indexOf(f.widget('fleetSpeed.enabled').node));
   assert.equal(f.widget('fleetSpeed.dailyDiamondLimit'),undefined,'城战加速不再有中间合计上限');
   assert(f.widget('resources.diamondDailyLimit'));
-  for(const mode of ['repair','march'])for(const suffix of ['MaxDiamonds','DailyDiamonds'])assert(f.widget('fleetSpeed.fleets.0.'+mode+suffix));
+  for(const mode of ['repair','march']){
+    assert(f.widget('fleetSpeed.fleets.0.'+mode+'DailyDiamonds'));
+    assert.equal(f.widget('fleetSpeed.fleets.0.'+mode+'MaxDiamonds'),undefined,'城战加速仅保留每日钻石上限');
+  }
   const participants=f.widget('cityWar.fleetIds'),roles=f.widget('cityWar.defenceFleetIds');
   assert.equal(participants.node.parentElement,city,'参与舰队直接展示，不再套分区折叠');
   assert.equal(roles.parentKey,participants.spec.key);
@@ -403,9 +406,9 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   assert(!f.editor.fields.has('fleetSpeed.fleets.0.smartSave'));
   assert.equal(f.env.saves,0);
   participants.disclosure.onclick();
-  f.errors({message:'预算无效',fields:{'fleetSpeed.fleets.0.repairMaxDiamonds':'请填写有效预算'}},{focus:false});
+  f.errors({message:'预算无效',fields:{'fleetSpeed.fleets.0.repairDailyDiamonds':'请填写有效预算'}},{focus:false});
   assert.equal(participants.disclosure.getAttribute('aria-expanded'),'true','逐队字段错误自动展开参与舰队设置');
-  assert(visible(f.widget('fleetSpeed.fleets.0.repairMaxDiamonds').node));
+  assert(visible(f.widget('fleetSpeed.fleets.0.repairDailyDiamonds').node));
   f.errors({fields:{}},{focus:false});
   participants.disclosure.onclick();
   f.renderPage();

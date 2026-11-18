@@ -1,5 +1,7 @@
 import { automationControlFields, automationControls, idleAutomationControls, idleControlFields } from './automation-controls.mjs';
+import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { atomicJson, readJson, withFileLock } from './json-store.mjs';
 import { accountKey, dataDirectory } from './usage-ledger.mjs';
 export { beijingDay, createUsageLedger, usageFile } from './usage-ledger.mjs';
@@ -16,7 +18,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 12;
+export const SETTINGS_SCHEMA_VERSION = 13;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -482,21 +484,116 @@ export function loadAutomationSettings(accountId, { file = settingsFile() } = {}
   const store = readJson(file, { version: SETTINGS_SCHEMA_VERSION, accounts: {} });
   validateSettingsStore(store);
   const entry = Object.hasOwn(store.accounts, key) ? store.accounts[key] : null;
+  return loadedSettingsEntry(entry);
+}
+
+function loadedSettingsEntry(entry) {
   // The container version cannot identify an untouched account in a mixed
   // store. Entries written before version 2 did not carry their own version.
   const version = entry ? entrySettingsVersion(entry) : SETTINGS_SCHEMA_VERSION;
   const settings = entry ? validateCurrentSettings(migrateSettingsVersion(entry.settings, version, { source: 'stored' }),
     { partial: version === 1 }) : defaultSettings();
-  return { settings, revision: entry?.revision ?? 0, savedAt: entry?.savedAt ?? null };
+  return { settings, revision: entry?.revision ?? 0, savedAt: entry?.savedAt ?? null,
+    ...(entry?.recovery ? { recovery: copy(entry.recovery) } : {}) };
 }
 
-export function saveAutomationSettings(accountId, input, { revision, file = settingsFile(), catalog = null } = {}) {
+const validRecovery = recovery => plain(recovery) && recovery.required === true
+  && ['missing', 'corrupt'].includes(recovery.reason) && typeof recovery.message === 'string'
+  && (recovery.backupFile === undefined || typeof recovery.backupFile === 'string');
+const validStoredEntry = entry => plain(entry) && supportedSettingsVersion(entrySettingsVersion(entry));
+
+// Read original bytes ourselves: readJson deliberately hides parse vs I/O failures,
+// but only known missing/corrupt settings may be recovered. Permissions and future
+// versions must stop execution without replacing the user's file.
+function inspectRecoverableSettings(file, key, expected) {
+  let bytes, store;
+  try { bytes = fs.readFileSync(file); }
+  catch (error) {
+    if (error.code === 'ENOENT') return expected ? { reason: 'missing', bytes: null, store: null }
+      : { loaded: loadedSettingsEntry(null) };
+    throw new Error('无法读取挂机配置，已停止操作且未覆盖原文件', { cause: error });
+  }
+  try { store = JSON.parse(bytes.toString('utf8')); }
+  catch (error) {
+    if (error instanceof SyntaxError) return { reason: 'corrupt', bytes, store: null };
+    throw error;
+  }
+  const future = version => typeof version === 'number' && version > SETTINGS_SCHEMA_VERSION;
+  if (future(store?.version) || plain(store?.accounts) && Object.values(store.accounts).some(entry => future(entry?.settingsVersion))) {
+    throw Object.assign(new Error('挂机配置来自更新版本，已停止操作且未覆盖原文件，请使用对应版本的程序'), { code: 'SETTINGS_FUTURE_VERSION' });
+  }
+  if (!plain(store) || !supportedSettingsVersion(store.version) || !plain(store.accounts)) return { reason: 'corrupt', bytes, store };
+  const damagedHeaders = Object.values(store.accounts).some(entry => !validStoredEntry(entry));
+  const present = Object.hasOwn(store.accounts, key), entry = present ? store.accounts[key] : null;
+  if (!present) return expected ? { reason: 'missing', bytes, store } : damagedHeaders
+    ? { reason: 'corrupt', bytes, store, keepTarget: true } : { loaded: loadedSettingsEntry(null) };
+  if (!validStoredEntry(entry)) return { reason: 'corrupt', bytes, store };
+  if (!Number.isSafeInteger(entry.revision) || entry.revision < 0
+    || entry.recovery !== undefined && !validRecovery(entry.recovery)) return { reason: 'corrupt', bytes, store };
+  try {
+    const loaded = loadedSettingsEntry(entry);
+    return damagedHeaders ? { reason: 'corrupt', bytes, store, keepTarget: true } : { loaded };
+  }
+  catch (error) {
+    if (error.fields?.version) throw error; // A missing migration is a program/version problem.
+    return { reason: 'corrupt', bytes, store };
+  }
+}
+
+// Recovery is explicit and persistent. It supplies disabled defaults to the caller;
+// the console must keep automation stopped until the user saves their configuration.
+export function loadRecoverableAutomationSettings(accountId, { file = settingsFile(), expected = false } = {}) {
+  const key = accountKey(accountId), initial = inspectRecoverableSettings(file, key, expected);
+  if (initial.loaded) return initial.loaded;
+  return withFileLock(file, () => {
+    const state = inspectRecoverableSettings(file, key, expected);
+    if (state.loaded) return state.loaded; // Another process already repaired/saved it.
+    const accounts = plain(state.store?.accounts) ? { ...state.store.accounts } : {};
+    const affected = new Set(state.keepTarget ? [] : [key]);
+    // Invalid sibling entry headers would make the rebuilt store unreadable. Only
+    // those damaged entries also receive defaults; valid siblings remain verbatim.
+    for (const [id, entry] of Object.entries(accounts)) if (!validStoredEntry(entry)) affected.add(id);
+    const recovered = new Map();
+    for (const id of affected) {
+      const prior = accounts[id], revision = Number.isSafeInteger(prior?.revision) && prior.revision >= 0 ? prior.revision + 1 : 1;
+      if (!Number.isSafeInteger(revision)) throw new Error('挂机配置版本计数超出范围，已停止恢复且未覆盖原文件');
+      const reason = id === key ? state.reason : 'corrupt';
+      const recovery = { required: true, id: randomUUID(), reason,
+        message: reason === 'missing' ? '挂机配置缺失，已恢复默认设置并关闭自动挂机，请重新配置后保存。'
+          : '挂机配置损坏，已恢复默认设置并关闭自动挂机，请重新配置后保存。' };
+      recovered.set(id, { revision, savedAt: new Date().toISOString(), settingsVersion: SETTINGS_SCHEMA_VERSION,
+        settings: defaultSettings(), recovery });
+    }
+    let backupFile;
+    if (state.bytes !== null) {
+      backupFile = path.resolve(file + '.corrupt-' + Date.now() + '-' + randomUUID() + '.bak');
+      let descriptor;
+      try {
+        descriptor = fs.openSync(backupFile, 'wx', 0o600);
+        fs.writeFileSync(descriptor, state.bytes); fs.fsyncSync(descriptor);
+      } catch (error) {
+        throw new Error('备份挂机配置失败，已停止恢复且未覆盖原文件', { cause: error });
+      } finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+    }
+    for (const [id, entry] of recovered) {
+      if (backupFile) entry.recovery.backupFile = backupFile;
+      Object.defineProperty(accounts, id, { value: entry, enumerable: true, configurable: true, writable: true });
+    }
+    const next = { ...(plain(state.store) ? state.store : {}), version: SETTINGS_SCHEMA_VERSION, accounts };
+    atomicJson(file, next);
+    return loadedSettingsEntry(accounts[key]);
+  });
+}
+
+export function saveAutomationSettings(accountId, input, { revision, file = settingsFile(), catalog = null, expectedRecoveryId } = {}) {
   const settings = validateSettings(input, { catalog });
   const key = accountKey(accountId);
   return withFileLock(file, () => {
     const store = readJson(file, { version: SETTINGS_SCHEMA_VERSION, accounts: {} });
     validateSettingsStore(store);
     const current = Object.hasOwn(store.accounts, key) ? store.accounts[key] : null;
+    if (current?.recovery?.id !== expectedRecoveryId)
+      throw new SettingsError({ revision: '配置恢复状态已变化，请重新载入配置后再保存' });
     if (!Number.isSafeInteger(revision) || revision !== (current?.revision ?? 0)) throw new SettingsError({ revision: '设置已在其他页面更新，请重新载入后再保存' });
     const entry = { revision: revision + 1, savedAt: new Date().toISOString(), settingsVersion: SETTINGS_SCHEMA_VERSION, settings };
     Object.defineProperty(store.accounts, key, { value: entry, enumerable: true, configurable: true, writable: true });
@@ -512,7 +609,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function validateSettingsStore(store) {
@@ -774,4 +871,16 @@ function migrateVersion11Settings(settings) {
     next.fleetDispatch = { ...next.fleetDispatch, priority: [...next.fleetDispatch.priority, 'resourceFields'] };
   }
   return next;
+}
+
+// Version 13 retires per-repair / per-journey diamond caps. Daily budgets,
+// explicit switches and existing usage remain unchanged.
+function migrateVersion12Settings(settings) {
+  if (!plain(settings) || !Array.isArray(settings.fleetSpeed?.fleets)) return settings;
+  return { ...settings, fleetSpeed: { ...settings.fleetSpeed, fleets: settings.fleetSpeed.fleets.map(fleet => {
+    if (!plain(fleet)) return fleet;
+    const row = { ...fleet };
+    delete row.repairMaxDiamonds; delete row.marchMaxDiamonds;
+    return row;
+  }) } };
 }

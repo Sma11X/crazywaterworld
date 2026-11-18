@@ -8,6 +8,8 @@ import { SETTINGS_SCHEMA_VERSION, defaultSettings, validateSettings, saveAutomat
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-settings-autosave-'));
 const script = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
+const pageSource = fs.readFileSync(new URL('../src/page.mjs', import.meta.url), 'utf8');
+const renderLoopSource = pageSource.slice(pageSource.indexOf('function renderLoop('), pageSource.indexOf('let loopReads = 0;'));
 const section = (from, to) => {
   const start = script.indexOf(from), end = script.indexOf(to, start);
   assert(start >= 0 && end > start, from);
@@ -17,9 +19,10 @@ const sources = [
   section('// 游戏配置编辑器', 'function configGet('),
   section('function configGet(', 'function configRevealTab('),
   section('function configRevealSection(', 'function configRender()'),
-  section('async function configLoad(', 'async function configRefreshPlayers('),
+  section('function configSyncRecovery(', 'async function configRefreshPlayers('),
   section('function configSave(', 'async function configExport('),
   section('async function configExport(', 'async function configPreview('),
+  section('async function configPreview(', "$('config-form').onsubmit"),
 ].join('\n');
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -37,12 +40,17 @@ function fixture({ catalog = {} } = {}) {
     });
     return nodes.get(id);
   };
-  const view = account => ({ ...loadAutomationSettings(account, { file }), catalog, rules: {}, tasks: [], usage: {}, pendingUsage: {}, running: false });
+  const view = account => {
+    const saved = loadAutomationSettings(account, { file });
+    return { ...saved, catalog, rules: {}, tasks: [], usage: {}, pendingUsage: {}, running: false,
+      recoveryToken: env.recovery[account] ? 'recovery:' + account + ':' + saved.revision : null,
+      ...(env.recovery[account] ? { recovery: structuredClone(env.recovery[account]) } : {}) };
+  };
   const env = {
-    node, calls: [], downloads: [], renders: 0, focuses: 0, confirmations: 0, failPosts: 0, inFlight: 0, maxInFlight: 0,
+    node, calls: [], downloads: [], renders: 0, focuses: 0, confirmations: 0, failPosts: 0, inFlight: 0, maxInFlight: 0, recovery: {}, confirmResult: false, stale: false,
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { at: now + delay, callback }); return id; },
     clearTimeout(id) { timers.delete(id); },
-    confirm() { env.confirmations++; return false; },
+    confirm() { env.confirmations++; return env.confirmResult; },
     async call(account, route, options) {
       const payload = options?.body ? JSON.parse(options.body) : null;
       env.calls.push({ account, route, payload });
@@ -57,7 +65,9 @@ function fixture({ catalog = {} } = {}) {
       try {
         if (env.failPosts-- > 0) throw new TypeError('模拟网络断开');
         await env.beforePost?.(payload);
+        if (env.recovery[account] && payload.recoveryToken !== view(account).recoveryToken) throw Object.assign(new Error('配置已恢复，请重新载入'), { fields: { revision: '恢复标识已变化，请重新载入' } });
         saveAutomationSettings(account, payload.settings, { file, revision: payload.revision });
+        delete env.recovery[account];
         const data = view(account);
         await env.onPost?.(payload);
         return data;
@@ -65,9 +75,12 @@ function fixture({ catalog = {} } = {}) {
     },
   };
   const api = newStateFunction('env', sources + `
-    let current = 'a', loopSettingsRevision = 1, loopFieldDefaults = null;
+    let current = 'a', loopSettingsRevision = 1, loopFieldDefaults = null, loopAccount = null, accountStatusRevision = 0, snapshot = {};
+    stateActions.replaceAccounts([{id:'a',status:{}},{id:'b',status:{}}],'a');
     const accounts = [], $ = env.node, window = { confirm: env.confirm }, loopIntervalSaves = new Map();
     const document = { body: { append() {} }, createElement: () => ({ click() {}, remove() {} }) };
+    window.document = document; window.cwConsoleVersion = { isStale: () => env.stale };
+    const consoleDraftFormat = {format:'crazywaterworld-automation',version:${SETTINGS_SCHEMA_VERSION}};
     const URL = { createObjectURL(blob) { env.downloads.push(blob); return 'blob:settings-fixture'; }, revokeObjectURL() {} };
     const setTimeout = env.setTimeout, clearTimeout = env.clearTimeout;
     const call = (route, options) => env.call(current, route, options);
@@ -77,9 +90,14 @@ function fixture({ catalog = {} } = {}) {
     const resetWorldMap = () => {};
     const configWeeklyRankingReset = () => {};
     const configWeeklyRankingSync = () => {};
+    const renderAutomationOverview = () => {}, renderPirateAdvance = () => {}, renderHostingControl = () => {}, paintConnection = () => {}, renderAccounts = () => {};
     const clear = node => node, el = () => ({});
+    ${renderLoopSource}
     return {
-      editor: configEditor, groups: configGroups, strategyFields: cityWarStrategyFields, set: configSet, load: configLoad, save: configSave, flush: configFlush,
+      editor: configEditor, groups: configGroups, strategyFields: cityWarStrategyFields, set: configSet, load: configLoad, reload: configReload, save: configSave, flush: configFlush,
+      message: configMessage, compatibilityMessage: configCompatibilityMessage,
+      expire() { env.stale = true; configVersionStale(); }, preview: configPreview,
+      renderLoop,
       dirty: configIsDirty, importFile: configImportFile, exportFile: configExport, mayChange: configMayChangeAccount,
       revision: () => loopSettingsRevision,
       setLoopRevision(revision) { loopSettingsRevision = revision; },
@@ -103,6 +121,197 @@ function fixture({ catalog = {} } = {}) {
     },
   };
 }
+
+await test('页面过期立即冻结自动保存并保留草稿，导入预览和flush不再发送请求', async () => {
+  const f = fixture(); await f.load(); f.set('factory.keepStock', 321);
+  const draft = structuredClone(f.editor.draft), calls = f.env.calls.length; f.expire();
+  await f.tick(10000); assert.equal(await f.flush(), false); assert.equal(await f.save(), false);
+  await f.importFile({target:{files:[{size:20,text:async()=>JSON.stringify(exportAutomationSettings(defaultSettings()))}]}});
+  await f.preview(); await f.load(); await f.reload();
+  assert.equal(f.env.calls.length, calls); assert.deepEqual(f.editor.draft, draft);
+  assert.match(f.node('config-state').textContent, /页面已过期/); assert.match(f.node('config-message').textContent, /草稿.*保留/);
+  assert.equal(f.node('config-import').disabled, true); assert.equal(f.node('config-preview').disabled, true);
+  f.compatibilityMessage({compatibility:null}); assert.match(f.node('config-message').textContent, /页面已过期/);
+  f.set('factory.keepStock', 654); await f.tick(10000); assert.equal(f.posts().length, 0);
+});
+
+await test('过期页面可在本地下载当前未校验草稿，不依赖服务器validate', async () => {
+  const f = fixture(); await f.load(); f.set('factory.keepStock', null); f.expire();
+  const calls = f.env.calls.length; await f.exportFile();
+  assert.equal(f.env.calls.length, calls); assert.equal(f.env.downloads.length, 1);
+  const exported = JSON.parse(await f.env.downloads[0].text());
+  assert.equal(exported.format, 'crazywaterworld-automation'); assert.equal(exported.version, SETTINGS_SCHEMA_VERSION);
+  assert.deepEqual(exported.settings, f.editor.draft); assert.equal(exported.settings.factory.keepStock, null);
+  assert.match(f.node('config-message').textContent, /页面已过期.*\n.*未发送到服务器/s);
+});
+
+await test('保存成功响应晚于页面过期时不覆盖草稿基线也不显示同步成功', async () => {
+  const f = fixture(); await f.load(); const baseline = structuredClone(f.editor.baseline);
+  f.set('factory.keepStock', 321); const pending = deferred(); f.env.onPost = () => pending.promise;
+  const save = f.save(); await settle(); f.expire(); f.set('factory.keepStock', 654);
+  pending.resolve(); assert.equal(await save, false);
+  assert.deepEqual(f.editor.baseline, baseline); assert.equal(f.editor.draft.factory.keepStock, 654);
+  assert.match(f.node('config-state').textContent, /页面已过期/); assert.doesNotMatch(f.node('config-state').textContent, /配置已同步/);
+  await f.tick(30000); assert.equal(f.posts().length, 1, '已过期不能重试或继续保存后一批');
+});
+
+await test('设置读取晚于版本变化时不把新服务配置套入旧页面', async () => {
+  const f = fixture(); await f.load(); const old = structuredClone(f.editor.draft), pending = deferred();
+  const changed = structuredClone(f.view('a').settings); changed.factory.keepStock = 789;
+  saveAutomationSettings('a', changed, {file:f.file,revision:f.view('a').revision});
+  f.env.onGet = () => pending.promise; const loading = f.load(); await settle(); f.expire(); pending.resolve(); await loading;
+  assert.deepEqual(f.editor.draft, old); assert.match(f.node('config-state').textContent, /页面已过期/);
+});
+
+await test('配置丢失或损坏首次载入关闭默认值，恢复警告持续至重新配置保存', async () => {
+  for (const reason of ['missing', 'corrupt']) {
+    const f = fixture();
+    f.env.recovery.a = { required: true, reason, message: '需要重新配置', ...(reason === 'corrupt' ? { backupFile: 'C:\\备份\\配置损坏.json' } : {}) };
+    await f.load();
+    assert.deepEqual(f.editor.draft, defaultSettings());
+    assert.equal(f.editor.recoveryBlocked, false);
+    assert.match(f.node('config-message').textContent, reason === 'missing' ? /配置丢失/ : /配置损坏/);
+    assert.match(f.node('config-message').textContent, /已恢复关闭的默认配置.*自动挂机已停止.*重新配置并保存后手动启动/);
+    if (reason === 'corrupt') assert(f.node('config-message').textContent.includes(f.env.recovery.a.backupFile));
+    assert.match(f.node('config-state').textContent, /请重新配置保存/);
+    f.message(''); f.compatibilityMessage({ compatibility: null });
+    assert.equal(f.node('config-message').hidden, false); assert.equal(f.node('config-message').dataset.kind, 'error');
+    f.set('factory.keepStock', 123);
+    assert.match(f.node('config-message').textContent, /自动挂机已停止/);
+    const recoveryToken = f.editor.data.recoveryToken;
+    await f.tick(600);
+    assert.equal(f.posts().length, 1); assert.equal(f.editor.data.recovery, undefined);
+    assert.equal(f.posts()[0].payload.recoveryToken, recoveryToken); assert.equal(f.editor.data.recoveryToken, null);
+    assert.equal(f.node('config-message').hidden, true);
+    assert.equal(f.view('a').settings.factory.enabled, false);
+    assert(f.env.calls.every(call => ['/api/settings', '/api/settings?fleets=1', '/api/loop'].includes(call.route)), '保存不会调用启动接口');
+  }
+});
+
+await test('无未保存草稿时发现配置恢复，直接显示关闭的默认配置', async () => {
+  const f = fixture(), old = f.view('a'); old.settings.factory.enabled = true;
+  saveAutomationSettings('a', old.settings, { file: f.file, revision: old.revision }); await f.load();
+  saveAutomationSettings('a', defaultSettings(), { file: f.file, revision: f.view('a').revision });
+  f.env.recovery.a = { required: true, reason: 'missing', message: '重新配置' };
+  await f.load();
+  assert.equal(f.editor.draft.factory.enabled, false); assert.equal(f.editor.recoveryBlocked, false);
+  assert.equal(f.editor.data.revision, f.view('a').revision); assert.equal(f.posts().length, 0);
+  const g = fixture(); await g.load();
+  g.env.recovery.a = { required: true, reason: 'missing' }; await g.load();
+  assert.equal(g.editor.recoveryBlocked, false, '旧值恰好也是默认值时不强迫丢弃草稿');
+  assert.match(g.node('config-state').textContent, /请重新配置保存/);
+});
+
+await test('配置恢复保留旧草稿但冻结自动保存，确认重新载入后才能保存新配置', async () => {
+  const f = fixture(); await f.load(); f.set('factory.enabled', true);
+  const old = structuredClone(f.editor.draft);
+  saveAutomationSettings('a', defaultSettings(), { file: f.file, revision: f.view('a').revision });
+  f.env.recovery.a = { required: true, reason: 'corrupt', message: '重新配置', backupFile: 'C:\\备份\\损坏.json' };
+  await f.load();
+  assert.deepEqual(f.editor.draft, old); assert.equal(f.editor.recoveryBlocked, true);
+  assert.equal(f.editor.data.recoveryToken, f.view('a').recoveryToken);
+  assert.match(f.node('config-message').textContent, /未生效的旧草稿.*自动保存已暂停/);
+  assert.match(f.node('config-state').textContent, /旧草稿未生效/);
+  assert.equal(f.editor.recoveryReloadButton.disabled, false);
+  await f.tick(10000); assert.equal(f.posts().length, 0);
+  f.set('factory.keepStock', 456); await f.tick(10000);
+  assert.equal(await f.save(), false); assert.equal(await f.flush(), false); assert.equal(f.posts().length, 0);
+  await f.load(); assert.equal(f.editor.recoveryBlocked, true, '再次读取同一恢复状态不解除保护');
+  await f.reload(); assert.equal(f.env.confirmations, 1); assert.equal(f.editor.draft.factory.keepStock, 456);
+  f.env.confirmResult = true; await f.reload();
+  assert.equal(f.env.confirmations, 2); assert.equal(f.editor.recoveryBlocked, false); assert.deepEqual(f.editor.draft, defaultSettings());
+  assert.match(f.node('config-message').textContent, /自动挂机已停止/);
+  assert.doesNotMatch(f.node('config-message').textContent, /未生效的旧草稿/);
+  const recoveryToken = f.editor.data.recoveryToken;
+  f.set('factory.keepStock', 789); await f.tick(600);
+  assert.equal(f.posts().length, 1); assert.equal(f.view('a').settings.factory.keepStock, 789);
+  assert.equal(f.posts()[0].payload.recoveryToken, recoveryToken); assert.equal(f.editor.data.recoveryToken, null);
+  assert.equal(f.view('a').settings.factory.enabled, false); assert.equal(f.node('config-message').hidden, true);
+});
+
+await test('恢复重载期间继续编辑保留草稿和保护，切换账号不沿用恢复警告', async () => {
+  const f = fixture(); await f.load(); f.set('factory.keepStock', 123);
+  f.env.recovery.a = { required: true, reason: 'missing' }; await f.load();
+  f.env.confirmResult = true;
+  const reading = deferred(); f.env.onGet = () => reading.promise;
+  const reload = f.reload(); await settle(); f.set('factory.keepStock', 456);
+  reading.resolve(); await reload;
+  assert.equal(f.editor.draft.factory.keepStock, 456); assert.equal(f.editor.recoveryBlocked, true);
+  await f.tick(2000); assert.equal(f.posts().length, 0);
+  f.env.onGet = null; f.change('b'); await f.load();
+  assert.equal(f.editor.recoveryBlocked, false); assert.equal(f.node('config-message').hidden, true);
+  f.set('factory.keepStock', 789); await f.tick(600); assert.equal(f.posts().length, 1); assert.equal(f.posts()[0].account, 'b');
+});
+
+await test('恢复标识变化仍冻结草稿，相同配置版本的旧页面不能确认恢复', async () => {
+  const f = fixture(); await f.load(); f.set('factory.enabled', true);
+  f.env.recovery.a = { required: true, reason: 'missing' };
+  await f.tick(600);
+  assert.equal(f.posts()[0].payload.recoveryToken, null);
+  assert(f.editor.saveError.fields.revision); assert.equal(f.view('a').settings.factory.enabled, false);
+  await f.load(); assert.equal(f.editor.recoveryBlocked, true); assert.equal(f.editor.data.recoveryToken, f.view('a').recoveryToken);
+  f.env.confirmResult = true; await f.reload(); f.set('factory.keepStock', 123);
+  const priorToken = f.editor.data.recoveryToken;
+  saveAutomationSettings('a', defaultSettings(), { file: f.file, revision: f.view('a').revision });
+  await f.load();
+  assert.notEqual(f.editor.data.recoveryToken, priorToken); assert.equal(f.editor.recoveryBlocked, true);
+  assert.equal(f.editor.draft.factory.keepStock, 123, '同一恢复原因的新事件仍保留旧草稿');
+  await f.tick(600); assert.equal(f.posts().length, 1, '已获取新标识也不能绕过明确重载');
+});
+
+await test('不兼容版本或权限失败保留原文件，页面不声称已恢复默认配置', async () => {
+  const f = fixture();
+  const message = '配置版本高于当前程序；自动挂机已停止，原文件未覆盖，请使用兼容版本后重新配置。';
+  f.env.recovery.a = { required: true, reason: 'unavailable', message }; await f.load();
+  assert(f.node('config-message').textContent.startsWith(message));
+  assert.doesNotMatch(f.node('config-message').textContent, /已恢复.*默认/);
+  assert.match(f.node('config-state').textContent, /配置暂不可用/);
+  f.set('factory.keepStock', 123); await f.tick(3000);
+  assert.equal(f.posts().length, 0); assert.equal(await f.flush(), false);
+  f.compatibilityMessage({ compatibility: null }); assert(f.node('config-message').textContent.startsWith(message));
+});
+
+await test('运行状态轮询发现恢复时立即冻结已打开设置页的旧草稿，只读取一次新状态', async () => {
+  const f = fixture(); await f.load(); f.node('tab-settings').classList.contains = () => false;
+  f.set('factory.enabled', true);
+  saveAutomationSettings('a', defaultSettings(), { file: f.file, revision: f.view('a').revision });
+  f.env.recovery.a = { required: true, reason: 'missing' };
+  const runtime = () => ({ settingsRecovery: f.env.recovery.a, settingsRevision: f.view('a').revision, everyMs: 60000, completed: 0, running: false });
+  const reads = () => f.env.calls.filter(call => call.route === '/api/settings?fleets=1').length;
+  const initialReads = reads(), pending = deferred(); f.env.onGet = () => pending.promise;
+  f.renderLoop(runtime());
+  assert.equal(f.editor.recoveryBlocked, true); assert.match(f.node('loop-hint').textContent, /配置丢失.*重新配置/);
+  assert.match(f.node('config-message').textContent, /旧草稿.*自动保存已暂停/);
+  await f.tick(3000); assert.equal(f.posts().length, 0, '读取未完成也必须先取消旧定时保存');
+  f.renderLoop(runtime()); assert.equal(reads(), initialReads + 1, '轮询不能并发重复读取');
+  pending.resolve(); await settle();
+  assert.equal(f.editor.draft.factory.enabled, true); assert.equal(f.editor.recoveryBlocked, true);
+  assert.notEqual(f.editor.data.revision, runtime().settingsRevision, '保留旧草稿版本，不替它领取新版本');
+  f.renderLoop(runtime()); await settle(); f.renderLoop(runtime()); await settle();
+  assert.equal(reads(), initialReads + 1, '已核对恢复状态不因旧草稿版本不同而反复读取');
+  f.env.onGet = null;
+  saveAutomationSettings('a', defaultSettings(), { file: f.file, revision: f.view('a').revision });
+  f.renderLoop(runtime()); await settle(); assert.equal(reads(), initialReads + 2, '新的恢复版本仍需重新核对');
+  f.env.recovery.a = { ...f.env.recovery.a, id: 'another-recovery' };
+  f.renderLoop(runtime()); await settle(); assert.equal(reads(), initialReads + 3, '同版本的新恢复事件由独立标识区分');
+  assert.equal(f.posts().length, 0);
+});
+
+await test('恢复同步读取失败可在下次轮询重试，隐藏设置页仅显示页头警告', async () => {
+  const f = fixture(); await f.load(); f.node('tab-settings').classList.contains = () => false;
+  f.set('factory.keepStock', 123); f.env.recovery.a = { required: true, reason: 'corrupt', backupFile: 'C:\\很长的备份目录\\'.repeat(20) + '损坏.json' };
+  const runtime = { settingsRecovery: f.env.recovery.a, settingsRevision: f.view('a').revision, everyMs: 60000, completed: 0, running: false };
+  f.env.onGet = () => { throw new Error('临时读取失败'); }; f.renderLoop(runtime); await settle();
+  assert.equal(f.editor.recoveryBlocked, true); assert.match(f.node('config-message').textContent, /临时读取失败/);
+  f.env.onGet = null; f.renderLoop(runtime); await settle();
+  assert.equal(f.editor.data.recovery.reason, 'corrupt'); assert.equal(f.editor.recoverySync.complete, true);
+  assert(f.node('config-message').textContent.includes(f.env.recovery.a.backupFile));
+  assert(!f.node('loop-hint').textContent.includes(f.env.recovery.a.backupFile), '页头只保留短警告，备份详情留在配置页');
+  const g = fixture(); await g.load(); const reads = g.env.calls.length;
+  g.renderLoop(runtime); await settle();
+  assert.equal(g.env.calls.length, reads, '设置页隐藏时不额外读取');
+  assert.match(g.node('loop-hint').textContent, /配置损坏.*自动挂机已停止/);
+});
 
 await test('页头间隔保存同步配置版本，后续草稿保存保留新间隔', async () => {
   const f = fixture();

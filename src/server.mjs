@@ -1,4 +1,5 @@
 import { serveClientAsset } from './ui-assets.mjs';
+import { createConsoleVersion, renderVersionedPage, consoleVersionError } from './console-version.mjs';
 import { createTraceLog, traceJson, redactLog } from './trace-log.mjs';
 import { createProtocolDiagnostics } from './protocol-diagnostics.mjs';
 import { createResourceUpdater } from './resource-updater.mjs';
@@ -87,7 +88,7 @@ import { operationLabels } from './operation-labels.mjs';
 import { automationTasks, retiredAutomationTasks, migratedAutomationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
 import { rewardSchedule } from './reward-schedule.mjs';
 import { rememberTournament } from './side-rewards.mjs';
-import { beijingDay, loadAutomationSettings, saveAutomationSettings, validateSettings, settingsCatalog, settingsFromNative, settingsFromLegacyNative, nativeTaskValues, applyNativeTask, hasExtraWork, createUsageLedger, exportAutomationSettings, importAutomationSettings, SettingsError, settingsUiRules } from './automation-settings.mjs';
+import { beijingDay, loadAutomationSettings, loadRecoverableAutomationSettings, settingsFile, defaultSettings, saveAutomationSettings, validateSettings, settingsCatalog, settingsFromNative, settingsFromLegacyNative, nativeTaskValues, applyNativeTask, hasExtraWork, createUsageLedger, exportAutomationSettings, importAutomationSettings, SettingsError, settingsUiRules } from './automation-settings.mjs';
 import { budgetPreview, exactAutomationId, createActionGuard, nativePreferenceEnabled, needsCargoDemand, AutomationSkip } from './automation-policy.mjs';
 import { guardRuntimeActions, validateRuntimeSettings } from './settings-runtime.mjs';
 import { assertResourcesReady, resourceReadiness } from './resource-store.mjs';
@@ -141,16 +142,13 @@ const STATE_TEXT = {
   STOPPED: '已停止',
 };
 
-const pageRaw = Buffer.from(PAGE);
-const pageAsset = {
-  raw: pageRaw,
-  gzip: zlib.gzipSync(pageRaw, { level: 9 }),
-  etag: '"' + createHash('sha1').update(pageRaw).digest('hex').slice(0, 16) + '"',
-};
-
 export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recoveryDelayMs, resourceUpdates = false, resourceUpdater = null, protocol: protocolOverride,
   alipayLoginController = null,
   captureController = { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture } } = {}) {
+  const consoleVersion = createConsoleVersion(PAGE);
+  const pageRaw = Buffer.from(renderVersionedPage(PAGE, consoleVersion));
+  const pageAsset = { raw: pageRaw, gzip: zlib.gzipSync(pageRaw, { level: 9 }),
+    etag: '"' + createHash('sha1').update(pageRaw).digest('hex').slice(0, 16) + '"' };
   // 保留测试/嵌入调用方注入延迟的能力；正常运行时由当前账号的登录设置决定。
   const injectedRecoveryDelay = typeof recoveryDelayMs === 'function' ? recoveryDelayMs : null;
   const currentProtocol = () => protocolOverride ?? getProtocol();
@@ -166,6 +164,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   const streams = new Set();
   const sessions = new Map();
   let closing = false;
+  let settingsWatchStarted = false;
   const resources = resourceUpdater || (resourceUpdates ? createResourceUpdater({ onEvent: ({ level, message }) => emit(null, level, message) }) : null);
   // 先认证并查询已有区服角色，用户选择具体角色后再保存凭证。
   // 密码只用于当次请求；待保存凭证和待选账号只放在内存，十分钟后清理。
@@ -489,8 +488,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const accounts = loadStore().accounts;
     rememberLogAccounts(accounts);
     const saved = accounts.find(account => account.id === id)?.automation;
-    let detailed = loadAutomationSettings(id);
-    if (!detailed.revision && [...migratedAutomationTasks].some(key => saved?.tasks?.[key] === true)) {
+    let detailed;
+    try { detailed = loadRecoverableAutomationSettings(id, { expected: saved?.settingsConfigured === true ||
+      !saved?.tasks && (saved?.autoStart === true || saved?.enabled === true) }); }
+    catch (error) { detailed = unavailableSettings(error); }
+    if (!detailed.recovery && !detailed.revision && [...migratedAutomationTasks].some(key => saved?.tasks?.[key] === true)) {
       // Persist the complete conversion before native flags are normalized;
       // otherwise a pause or restart could discard the only migration input.
       detailed = saveAutomationSettings(id, settingsFromLegacyNative(saved.tasks, saved), { revision: 0 });
@@ -498,16 +500,23 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     }
     // 新账号首次保存前也使用完整的关闭配置，避免旧任务接口绕过模块和细项开关。
     // 重复动作在读取旧原生任务时立即迁移，随后只使用统一配置。
-    const preferences = detailed.revision ? detailed.settings
+    if (detailed.revision || detailed.recovery) {
+      const change = { settingsConfigured: true };
+      if (detailed.recovery) Object.assign(change, { enabled: false, autoStart: false, loginRecovery: null });
+      if (!saved?.settingsConfigured || detailed.recovery) saveAutomation(id, change);
+    }
+    const preferences = detailed.revision || detailed.recovery ? detailed.settings
       : !saved?.tasks ? settingsFromNative(undefined, saved ?? {}) : null;
     return {
       id,
       preferences,
       preferencesRevision: detailed.revision,
       preferencesSavedAt: detailed.savedAt,
+      settingsRecovery: detailed.recovery ?? null,
+      settingsFileStamp: settingsDiskStamp(),
       paused: saved?.paused === true,
       loginBlocked: saved?.loginBlocked === true,
-      loginRecovery: saved?.loginRecovery ?? null,
+      loginRecovery: detailed.recovery ? null : saved?.loginRecovery ?? null,
       loginRecoveryJob: null,
       loginRecoveryController: null,
       loginRecoveryWait: null,
@@ -540,7 +549,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       dailySingle: dailySingleState(),
       loop: {
         running: false,
-        autoStart: saved?.autoStart ?? saved?.enabled ?? false,
+        autoStart: detailed.recovery ? false : saved?.autoStart ?? saved?.enabled ?? false,
         rounds: preferences?.loop.rounds ?? saved?.rounds ?? 0,
         completed: 0,
         everyMs: (preferences?.loop.everySeconds ?? saved?.everySeconds ?? 60) * 1000,
@@ -550,7 +559,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         controller: null, job: null,
         attemptController: null, connectionFailure: null, recovery: null,
         history: [],
-        error: null,
+        error: detailed.recovery?.message ?? null,
       },
     };
   }
@@ -588,6 +597,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     if (!sessions.has(id)) {
       const session = newSession(id);
       sessions.set(id, session);
+      if (session.settingsRecovery) emit(session, 'error', session.settingsRecovery.message);
       try {
         const audit = JSON.parse(fs.readFileSync(factoryReportFile(id), 'utf8'));
         if (audit.lines?.length) emit(session, 'info', '上次工厂检查 · ' + audit.time, { diagnostic: audit.lines.join('\n') });
@@ -605,6 +615,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     session.preferences = entry.settings;
     session.preferencesRevision = entry.revision;
     session.preferencesSavedAt = entry.savedAt;
+    session.settingsRecovery = entry.recovery ?? null;
+    session.settingsFileStamp = settingsDiskStamp();
+    if (entry.revision && !loadStore().accounts.find(account => account.id === session.id)?.automation?.settingsConfigured)
+      saveAutomation(session.id, { settingsConfigured: true });
     session.loop.tasks = nativeTaskValues(entry.settings, session.loop.tasks);
     session.loop.fishingGoldReserve = entry.settings.gather.fishingGoldReserve;
     session.loop.everyMs = entry.settings.loop.everySeconds * 1000;
@@ -613,9 +627,62 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     if (previousLogin !== JSON.stringify(entry.settings.login)) refreshLoginRecovery(session);
   }
 
+  function settingsDiskStamp() {
+    try { const stat = fs.statSync(settingsFile(), { bigint: true }); return [stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':'); }
+    catch (error) { return 'unavailable:' + error.code; }
+  }
+
+  function unavailableSettings(error, revision = 0) {
+    return { settings: defaultSettings(), revision, savedAt: null,
+      recovery: { required: true, reason: 'unavailable', message: error.message + '；自动挂机已停止，原文件未覆盖，请修复配置或使用兼容版本后重新配置。' } };
+  }
+
+  function refreshSessionSettings(session, force = false) {
+    const current = () => ({ settings: session.preferences, revision: session.preferencesRevision,
+      savedAt: session.preferencesSavedAt, ...(session.settingsRecovery ? { recovery: session.settingsRecovery } : {}) });
+    const observedStamp = settingsDiskStamp();
+    if (session.settingsReading || !force && session.settingsFileStamp === observedStamp) return current();
+    session.settingsReading = true;
+    try {
+      let saved;
+      try { saved = loadRecoverableAutomationSettings(session.id, { expected: session.preferencesRevision > 0 ||
+        loadStore().accounts.find(account => account.id === session.id)?.automation?.settingsConfigured === true }); }
+      catch (error) { saved = unavailableSettings(error, session.preferencesRevision); }
+      const changed = saved.revision !== session.preferencesRevision || JSON.stringify(saved.recovery ?? null) !== JSON.stringify(session.settingsRecovery);
+      session.settingsFileStamp = observedStamp;
+      if (changed && (saved.revision || saved.recovery)) {
+        if (saved.recovery) {
+          // 先持久关闭并取消旧任务，再广播新配置，避免推送回调中断恢复顺序。
+          session.settingsRecovery = saved.recovery;
+          session.generation++;
+          stopLoop(session, saved.recovery.message);
+          session.stages.stop(saved.recovery.message); session.mutualAid.stop(saved.recovery.message);
+          for (const task of session.trials.values()) task.stop(saved.recovery.message);
+          session.loop.error = saved.recovery.message;
+        }
+        adoptPreferences(session, saved);
+        if (saved.recovery) emit(session, 'error', saved.recovery.message);
+      }
+      session.settingsFileStamp = observedStamp;
+      return current();
+    } finally { session.settingsReading = false; }
+  }
+
+  function assertSettingsReady(session) {
+    const entry = refreshSessionSettings(session);
+    if (entry.recovery?.required) throw Object.assign(new Error(entry.recovery.message), { code: 'SETTINGS_RECOVERY_REQUIRED' });
+  }
+
+  function settingsFileChanged() {
+    if (closing) return;
+    for (const session of sessions.values()) {
+      try { refreshSessionSettings(session, true); }
+      catch (error) { session.loop.controller?.abort(); emit(session, 'error', '配置检查失败，挂机已停止：' + error.message); }
+    }
+  }
+
   function settingsView(session) {
-    const saved = loadAutomationSettings(session.id);
-    if (saved.revision && saved.revision !== session.preferencesRevision) adoptPreferences(session, saved);
+    const saved = refreshSessionSettings(session, true);
     const settings = saved.revision ? saved.settings : session.preferences ?? settingsFromNative(session.loop.tasks, {
       rounds: session.loop.rounds, everySeconds: session.loop.everyMs / 1000, fishingGoldReserve: session.loop.fishingGoldReserve,
     });
@@ -626,7 +693,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     let compatibility = null;
     try { loadConfigSafe(); validateRuntimeSettings(settings, config); }
     catch (error) { compatibility = { error: error.message, fields: error.fields ?? {} }; }
-    return { settings, revision: saved.revision, savedAt: saved.savedAt, baseRevision, compatibility, catalog: ownedFleetCatalog(session,settingsCatalog(config)),
+    const recoveryToken = session.settingsRecovery ? createHash('sha256').update(JSON.stringify([saved.revision, saved.savedAt, session.settingsRecovery])).digest('hex') : null;
+    return { settings, revision: saved.revision, savedAt: saved.savedAt, baseRevision, compatibility, recovery: session.settingsRecovery, recoveryToken, catalog: ownedFleetCatalog(session,settingsCatalog(config)),
       tasks: automationTasks.filter(task => !retiredAutomationTasks.has(task.key) && !availability.hiddenTasks.includes(task.key)), rules: { ...settingsUiRules(), hiddenFields: availability.hiddenFields },
       usage: usageFor(session).snapshot(), pendingUsage: usageFor(session).pendingCounters(), running: session.loop.running };
   }
@@ -1740,6 +1808,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   async function handle(req, res, body) {
     const parsed = new URL(req.url, 'http://localhost');
+    res.setHeader('X-CW-Console-Version', consoleVersion);
     if (serveClientAsset(req, res, parsed.pathname)) return;
     const route = `${req.method} ${parsed.pathname}`;
     const acceptsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] ?? '');
@@ -1767,6 +1836,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const scoped_ = (url) => {
       const found = resolve(url);
       scoped = found.session;
+      if (req.method === 'POST' && !['/api/settings', '/api/settings/validate', '/api/logs/clear',
+        '/api/connect', '/api/disconnect', '/api/accounts/pause', '/api/accounts/active', '/api/accounts/label', '/api/accounts/remove',
+        '/api/loop/stop', '/api/loop/auto-start', '/api/stages/stop', '/api/pirates/advance/stop',
+        '/api/guild/mutual/stop', '/api/trials/stop'].includes(parsed.pathname)) assertSettingsReady(found.session);
       if (req.method === 'POST' && found.session.syncingProduction
         && !['/api/accounts/pause', '/api/disconnect', '/api/loop/stop', '/api/stages/stop', '/api/pirates/advance/stop',
           '/api/guild/mutual/stop', '/api/loop/auto-start', '/api/loop/interval', '/api/settings', '/api/settings/validate', '/api/login-settings', '/api/week-order/settings', '/api/hero-raid/settings', '/api/merchant/settings', '/api/guild-ship/settings', '/api/activities/settings', '/api/appointments/settings', '/api/logs/clear',
@@ -1777,6 +1850,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       return found;
     };
     try {
+      const versionError = consoleVersionError(req, consoleVersion);
+      if (versionError) { json(versionError, versionError.status); return; }
       if (['POST /api/dailies/run', 'POST /api/tasks/run', 'POST /api/world/run', 'POST /api/worlds/enter'].includes(route)) {
         const { session } = resolve(parsed);
         parsed.searchParams.set('account', session.id);
@@ -2070,8 +2145,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { session } = scoped_(parsed);
         const payload = jsonBody();
         const current = settingsView(session);
+        if (current.recovery?.required && payload.recoveryToken !== current.recoveryToken)
+          throw new SettingsError({ revision: '配置已丢失或损坏，请重新载入默认配置后再保存；旧页面的更改未生效' });
         if (!current.revision && payload.baseRevision !== current.baseRevision) throw new SettingsError({ revision: '现有挂机开关已变化，请重新载入后再保存' });
-        const entry = saveAutomationSettings(session.id, payload.settings, { revision: payload.revision, catalog: settingsCatalog(loadConfigSafe({ allowStale: true })) });
+        const entry = saveAutomationSettings(session.id, payload.settings, { revision: payload.revision, catalog: settingsCatalog(loadConfigSafe({ allowStale: true })), expectedRecoveryId: current.recovery?.id });
         adoptPreferences(session, entry);
         if (session.client) for (const task of automationTasks) rewardSchedule(session.client).clearTask(task.key);
         emit(session, 'info', '游戏配置已保存。正在运行的任务从下次检查开始使用新配置。');
@@ -3726,6 +3803,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         needConfirm(payload);
         if (typeof payload.autoStart !== 'boolean') throw new Error('自动开始挂机必须是开关值');
         const { account, session } = scoped_(parsed);
+        if (payload.autoStart) assertSettingsReady(session);
         saveAutomation(account.id, { autoStart: payload.autoStart, enabled: payload.autoStart });
         if (payload.autoStart) await startAutomaticLoop(session);
         json(loopView(session));
@@ -3828,6 +3906,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   async function startAutomaticLoop(session) {
     try {
+      refreshSessionSettings(session);
+      if (session.settingsRecovery?.required) return;
       const generation = session.generation;
       if (session.loop.controller?.signal.aborted) await session.loop.job;
       if (closing || sessions.get(session.id) !== session || generation !== session.generation
@@ -3852,6 +3932,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
 
   function startLoop(session, account, options = {}) {
+    assertSettingsReady(session);
     if (session.paused) throw new Error('账号已暂停，请先恢复托管');
     if (session.loginBlocked && !options.explicitLogin && !loginRecoveryActive(session)) throw new Error('账号在别处登录，请先恢复托管或重新开始挂机');
     const loop = session.loop;
@@ -3925,7 +4006,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           isPirateBusy: () => session.pirateAdvance.view().running,
           challengeRun: loop.challengeRun,
           executeBattle: sessionLineupExecutor(session, client),
-          getSettings: () => session.preferences,
+          // 推送监听也会读取配置；恢复时先中止循环并返回关闭的默认值，避免在事件回调中抛错。
+          getSettings: () => { refreshSessionSettings(session); return session.preferences; },
           onFishBookComplete: () => {
             const saved=loadAutomationSettings(session.id);
             if(!saved.settings.gather.fishBook || session.client!==client)return;
@@ -4114,6 +4196,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       fishingGoldReserve: loop.fishingGoldReserve,
       compassSpinCount: session.preferences?.eventActions.compassDrawCount ?? loop.compassSpinCount,
       settingsRevision: session.preferencesRevision,
+      settingsRecovery: session.settingsRecovery,
       rounds: loop.rounds,
       completed: loop.completed,
       everyMs: loop.everyMs,
@@ -4148,11 +4231,13 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         server.listen(port, host, () => {
           const address = `http://${host}:${server.address().port}`;
           emit(null, 'info', `控制台已启动 ${address}`);
+          fs.watchFile(settingsFile(), { interval: 1000, persistent: false }, settingsFileChanged);
+          settingsWatchStarted = true;
           for (const account of loadStore().accounts) {
             if (account.automation?.autoStart === undefined) saveAutomation(account.id, { autoStart: autoStartEnabled(account) });
-            if (account.automation?.paused) continue;
-            if (!autoStartEnabled(account) && !account.automation?.loginBlocked) continue;
             const session = sessionFor(account.id);
+            if (session.settingsRecovery?.required || account.automation?.paused) continue;
+            if (!autoStartEnabled(account) && !account.automation?.loginBlocked) continue;
             if (session.loginBlocked) {
               // 旧版本仅保存 loginBlocked；迁移时按当前配置安排完整等待。
               if (!session.loginRecovery || session.loginRecovery.status === 'connecting') scheduleLoginRecovery(session);
@@ -4167,6 +4252,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     },
     close: async () => {
       closing = true;
+      if (settingsWatchStarted) fs.unwatchFile(settingsFile(), settingsFileChanged);
       clearAlipayRoles();
       await alipayLogin.close();
       for (const client of phonePreviewClients) client.stop();
