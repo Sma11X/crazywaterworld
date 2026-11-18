@@ -121,7 +121,7 @@ try {
     assert.equal(await tab.getAttribute('aria-current'), 'page');
     assert.equal(await page.locator('#resource-tabs').isVisible(), false);
     assert.equal(await page.locator('#tab-heroes #saved-lineup-view, #tab-heroes #lineup-view').count(), 0);
-    assert.equal(await page.locator('#tab-heroes #formation-view').count(), 1);
+    assert.equal(await page.locator('#tab-heroes #formation-view').count(), 0);
     return { context, page };
   }
 

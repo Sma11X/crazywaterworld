@@ -67,9 +67,9 @@ await test('进度和条件分列，真实开关限制不被执行成功覆盖',
 });
 await test('页面脚本可解析，废弃入口移除且主分支独有入口完整保留',()=>{
  for(const m of PAGE.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);
- for(const id of ['hunt-view','pirate-tracker'])assert(!PAGE.includes('id="'+id+'"'),id);
+ for(const id of ['hunt-view','pirate-tracker','formation-view'])assert(!PAGE.includes('id="'+id+'"'),id);
  for(const removed of ['activity-stats-','activity-rank-','/api/activity-ranks','refreshActivityStatistics','resetActivityStatistics','refreshActivityRanks','resetActivityRanks'])assert(!PAGE.includes(removed),removed);
- for(const id of ['activities-list','formation-view','overview-task-groups','inventory-query','world-map-fleets'])assert.equal((PAGE.match(new RegExp('id="'+id+'"','g'))??[]).length,1,id);
+ for(const id of ['activities-list','overview-task-groups','inventory-query','world-map-fleets'])assert.equal((PAGE.match(new RegExp('id="'+id+'"','g'))??[]).length,1,id);
  assert(PAGE.includes('当前进度'));assert(PAGE.includes('当前条件'));assert(PAGE.includes('width:165px'));assert(PAGE.includes('width:100px'));
 });
 await test('建筑一览移除一键领取和任务奖励面板及其按钮绑定', () => {

@@ -6,7 +6,6 @@ const progressionViews = [
   { id: 'crafting', tab: 'heroes', path: '/api/equipment/crafting', render: renderCrafting },
   { id: 'pirate-board', tab: 'activities', path: '/api/pirates/board', render: renderPirateBoard },
   { id: 'guild', tab: 'guild', path: '/api/guild', render: renderGuild },
-  { id: 'formation', tab: 'heroes', path: '/api/fleets/formation', render: renderFormations },
 ];
 const pendingProgression = new Set();
 const trialFailureOptions = new Map();
@@ -80,7 +79,7 @@ function progressionAction(label, path, payload, account, reason, group) {
     finally {
       pendingProgression.delete(key);
       if (account === current) {
-        const view=path.includes('/crafting/')?'crafting':path.includes('/pirates/')?'pirate-board':path.includes('/guild/')?'guild':path.includes('/equipment/')?'equipment':path.includes('/fleets/')?'formation':'trial';
+        const view=path.includes('/crafting/')?'crafting':path.includes('/pirates/')||path.includes('/fleets/')?'pirate-board':path.includes('/guild/')?'guild':path.includes('/equipment/')?'equipment':'trial';
         button.disabled=Boolean(reason);button.textContent=label;await refreshProgression(view);
       }
     }
@@ -408,22 +407,6 @@ function renderGuild(box, data, account) {
     buttons.push(button); tabs.appendChild(button);
   });
   box.append(tabs, panel); draw(guildSelections.get(account) || 0);
-}
-
-function renderFormations(box, data, account) {
-  if (data.locked) return;
-  box.appendChild(el('strong', null, '远征舰队编队'));
-  if (!data.docks.length) { box.appendChild(el('p', 'dim', '尚未建成远征舰队')); return; }
-  for (const dock of data.docks) {
-    const row = el('div', 'progression-row'), detail = el('div');
-    detail.appendChild(el('strong', null, dock.name));
-    if (dock.heroes.length) detail.appendChild(el('p', null, (dock.saved ? '已编队' : '首次编队预览') + ' · ' + dock.heroes.map(h => h.name).join('、')));
-    detail.appendChild(el('p', 'dim', dock.reason || (dock.visible ? '已在世界舰队列表' : '世界地图尚未列出这支舰队')));
-    row.appendChild(detail);
-    if (!dock.saved && !dock.reason && dock.previewKey) row.appendChild(progressionAction('保存这套首次编队',
-      '/api/fleets/formation', { buildingId: dock.buildingId, previewKey: dock.previewKey }, account));
-    box.appendChild(row);
-  }
 }
 
 function renderGuildTech(box,data,account){

@@ -2163,7 +2163,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             const { plan, heroes, stock } = await readHeroGrowthPlan(client, config, session.player, previewSettings);
             const actions = plan.steps.map(step => ({ ...step, label: heroStepLabel(step), setting: 'heroes.' + step.kind }));
             const checked = budgetPreview(actions, stock, settings, usage);
-            return output({ ...checked, notes: [...plan.notes, ...checked.notes, ...(settings.loop.heroes ? [] : ['英雄养成未加入挂机，可在英雄页手动按本配置执行'])] }, { heroes: heroes.length }, gearOnly ? '装备强化' : '英雄养成');
+            return output({ ...checked, notes: [...plan.notes, ...checked.notes, ...(settings.loop.heroes ? [] : ['英雄养成未加入挂机，可在挂机配置 → 英雄 → 英雄养成中开启'])] }, { heroes: heroes.length }, gearOnly ? '装备强化' : '英雄养成');
           }
           if (category === 'daily') {
             const flags = nativeTaskValues(settings, session.loop.tasks);

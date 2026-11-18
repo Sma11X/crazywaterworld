@@ -117,15 +117,6 @@ export function inventoryPage() {
 
 export function heroesPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="英雄养成" help="按当前账号的指定英雄和已开启动作计算计划。执行养成时会重新核对条件。" titleAfter={<a className="inline-link" href="#config-group-heroes">养成设置</a>}>
-    <div className="bar">
-      <Button id="hero-plan" variant="outline">计算计划</Button>
-      <Button id="hero-run" variant="default">执行养成</Button>
-      <span id="hero-hint" className="warn" role="status"></span>
-    </div>
-    <pre id="hero-view">尚未计算</pre>
-    <div id="hero-table"></div>
-    </Panel>
     <Panel title="英雄任命" help="开启后随自动挂机，使用游戏一键委任分配英雄，已有任命可能调整。" titleAfter={<div className="bar"><label htmlFor="appointments-enabled">自动委任</label><Switch id="appointments-enabled" className="p-0" disabled /></div>}>
       <div className="appointments-heading"><h4 id="appointments-priority-title">委任优先级</h4><span id="appointments-state" className="dim" role="status">请选择账号</span></div>
       <p id="appointments-help" className="dim">上方项目优先委任。拖动手柄或使用上移、下移调整，修改后自动保存。</p>
@@ -137,7 +128,6 @@ export function heroesPage() {
       <div id="equipment-view" className="progression-view" aria-live="polite" />
     </Panel>
     <Panel title="装备制造"><div className="bar"><Button id="crafting-refresh" variant="outline">刷新装备厂</Button></div><div id="crafting-view" className="progression-view" aria-live="polite" /></Panel>
-    <Panel title="远征舰队编队" help="保留空编队的初始化入口。已有编队不会自动重排；舰队状态在总览查看，首杀连续推进在挑战页开启。"><div id="formation-view" className="progression-view" aria-live="polite" /></Panel>
   </div>)
 }
 

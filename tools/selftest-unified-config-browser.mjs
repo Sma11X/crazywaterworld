@@ -95,20 +95,13 @@ try {
 
   await page.locator('#tabs [data-tab=resources]').click();
   await page.locator('[data-resource-tab=heroes]').click();
-  const planPath = url => url.pathname === '/api/heroes';
-  const runPath = url => url.pathname === '/api/heroes/run';
-  await page.route(planPath, route => route.fulfill({ json: {
-    text: '养成计划', heroes: [{ heroId: '瑞文', showName: '骑士瑞文', level: 35, star: 3, skillLevels: [1, 1] }],
-    steps: [{ kind: 'skillAdvance', heroId: '瑞文' }, { kind: 'equipment', heroId: '瑞文' }],
-  } }));
-  await page.route(runPath, route => route.fulfill({ json: { sent: 2, failed: 0, skipped: 0 } }));
-  await page.locator('#hero-plan').click();
-  await page.locator('#hero-table').getByText('技能进阶、装备强化', { exact: true }).waitFor();
-  await page.locator('#hero-run').click();
-  await page.locator('#hero-hint').filter({ hasText: '已发送 2 项' }).waitFor();
-  await page.locator('#hero-run:enabled').waitFor();
-  await page.unroute(planPath); await page.unroute(runPath);
-  await page.locator('#tab-heroes').getByRole('link', { name: '养成设置' }).click();
+  assert.equal(await page.locator('#hero-plan, #hero-run, #hero-view, #hero-table, #formation-view').count(), 0);
+  assert.equal(await page.locator('#tab-heroes').getByRole('link', { name: '养成设置' }).count(), 0);
+  for (const title of ['英雄任命', '英雄装备', '装备制造']) {
+    assert.equal(await page.locator('#tab-heroes [data-slot=card-title]').filter({ hasText: title }).isVisible(), true);
+  }
+  await page.locator('#tabs [data-tab=settings]').click();
+  await page.locator('[data-config-tab=heroes]').click();
   await page.locator('#config-group-heroes').waitFor();
   const picker = page.locator('#config-field-heroes-heroIds');
   assert.match(await picker.locator('summary').textContent(), /重新选择/);
@@ -149,7 +142,7 @@ try {
   await picker.locator('summary').click(); await saved();
   assert.equal(await picker.locator('summary').textContent(), '留空则不处理任何英雄');
   assert.deepEqual(loadAutomationSettings('config-a').settings.heroes.heroIds, []);
-  console.log('通过：从手动养成直达设置，按游戏名称选英雄、保存独立动作及目标、清空名单');
+  console.log('通过：资源页移除手动养成和远征舰队编队并保留其余功能，挂机配置仍可按名称选英雄、保存独立动作及目标、清空名单');
   const hero = page.locator('#config-field-heroes-enabled');
   assert.equal(await hero.getAttribute('aria-checked'), 'false', '组合字段有一项关闭时显示暂停');
   await hero.click(); await saved();
