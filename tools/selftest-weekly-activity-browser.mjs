@@ -46,10 +46,6 @@ const open = async page => {
   await page.locator('#config-subtab-weekly-activities').click();
   await page.locator('#config-group-weekly-activities').waitFor(); await saved(page);
 };
-const expand = async (page, name) => {
-  const disclosure = page.locator('[data-config-branch="weeklyActivity.' + name + '"] > .config-row .config-disclosure');
-  if (await disclosure.getAttribute('aria-expanded') !== 'true') await disclosure.click();
-};
 try {
   const base = await app.listen();
   const executablePath = process.env.CW_BROWSER_TEST_EXECUTABLE || [
@@ -129,6 +125,7 @@ try {
   const dailyTabs = await page.locator('#config-panel-daily [data-config-group]').evaluateAll(tabs => tabs.map(tab => tab.dataset.configGroup));
   assert.equal(dailyTabs.indexOf('ad-rewards'), dailyTabs.indexOf('daily-actions') + 1);
   const military = page.locator('#config-group-weekly-activities');
+  assert.equal(await military.locator('details, .config-field-section, .config-disclosure').count(), 0, '军备竞赛不再使用折叠层级');
   assert.equal(await military.locator('input[type=time], [data-config-key$="Start"], [data-config-key$="End"]').count(), 0);
   const reward = military.locator('[data-config-key="schedule.armsRaceRewards"]');
   assert.equal(await page.locator('[data-config-key="schedule.armsRaceRewards"]').count(), 1);
@@ -136,18 +133,21 @@ try {
   assert.equal(await field(page, 'enabled').getAttribute('aria-checked'), 'false');
   for (const kind of kinds) {
     assert.equal(await field(page, kind + 'Enabled').count(), 1);
+    const label = await military.locator('label[for="config-field-weeklyActivity-' + kind + 'Enabled"]').textContent();
+    assert.equal(await military.getByText(label, { exact: true }).count(), 1, kind + ' 活动标题唯一');
     assert.equal(await field(page, kind + 'Enabled').getAttribute('aria-checked'), 'false');
+    assert.equal(await field(page, kind + 'Stop').isVisible(), false);
     await field(page, kind + 'Enabled').click();
+    assert.equal(await field(page, kind + 'Stop').isVisible(), true, kind + ' 开启后直接显示参数');
   }
   await field(page, 'enabled').click();
-  await expand(page, 'farmEnabled');
+  for (const name of ['farmRecruitTimes','farmSpeedUp','petQualityOrder','forgeQualityOrder']) assert(await field(page, name).isVisible());
   assert(await field(page, 'farmStop').getByLabel('全天参与', { exact: true }).isChecked());
   await field(page, 'farmRecruitTimes').fill('15'); await field(page, 'farmSpeedUp').click();
-  await expand(page, 'petEnabled');
   await field(page, 'petQualityOrder').getByLabel('从高到低', { exact: true }).check();
   assert.equal(await field(page, 'petScore').isVisible(), false);
   await field(page, 'petStop').getByLabel('达到积分值时', { exact: true }).check();
-  await expand(page, 'petStop'); await field(page, 'petScore').fill('20000');
+  assert(await field(page, 'petScore').isVisible()); await field(page, 'petScore').fill('20000');
   await saved(page);
   let persisted = loadAutomationSettings('weekly-a').settings;
   assert(kinds.every(kind => persisted.weeklyActivity[kind + 'Enabled']));
@@ -162,7 +162,8 @@ try {
   console.log('通过：军备竞赛页签唯一且合并领奖，广告位于日常行动之后，无时间输入并自动保存积分');
 
   await page.reload(); await open(page);
-  await expand(page, 'farmEnabled'); await expand(page, 'petEnabled'); await expand(page, 'petStop');
+  assert.equal(await military.locator('details, .config-disclosure').count(), 0);
+  assert(await field(page, 'petScore').isVisible(), '刷新后无需展开积分目标');
   assert.equal(await field(page, 'enabled').getAttribute('aria-checked'), 'true');
   assert(await field(page, 'farmStop').getByLabel('全天参与', { exact: true }).isChecked());
   assert.equal(await reward.getAttribute('aria-checked'), 'false');
@@ -209,7 +210,7 @@ try {
   for (const key of ['farm', 'pet', 'antique', 'resident', 'forge', 'heroes', 'alliance']) assert.deepEqual(persisted[key], original[key]);
   assert.deepEqual(loadAutomationSettings('weekly-b'), other);
   await field(page, 'enabled').click(); await saved(page);
-  await expand(page, 'farmEnabled'); await expand(page, 'petEnabled'); await expand(page, 'petStop');
+  assert(await field(page, 'farmRecruitTimes').isVisible()); assert(await field(page, 'petScore').isVisible());
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() => scrollY === 0);
   await page.screenshot({ path: path.join(output, 'weekly-activity-desktop.png'), fullPage: true, animations: 'disabled' });
@@ -220,7 +221,8 @@ try {
   await mobile.route(url => url.pathname === '/api/activity-ranks/view', mockRank);
   await mobile.goto(base); await open(mobile);
   await mobile.locator('#config-weekly-ranking').getByText('海兽培养', { exact: true }).waitFor();
-  await expand(mobile, 'farmEnabled'); await expand(mobile, 'petEnabled'); await expand(mobile, 'petStop');
+  assert.equal(await mobile.locator('#config-group-weekly-activities details, #config-group-weekly-activities .config-disclosure').count(), 0);
+  assert(await field(mobile, 'farmRecruitTimes').isVisible()); assert(await field(mobile, 'petScore').isVisible());
   for (const width of [320, 360, 390, 768]) {
     await mobile.setViewportSize({ width, height: 844 });
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, width + 'px 页面不能横向溢出');

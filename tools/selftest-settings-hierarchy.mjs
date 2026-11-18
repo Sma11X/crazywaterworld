@@ -139,7 +139,7 @@ const keys = widgets => widgets.map(widget => widget.spec.key);
 let passed = 0;
 function test(name, run) { run(); passed++; console.log('通过：' + name); }
 
-test('军备竞赛在日常分类合并领奖，全天参与与积分模式保留目标', () => {
+test('军备竞赛标题唯一且参数直接显示，全天参与与积分模式保留目标', () => {
   const f = fixture({ navigation: true }); f.renderPage();
   f.env.hash = '#config-group-weekly-activities'; f.applyHash();
   assert.equal(f.editor.category, 'daily');
@@ -149,18 +149,39 @@ test('军备竞赛在日常分类合并领奖，全天参与与积分模式保�
   assert(!f.editor.groups.has('military-week'));
   assert.deepEqual(new Set(group.fields.map(field => field.key)),
     new Set([...Object.keys(defaultSettings().weeklyActivity).filter(key => !/(?:Start|End)$/.test(key)).map(key => 'weeklyActivity.' + key), 'schedule.armsRaceRewards']));
-  assert.match(group.description, /周六.*联盟城战/);
+  assert.equal(group.description, undefined);
   assert(!group.fields.some(field => /(?:Start|End)$/.test(field.key) || field.kind === 'time'));
   assert.deepEqual(f.widget('weeklyActivity.petStop').spec.options, [['allDay','全天参与'],['score','达到积分值时']]);
   const ids = [...f.editor.groups.values()].filter(item => item.category === 'daily').map(item => item.id);
   assert.equal(ids.indexOf('ad-rewards'), ids.indexOf('daily-actions') + 1);
-  f.set('weeklyActivity.petEnabled', true); f.expand('weeklyActivity.petEnabled');
+  const panel = f.env.node('config-group-weekly-activities');
+  assert.equal(panel.querySelectorAll('details').length, 0);
+  assert.equal(panel.querySelectorAll('.config-field-section').length, 0);
+  assert.equal(panel.querySelectorAll('.config-disclosure').length, 0);
+  for (const kind of ['farm','pet','antique','order','forge','hero']) {
+    const toggle = f.widget('weeklyActivity.' + kind + 'Enabled');
+    assert.equal(panel.querySelectorAll('.config-label').filter(node => node.textContent === toggle.spec.label).length, 1);
+    assert(!toggle.disclosure);
+    assert(!visible(f.widget('weeklyActivity.' + kind + 'Stop').node));
+    f.set('weeklyActivity.' + kind + 'Enabled', true);
+    assert(visible(f.widget('weeklyActivity.' + kind + 'Stop').node));
+    assert(!f.widget('weeklyActivity.' + kind + 'Stop').disclosure);
+  }
+  assert(visible(f.widget('weeklyActivity.farmRecruitTimes').node));
+  assert(visible(f.widget('weeklyActivity.farmSpeedUp').node));
+  assert(visible(f.widget('weeklyActivity.petQualityOrder').node));
+  assert(visible(f.widget('weeklyActivity.forgeQualityOrder').node));
   const score = f.widget('weeklyActivity.petScore');
   assert(!visible(score.node));
-  f.set('weeklyActivity.petStop', 'score'); f.expand('weeklyActivity.petStop');
+  f.set('weeklyActivity.petStop', 'score');
   assert(visible(score.node));
+  f.set('weeklyActivity.petScore', 12000); f.set('weeklyActivity.petStop', 'allDay');
+  assert(!visible(score.node)); assert.equal(f.editor.draft.weeklyActivity.petScore, 12000);
+  f.set('weeklyActivity.petStop', 'score'); assert(visible(score.node));
   f.set('weeklyActivity.petScore', 12000); f.set('weeklyActivity.petEnabled', false);
   assert(!visible(score.node)); assert.equal(f.editor.draft.weeklyActivity.petScore, 12000);
+  f.set('weeklyActivity.petEnabled', true); assert(visible(score.node));
+  f.set('weeklyActivity.petEnabled', false);
   f.errors({ message: '目标积分无效', fields: { 'weeklyActivity.petScore': '请填正整数目标积分' } });
   assert(visible(score.node)); assert.equal(f.env.focused, score.control);
   f.env.hash = '#config-group-military-week'; f.applyHash();

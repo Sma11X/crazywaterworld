@@ -118,7 +118,7 @@ const weeklyActivityFields = [
     ['hero','周日 · 英雄培养','仅周日参与，执行指定英雄升星。复用英雄名单、升星开关及目标；未选择英雄或未开启升星时等待。开启本分项会暂停原有券招募自动路径。'],
   ].flatMap(([kind, label, help]) => {
     const prefix = 'weeklyActivity.' + kind;
-    const fields = [configField(prefix + 'Enabled',label,'switch',{section:label,help})];
+    const fields = [configField(prefix + 'Enabled',label,'switch',{collapsible:false,help})];
     if (kind === 'farm') fields.push(
       configField('weeklyActivity.farmRecruitTimes','临时募兵次数','number',{parent:prefix+'Enabled',unit:'次/日',help:'普通联盟城市募兵，默认10次，0表示不参与。由本活动分项授权，仍遵守服务器次数、材料过滤、资源保留及预算限制。'}),
       configField('weeklyActivity.farmSpeedUp','种田加速','switch',{parent:prefix+'Enabled',help:'默认关闭。只在当日种田主题及积分目标内使用已授权的加速资源。'}),
@@ -127,14 +127,14 @@ const weeklyActivityFields = [
       parent:prefix+'Enabled',options:[['asc','从低到高'],['desc','从高到低']],help:'只调整已配置且材料充足的候选方案顺序，不扩大可用物种、配方或材料范围。',
     }));
     fields.push(
-      configField(prefix+'Stop','停止条件','radio',{parent:prefix+'Enabled',options:[['allDay','全天参与'],['score','达到积分值时']],help:'当日对应主题开放时全天参与；积分模式达到目标后停止新增消耗，积分无法确认时等待。'}),
+      configField(prefix+'Stop','停止条件','radio',{parent:prefix+'Enabled',collapsible:false,options:[['allDay','全天参与'],['score','达到积分值时']],help:'当日对应主题开放时全天参与；积分模式达到目标后停止新增消耗，积分无法确认时等待。'}),
       configField(prefix+'Score','目标积分','number',{parent:prefix+'Stop',unit:'分',when:d=>d.weeklyActivity[kind+'Stop']==='score',help:'填写本日活动的累计目标积分，达到后停止新增消耗。单次动作可能使积分超过目标。'}),
     );
     return fields;
   }),
 ];
 const configGroups = [
-  {id:'weekly-activities',title:'军备竞赛',category:'daily',description:'北京时间周一种田、周二海兽、周三藏品、周四订单、周五装备、周日英雄；当天主题全天参与，也可设置积分目标。实际执行以服务器当日主题为准。周六城战杀敌沿用「世界 → 联盟城战」配置，本页不会自动发起战争。',fields:weeklyActivityFields},
+  {id:'weekly-activities',title:'军备竞赛',category:'daily',fields:weeklyActivityFields},
   {id:'alliance',title:'联盟 · 募兵与互助',category:'world',fields:[
     configField('alliance.enabled','联盟自动化总开关','switch',{help:'开启后接管联盟募兵、互助和福利任务；关闭保留本组细项。原有独立任务开关仍可在原入口管理。'}),
     configField('alliance.recruit','自动在联盟城市募兵'),
@@ -761,14 +761,16 @@ function configUpdateVisibility() {
     if (widget.childPanel) {
       if (hasError) configCollapsed.delete(key);
       const available = children.some(child => !child.node.hidden);
-      const expanded = available && !configCollapsed.has(key);
+      const expanded = available && (spec.collapsible === false || !configCollapsed.has(key));
       const focusedChild = children.find(child => child.node.contains(document.activeElement));
       if (focusedChild && (!expanded || focusedChild.node.hidden)) widget.control.focus({ preventScroll: true });
       widget.childPanel.hidden = !expanded;
-      widget.disclosure.hidden = !available;
-      widget.disclosure.textContent = expanded ? '收起设置' : '展开设置';
-      widget.disclosure.setAttribute('aria-expanded', String(expanded));
-      widget.disclosure.setAttribute('aria-label', spec.label + (expanded ? '，收起下级设置' : '，展开下级设置'));
+      if (widget.disclosure) {
+        widget.disclosure.hidden = !available;
+        widget.disclosure.textContent = expanded ? '收起设置' : '展开设置';
+        widget.disclosure.setAttribute('aria-expanded', String(expanded));
+        widget.disclosure.setAttribute('aria-label', spec.label + (expanded ? '，收起下级设置' : '，展开下级设置'));
+      }
       widget.node.dataset.expanded = String(expanded);
     }
     return hasError;
@@ -806,19 +808,22 @@ function configRenderFields(fields, host) {
     widget.children = [];
     const childFields = children.get(spec.key) ?? [];
     if (!childFields.length) return widget;
-    if(!configDisclosureSeen.has(spec.key)){configDisclosureSeen.add(spec.key);configCollapsed.add(spec.key);}
+    if(spec.collapsible !== false && !configDisclosureSeen.has(spec.key)){configDisclosureSeen.add(spec.key);configCollapsed.add(spec.key);}
     const branch = el('div', 'config-branch'); branch.dataset.configBranch = spec.key;
     const panel = el('div', 'config-children'); panel.id = widget.control.id + '-children';
     panel.setAttribute('role', 'group'); panel.setAttribute('aria-labelledby', widget.control.id + '-label');
-    const disclosure = el('button', 'config-disclosure'); disclosure.type = 'button';
-    disclosure.setAttribute('aria-controls', panel.id);
-    disclosure.onclick = () => {
-      if (configCollapsed.has(spec.key)) configCollapsed.delete(spec.key);
-      else configCollapsed.add(spec.key);
-      configUpdateVisibility();
-    };
+    let disclosure = null;
+    if (spec.collapsible !== false) {
+      disclosure = el('button', 'config-disclosure'); disclosure.type = 'button';
+      disclosure.setAttribute('aria-controls', panel.id);
+      disclosure.onclick = () => {
+        if (configCollapsed.has(spec.key)) configCollapsed.delete(spec.key);
+        else configCollapsed.add(spec.key);
+        configUpdateVisibility();
+      };
+      row.querySelector('.config-control').prepend(disclosure);
+    }
     row.classList.add('has-children');
-    row.querySelector('.config-control').prepend(disclosure);
     widget.control.setAttribute('aria-controls', panel.id);
     widget.node = branch; widget.childPanel = panel; widget.disclosure = disclosure;
     for (const field of childFields) {
