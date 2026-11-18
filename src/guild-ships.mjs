@@ -25,7 +25,7 @@ export function watchGuildShipPushes(client, scheduler) {
   let state = activityByClient.get(client);
   if (state) { if (scheduler) state.scheduler = scheduler; return state; }
   state = { period:null, scheduler }; activityByClient.set(client, state);
-  const clear = () => { state.period = null; state.scheduler?.clearTask?.('guildShip'); };
+  const clear = () => { state.period = null; state.lastResult = null; state.scheduler?.clearTask?.('guildShip'); };
   client.on?.('login', clear); client.on?.('close', clear);
   client.on?.('message', ({name,body}) => {
     if (name === 'SCGuildShipActivity') state.period = body?.period ? { ...body.period } : null;
@@ -86,17 +86,22 @@ function candidateList(view, settings) {
   const relaxed = fallback || final;
   const kinds = final ? [3,2,1] : pref.mode==='small' ? [1] : pref.mode==='mediumSmall' ? [2,1] : pref.mode==='mediumLarge' ? [3,2] : [3,2,1];
   const result=[];
+  view.blockedShips = [];
+  const blocked = (ship, reason) => view.blockedShips.push({ shipId:ship.shipId, type:ship.type, reason });
   if (view.own.length >= view.maxShipNum) return result;
   const selected = [...view.ships].sort((a,b)=>kinds.indexOf(a.type)-kinds.indexOf(b.type)||a.shipId-b.shipId);
   for (const ship of selected) {
-    if (!kinds.includes(ship.type) || ship.state!==1 || isSelf(ship,view.playerId)) continue;
+    if (!kinds.includes(ship.type)) { blocked(ship,'不在所选船型范围'); continue; }
+    if (ship.state!==1) { blocked(ship,'已经出航'); continue; }
+    if (isSelf(ship,view.playerId)) { blocked(ship,'本人已在这艘船上'); continue; }
     const threshold = ({1:pref.minCoinsSmall,2:pref.minCoinsMedium,3:pref.minCoinsLarge})[ship.type];
-    if (!final && pref.coinFilter && ship.coins < threshold) continue;
-    if (!relaxed && pref.rewardFilter && pref.rewardItems.length && !ship.reward.some(row=>pref.rewardItems.includes(row.id))) continue;
+    if (!final && pref.coinFilter && ship.coins < threshold) { blocked(ship,`水姆币 ${ship.coins} 低于门槛 ${threshold}`); continue; }
+    if (!relaxed && pref.rewardFilter && pref.rewardItems.length && !ship.reward.some(row=>pref.rewardItems.includes(row.id))) { blocked(ship,'奖励未命中所选物品'); continue; }
     const arrival = (ship.leaderId ? ship.preparedEndTime : now+view.prepareSeconds) + ship.voyageSeconds;
     // 在下一批刷新时保留至少一个可用队列；到港预测只用于保留，不覆盖服务端实际占用。
     if (!relaxed && ['redFirst','full'].includes(pref.mode) && ship.type<3 && arrival>view.batch.next
-      && view.own.filter(row=>row.arrival>view.batch.next).length+1 >= view.maxShipNum) continue;
+      && view.own.filter(row=>row.arrival>view.batch.next).length+1 >= view.maxShipNum) { blocked(ship,'为下一批红船保留队列'); continue; }
+    const before = result.length;
     if (ship.leaderId && ship.preparedEndTime>now && (pref.crew || relaxed)) {
       for (const cabin of ship.cabin) if (!cabin.playerId && cabin.costs.length && !cabin.costs.some(row=>pref.disabledMaterials.includes(row.id)))
         result.push({ kind:'crew', shipId:ship.shipId, crewId:cabin.crewId, type:ship.type, costs:cabin.costs, finalFallback:final,
@@ -104,9 +109,9 @@ function candidateList(view, settings) {
     }
     if (!ship.leaderId && (pref.captain || relaxed)) {
       if (ship.type===3 && pref.redStartEnabled && !final) {
-        if (!/^\d{2}:\d{2}$/.test(pref.redStartTime)) continue;
+        if (!/^\d{2}:\d{2}$/.test(pref.redStartTime)) { blocked(ship,'申请船长时间无效'); continue; }
         const [h,m]=pref.redStartTime.split(':').map(Number);
-        if (h>23 || m>59 || (now+28800)%86400<h*3600+m*60) continue;
+        if (h>23 || m>59 || (now+28800)%86400<h*3600+m*60) { blocked(ship,'尚未到申请船长时间 '+pref.redStartTime); continue; }
       }
       if (ship.leaderCond.every(cond => {
         const hero=view.heroes.find(row=>row.heroId===cond.heroId);
@@ -114,9 +119,38 @@ function candidateList(view, settings) {
           && hero.star+(hero.exclusive?.star ?? 0)>=cond.star+cond.exStar;
       })) result.push({kind:'captain',shipId:ship.shipId,type:ship.type,costs:[],finalFallback:final,preparedEndTime:0,stamp:digest(ship),arrival});
     }
+    if (result.length === before) {
+      const reason = !ship.leaderId
+        ? (pref.captain || relaxed ? '船长英雄星级条件未满足' : '尚无船长，且未开启申请船长')
+        : !(pref.crew || relaxed) ? '未开启担任船员'
+        : ship.preparedEndTime<=now ? '准备时间已结束'
+        : ship.cabin.every(row=>row.playerId) ? '船员舱位已满'
+        : '空舱材料命中禁用清单或订单未确认';
+      blocked(ship,reason);
+    }
   }
   // 全程兜底按图示先做船员，再申请船长；普通模式维持红→中→小。
   return relaxed ? result.sort((a,b)=>(a.kind==='crew'?0:1)-(b.kind==='crew'?0:1)) : result;
+}
+
+const shipLabel = ship => `${['','紫船','橙船','红船'][ship.type]} #${ship.shipId}`;
+const candidateReady = candidate => candidate.costs.every(cost=>cost.missing===0);
+
+// 规则候选不等于可以上船：船员还需扣除其他订单预留后有足够材料。
+export function guildShipDiagnostics(view, settings, config) {
+  const candidates = view.candidates.map(row => ({ shipId:row.shipId, type:row.type, kind:row.kind,
+    crewId:row.crewId ?? null, label:shipLabel(row)+(row.kind==='crew'?` ${row.crewId}号舱`:' 申请船长'),
+    ready:candidateReady(row), costs:row.costs.map(cost=>({...cost,name:displayMaterial(config,cost.id)})) }));
+  const eligible = candidates.filter(row=>row.ready).length;
+  const notes = candidates.filter(row=>!row.ready).map(row=>row.label+'：'+row.costs.filter(cost=>cost.missing!==0).map(cost=>
+    valid(cost.missing) ? `${cost.name}缺 ${cost.missing}（需 ${cost.need}，可用 ${cost.available}，已预留 ${cost.reserved}）` : `${cost.name}库存尚未核对`).join('、'));
+  const blockedShips = (view.blockedShips ?? []).map(row=>({...row,label:shipLabel(row)}));
+  notes.push(...blockedShips.map(row=>row.label+'：'+row.reason));
+  if (prefOf(settings).produceMissing) notes.push('自动补料仅针对符合策略的红船船员位，紫船和橙船缺料不会自动补产。');
+  const reason = view.reason || (view.own.length>=view.maxShipNum ? `游戏商船队列已满（${view.own.length}/${view.maxShipNum}）`
+    : eligible ? '' : candidates.length ? '候选船位材料不足：'+notes.slice(0,2).join('；')+(candidates.length>2?`；另有 ${candidates.length-2} 个候选缺料`:'')
+    : blockedShips.length ? blockedShips.map(row=>row.label+'：'+row.reason).join('；') : '当前没有可参与的商船');
+  return { eligible, candidates, blockedShips, reason, notes };
 }
 
 export async function readGuildShips(client, protocol, config, {player,getSettings=()=>({}),enabled=()=>true,inventory=true}={}) {
@@ -183,13 +217,17 @@ function ownEvidence(view,details){
 }
 
 export async function serviceGuildShips(client,protocol,config,{player,getSettings=()=>({}),enabled=()=>false,ledger,report=()=>{},scheduler}={}){
-  const finish=entry=>{const result={key:'guildShip',label:'联盟商船',...entry};report(result);return result;};
+  const state=watchGuildShipPushes(client,scheduler);
+  const preference=JSON.stringify(prefOf(getSettings()));
+  if(state.preference!==preference){state.preference=preference;state.lastResult=null;}
+  const finish=(entry,remember=true)=>{const result={key:'guildShip',label:'联盟商船',...entry};if(remember)state.lastResult=result;report(result);return result;};
   const active=()=>enabled()&&prefOf(getSettings()).enabled;
   const delay=seconds=>scheduler?.defer('guildShip',scheduler.now()+seconds);
-  watchGuildShipPushes(client,scheduler);
   if(!active())return finish({skipped:true,reason:'联盟商船已关闭'});
-  if(scheduler&&!scheduler.due('guildShip'))return finish({skipped:true,reason:'等待下次检查'});
-  if(busy.has(client))return finish({skipped:true,reason:'正在核对联盟商船'});
+  // 间隔内没有新的检查结果，不发布占位日志覆盖上次缺料、门控或失败原因。
+  if(scheduler&&!scheduler.due('guildShip'))return {key:'guildShip',label:'联盟商船',skipped:true,
+    reason:state.lastResult?.reason||state.lastResult?.error||'等待下次检查',...(state.lastResult?.pending?{pending:true}:{})};
+  if(busy.has(client))return finish({skipped:true,reason:'正在核对联盟商船'},false);
   busy.add(client);
   try{
     if(!ledger)throw new Error('商船持久账本不可用');
@@ -199,9 +237,10 @@ export async function serviceGuildShips(client,protocol,config,{player,getSettin
     if(Object.values(ledger.keyRecords()).some(record=>!record.confirmed&&sameActor(record.details,initial)&&record.details.kind?.startsWith('guildShip'))){delay(60);return finish({skipped:true,pending:true,reason:'上次上船结果待确认，保留队列和材料，不重复申请'});}
     await refreshOrderMaterialSpends(client,player,{enabled:active});
     const first=await readGuildShips(client,protocol,config,{player,getSettings,enabled:active});
-    const eligible=view=>view.candidates.filter(row=>row.costs.every(cost=>cost.missing===0));
+    if(first.state!=='ready'){delay(60);return finish({skipped:true,reason:first.reason});}
+    const eligible=view=>view.candidates.filter(candidateReady);
     const candidate=eligible(first)[0];
-    if(!candidate){delay(60);return finish({skipped:true,reason:first.own.length>=first.maxShipNum?'游戏商船队列已满':'没有符合模式、奖励、材料和船长条件的空位',demands:guildShipDemands(first,getSettings())});}
+    if(!candidate){delay(60);return finish({skipped:true,reason:guildShipDiagnostics(first,getSettings(),config).reason,demands:guildShipDemands(first,getSettings())});}
     const policy=JSON.stringify(prefOf(getSettings()));
     const current=await readGuildShips(client,protocol,config,{player,getSettings,enabled:active});
     const chosen=eligible(current).find(row=>row.kind===candidate.kind&&row.shipId===candidate.shipId&&row.crewId===candidate.crewId&&row.stamp===candidate.stamp);

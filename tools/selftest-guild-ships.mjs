@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cw-guild-ships-'));process.env.CW_DATA_DIR=dir;
 const {loadProtocol}=await import('../src/proto.mjs');
-const {readGuildShips,serviceGuildShips,guildShipBatch,guildShipDemands,watchGuildShipPushes}=await import('../src/guild-ships.mjs');
+const {readGuildShips,serviceGuildShips,guildShipBatch,guildShipDemands,watchGuildShipPushes,guildShipDiagnostics}=await import('../src/guild-ships.mjs');
 const {createUsageLedger,hasExtraWork}=await import('../src/automation-settings.mjs');
 const {guildShipFixture,config}=await import('./fixtures/guild-ships.mjs');
 const {pendingOrderMaterialSpends}=await import('../src/order-reservations.mjs');
@@ -84,6 +84,41 @@ try{
     assert.equal(f.client.listenerCount('automationSettingsChanged'),0);
    }finally{Date.now=originalNow;}
   }
+ });
+ await check('紫船候选缺料明确列出可用量和订单预留，不误称可上船或触发红船补产',async()=>{
+  const f=fixture();f.state.ships=[f.ship({type:1})];f.settings.guildShip.produceMissing=true;
+  f.state.stock.橡胶圈=5;f.state.workerOrder=[{index:1,requirements:[{type:0,id:'橡胶圈',num:3}]}];
+  const view=await read(f),diagnostics=guildShipDiagnostics(view,f.settings,config);
+  assert.equal(view.candidates.length,2);assert.equal(diagnostics.eligible,0);
+  assert.match(diagnostics.reason,/紫船 #1 1号舱.*橡胶圈缺 3.*需 5，可用 2，已预留 3/);
+  assert(diagnostics.notes.some(note=>note.includes('紫船和橙船缺料不会自动补产')));
+  const result=await run(f);assert.equal(result.reason,diagnostics.reason);assert.deepEqual(result.demands,[]);
+  assert.equal(f.state.writes.length,0);
+  const {previewExtended}=await import('../src/extended-preview.mjs');
+  const preview=await previewExtended('guildShip',f.client,protocol,config,f.player,f.settings,f.ledger);
+  assert.equal(preview.counts.candidates,2);assert.equal(preview.counts.eligible,0);assert.equal(preview.counts.own,0);
+  assert.equal(preview.guildShip.candidates[0].costs[0].missing,3);
+  f.state.stock.橡胶圈=8;assert.equal((await run(f)).ok,true,'补足可用材料后原策略仍可上船');
+ });
+ await check('缺船长、奖励门槛等筛选原因随真实规则返回',async()=>{
+  const f=fixture();f.settings.guildShip.captain=false;
+  f.state.ships=[f.ship({id:1,captain:false}),f.ship({id:2,coins:59})];
+  const diagnostics=guildShipDiagnostics(await read(f),f.settings,config);
+  assert.equal(diagnostics.eligible,0);assert.match(diagnostics.reason,/尚无船长，且未开启申请船长/);
+  assert.match(diagnostics.reason,/水姆币 59 低于门槛 60/);assert.equal(f.state.writes.length,0);
+ });
+ await check('检查间隔沿用真实缺料原因，实际复查后更新结果，重连不保留旧原因',async()=>{
+  const {rewardSchedule}=await import('../src/reward-schedule.mjs');
+  const f=fixture();f.options.scheduler=rewardSchedule(f.client);f.state.stock.橡胶圈=0;
+  const reports=[];f.options.report=entry=>reports.push(entry);
+  const first=await run(f),calls=f.state.calls.length;
+  assert.match(first.reason,/材料不足/);assert.equal((await run(f)).reason,first.reason);
+  assert.equal(reports.length,1,'间隔占位不覆盖真实业务日志');
+  assert.equal(f.state.calls.length,calls,'间隔中不额外读游戏');
+  f.state.stock.橡胶圈=50;f.advance(61);assert.equal((await run(f)).ok,true);
+  assert.equal((await run(f)).reason,'等待下次检查');
+  assert.equal(reports.length,2);
+  f.client.emit('login');assert.equal(watchGuildShipPushes(f.client).lastResult,null);
  });
  console.log(`联盟商船 ${passed} 项测试通过。`);
 }finally{fs.rmSync(dir,{recursive:true,force:true});}

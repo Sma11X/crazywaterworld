@@ -1048,11 +1048,7 @@ function configRenderField(spec) {
   } else if (spec.kind === 'cityWarRoles') {
     control = configCityWarRoles(spec, id); box.append(control);
   } else if (spec.kind === 'dispatchOrder') {
-    control = el('div'); control.id=id;
-    const paint=()=>{clear(control);const values=configGet(spec.key);values.forEach((value,index)=>{
-      const line=el('div','config-dispatch-row');const label=({cityWar:'城战接续',pirateHunt:'海盗讨伐 / 首杀',treasure:'巨轮普通参战',follow:'巨轮跟随',worldBoss:'世界Boss首战',radar:'联盟情报'})[value];line.append(el('span','config-order-num',String(index+1)),el('span','config-order-name',label));const actions=el('div','config-order-tools');
-      for(const [offset,text] of [[-1,'上移'],[1,'下移']]){const button=configButton(text,()=>{const next=[...values];[next[index],next[index+offset]]=[next[index+offset],next[index]];configSet(spec.key,next);paint();});button.disabled=index+offset<0||index+offset>=values.length;button.setAttribute('aria-label',label+text);actions.append(button);}line.append(actions);control.append(line);
-    });};paint();box.append(control);
+    control = configDispatchOrder(spec, id); box.append(control);
   } else if (spec.kind === 'priority') {
     control = configPriorityEditor(spec, id); box.append(control);
   } else if (spec.kind === 'crops') {
@@ -1072,6 +1068,97 @@ function configRenderField(spec) {
   }
   configEditor.widgets.set(spec.key, widget);
   return row;
+}
+
+function configDispatchOrder(spec, id) {
+  const root = el('div', 'config-dispatch-order'); root.id = id;
+  root.setAttribute('role', 'group'); root.setAttribute('aria-label', spec.label);
+  const hint = el('p', 'config-help', '拖动左侧手柄调整顺序，也可使用上移、下移按钮。');
+  const list = el('div'); list.setAttribute('role', 'list');
+  const status = el('span', 'sr-only'); status.setAttribute('role', 'status');
+  const labels = { cityWar: '城战接续', pirateHunt: '海盗讨伐 / 首杀', treasure: '巨轮普通参战',
+    follow: '巨轮跟随', worldBoss: '世界Boss首战', radar: '联盟情报', silicon: '硅矿采集' };
+  const owner = configEditor.owner;
+  let drag = null;
+  const editable = () => owner === current && configEditor.owner === owner && !configEditor.busy && !configEditor.loading
+    && root.isConnected && root.getClientRects().length > 0;
+  const clearDrop = () => { for (const row of list.children) delete row.dataset.drop; };
+  const cancelDrag = () => {
+    const previous = drag; drag = null; clearDrop();
+    window.removeEventListener('blur', cancelDrag);
+    document.removeEventListener('keydown', escapeDrag);
+    if (!previous) return;
+    delete previous.row.dataset.dragging;
+    if (previous.handle.hasPointerCapture(previous.pointerId)) previous.handle.releasePointerCapture(previous.pointerId);
+  };
+  const escapeDrag = event => { if (event.key === 'Escape' && drag) { event.preventDefault(); cancelDrag(); } };
+  const move = (value, to) => {
+    if (!editable()) return;
+    const values = [...configGet(spec.key)], from = values.indexOf(value);
+    if (from < 0 || to < 0 || to >= values.length || from === to) return;
+    values.splice(from, 1); values.splice(to, 0, value);
+    configSet(spec.key, values); paint(value);
+    status.textContent = (labels[value] || value) + '已移至第' + (to + 1) + '位';
+  };
+  const startDrag = (event, value, row, handle) => {
+    if (event.button !== 0 || event.isPrimary === false || handle.disabled || !editable()) return;
+    cancelDrag();
+    drag = { value, row, handle, pointerId: event.pointerId, startY: event.clientY, moved: false,
+      order: JSON.stringify(configGet(spec.key)), to: configGet(spec.key).indexOf(value) };
+    handle.focus({ preventScroll: true });
+    handle.setPointerCapture(event.pointerId);
+    window.addEventListener('blur', cancelDrag); document.addEventListener('keydown', escapeDrag);
+    handle.onpointermove = event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (!editable() || JSON.stringify(configGet(spec.key)) !== drag.order) { cancelDrag(); return; }
+      if (!drag.moved && Math.abs(event.clientY - drag.startY) < 5) return;
+      drag.moved = true; row.dataset.dragging = 'true';
+      const others = [...list.children].filter(item => item !== row);
+      const before = others.findIndex(item => { const rect = item.getBoundingClientRect(); return event.clientY < rect.top + rect.height / 2; });
+      drag.to = before < 0 ? others.length : before;
+      clearDrop();
+      if (before < 0 && others.length) others.at(-1).dataset.drop = 'after';
+      else if (others[before]) others[before].dataset.drop = 'before';
+      if (event.clientY < 48) window.scrollBy(0, -16);
+      else if (event.clientY > window.innerHeight - 48) window.scrollBy(0, 16);
+    };
+    handle.onpointerup = event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const completed = drag;
+      const valid = editable() && JSON.stringify(configGet(spec.key)) === completed.order;
+      cancelDrag();
+      if (valid && completed.moved) move(value, completed.to);
+    };
+    handle.onpointercancel = handle.onlostpointercapture = cancelDrag;
+  };
+  function paint(focusValue) {
+    cancelDrag(); clear(list);
+    const values = configGet(spec.key);
+    values.forEach((value, index) => {
+      const row = el('div', 'config-dispatch-row config-dispatch-sortable');
+      row.dataset.dispatch = value; row.setAttribute('role', 'listitem');
+      const label = labels[value] || value;
+      const handle = configButton('⠿', () => {}); handle.classList.add('config-dispatch-handle');
+      handle.setAttribute('aria-label', '拖动排序：' + label); handle.title = '拖动排序，或按上下方向键移动';
+      handle.onpointerdown = event => startDrag(event, value, row, handle);
+      handle.onkeydown = event => {
+        if (event.altKey || event.ctrlKey || event.metaKey) return;
+        const to = event.key === 'ArrowUp' ? index - 1 : event.key === 'ArrowDown' ? index + 1 : null;
+        if (to !== null) { event.preventDefault(); cancelDrag(); move(value, to); }
+      };
+      const actions = el('div', 'config-order-tools');
+      for (const [offset, text] of [[-1, '上移'], [1, '下移']]) {
+        const button = configButton(text, () => { cancelDrag(); move(value, index + offset); });
+        button.disabled = index + offset < 0 || index + offset >= values.length;
+        button.setAttribute('aria-label', label + text); actions.append(button);
+      }
+      row.append(handle, el('span', 'config-order-num', String(index + 1)), el('span', 'config-order-name', label), actions);
+      list.append(row);
+      if (value === focusValue) handle.focus({ preventScroll: true });
+    });
+  }
+  root.append(hint, list, status); paint();
+  return root;
 }
 
 function configLineupPicker(spec, id) {

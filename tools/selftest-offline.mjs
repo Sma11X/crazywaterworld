@@ -18,6 +18,7 @@ const cases = [
   ['selftest-auto-start.mjs'],
   ['selftest-loop-auto-start-ui.mjs'],
   ['selftest-settings-hierarchy.mjs'],
+  ['selftest-dispatch-order-ui.mjs'],
   ['selftest-settings-autosave.mjs'],
   ['selftest-switch-ownership.mjs'],
   ['selftest-appointments.mjs'],

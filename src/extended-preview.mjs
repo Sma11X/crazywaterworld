@@ -1,5 +1,5 @@
 import { readGuildOrderView } from './guild-orders.mjs';
-import { readGuildShips } from './guild-ships.mjs';
+import { readGuildShips, guildShipDiagnostics } from './guild-ships.mjs';
 import { readGuildForts } from './guild-forts.mjs';
 import { readSiliconMining, planSiliconMining } from './silicon-mining.mjs';
 import { watchHeroRaidPushes } from './hero-raid-automation.mjs';
@@ -14,8 +14,12 @@ export async function previewExtended(category, client, protocol, config, player
     result.notes.push('用户每日募兵上限：' + (settings.alliance.recruitDailyLimit || '不额外限制') + '；互助模式：' + (settings.alliance.mutualMode === 'exchange' ? '刷贡献' : '自定义'));
   } else if (category === 'guildShip') {
     const view = await readGuildShips(client, protocol, config, options);
-    result.scopeLabel = '联盟商船'; result.counts = { ships: view.ships.length, candidates: view.candidates.length };
-    result.notes.push(view.reason || '符合策略的上船候选：' + view.candidates.length + '；本人商船：' + view.own.length);
+    const diagnostics = guildShipDiagnostics(view, settings, config);
+    result.scopeLabel = '联盟商船'; result.counts = { ships: view.ships.length, candidates: view.candidates.length,
+      eligible: diagnostics.eligible, own: view.own.length };
+    result.guildShip = diagnostics;
+    result.notes.push(diagnostics.reason || '符合策略的上船候选：' + view.candidates.length + '；材料充足可申请：' + diagnostics.eligible + '；本人商船：' + view.own.length);
+    result.notes.push(...diagnostics.notes);
     result.notes.push('出航由游戏服务器控制，自定义时间只限制申请船长。');
   } else if (category === 'guildFort') {
     const view = await readGuildForts(client, protocol, config, options);
