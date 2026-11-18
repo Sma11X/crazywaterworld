@@ -1,24 +1,6 @@
-const giftLabels={queued:'待兑换',sending:'兑换中',success:'兑换成功',used:'已兑换',rejected:'服务器拒绝',unknown:'待确认',skipped:'未发送'};
 const giftBatchLabels={success:'成功',used:'已兑换',rejected:'拒绝',unknown:'待确认',skipped:'未发送'};
-let giftPage=1,giftRows=[],giftAccounts=[],giftSelected=new Set(),giftChosen=false,giftViewed='',giftStarting=false,giftNote='';
+let giftAccounts=[],giftSelected=new Set(),giftChosen=false,giftStarting=false,giftNote='';
 let giftInitial=null,giftInitialBatch=0;
-function paintGiftPage(){
-  const last=Math.max(1,Math.ceil(giftRows.length/10));
-  giftPage=Math.min(last,Math.max(1,giftPage));
-  $('gift-prev').disabled=giftPage===1;$('gift-next').disabled=giftPage===last;
-  $('gift-page').textContent=giftPage+' / '+last+' 页，共 '+giftRows.length+' 条';
-  const body=$('gift-code-history'),visible=giftRows.slice((giftPage-1)*10,giftPage*10);
-  const key=JSON.stringify([giftViewed,giftPage,visible]);
-  if(body.pageKey===key)return;
-  body.pageKey=key;clear(body);
-  for(const r of visible){
-    const tr=el('tr');
-    for(const value of [r.code,giftLabels[r.status]||r.status,r.detail,when(r.at)])tr.append(el('td','',value));
-    body.append(tr);
-  }
-}
-$('gift-prev').onclick=()=>{giftPage--;paintGiftPage()};
-$('gift-next').onclick=()=>{giftPage++;paintGiftPage()};
 function giftCanStart(a){return !a.paused&&!a.running&&!a.error;}
 function giftTargets(){return giftAccounts.filter(a=>giftSelected.has(a.id)&&giftCanStart(a)).map(a=>a.id);}
 function giftAccountNote(a){
@@ -75,21 +57,14 @@ function paintGiftAccounts(){
   const ready=giftTargets().length;
   $('gift-selected-count').textContent='已选 '+ready+' / '+giftAccounts.length;
   $('gift-code-start').disabled=giftStarting||!ready;
-  const picker=$('gift-record-account'),choices=giftAccounts.map(a=>[a.id,a.title]);
-  if(picker.options.length!==choices.length||choices.some(([id,title],index)=>picker.options[index]?.value!==id||picker.options[index]?.text!==title)){
-    picker.replaceChildren(...choices.map(([id,title])=>new Option(title,id)));
-  }
-  picker.value=giftViewed;
 }
 $('gift-select-all').onclick=()=>{giftChosen=true;giftSelected=new Set(giftAccounts.filter(giftCanStart).map(a=>a.id));paintGiftAccounts();};
 $('gift-select-none').onclick=()=>{giftChosen=true;giftSelected=new Set();paintGiftAccounts();};
-$('gift-record-account').onchange=()=>{giftViewed=$('gift-record-account').value;giftRows=[];giftPage=1;paintGiftPage();void refreshGiftCodes();};
 let giftTimer, giftVersion=0;
 function giftAccountChanged(){
   ++giftVersion;clearTimeout(giftTimer);
-  giftViewed=current||'';giftNote='';
+  giftNote='';
   if(!giftChosen)giftSelected=new Set(current?[current]:[]);
-  giftRows=[];giftPage=1;paintGiftPage();
   $('gift-code-state').textContent='';
   if(!$('tab-giftcodes').classList.contains('hidden'))void refreshGiftCodes();
 }
@@ -97,16 +72,14 @@ async function refreshGiftCodes(){
   const version=++giftVersion;
   clearTimeout(giftTimer);
   void refreshGiftInitial();
-  if(!accounts.some(a=>a.id===giftViewed))giftViewed=current||'';
   if(!giftChosen)giftSelected=new Set(current?[current]:[]);
-  const viewed=giftViewed;
-  if(!viewed){$('gift-code-start').disabled=true;$('gift-code-state').textContent='请先添加账号';return;}
+  if(!accounts.length){$('gift-code-start').disabled=true;$('gift-code-state').textContent='请先添加账号';return;}
   try{
-    const [list,data]=await Promise.all([call('/api/gift-codes/accounts'),call('/api/gift-codes?account='+encodeURIComponent(viewed))]);
+    const list=await call('/api/gift-codes/accounts');
     if(version!==giftVersion)return;
     giftAccounts=list.accounts;
     for(const id of [...giftSelected])if(!giftAccounts.some(a=>a.id===id&&!a.paused))giftSelected.delete(id);
-    giftRows=data.rows;paintGiftPage();paintGiftAccounts();paintGiftState();
+    paintGiftAccounts();paintGiftState();
     if(giftAccounts.some(a=>a.running)&&!$('tab-giftcodes').classList.contains('hidden'))giftTimer=setTimeout(refreshGiftCodes,750);
   }catch(error){if(version===giftVersion)$('gift-code-state').textContent=error.message;}
 }
@@ -118,9 +91,8 @@ $('gift-code-start').onclick=async()=>{
   try{
     const data=await call('/api/gift-codes/redeem',{method:'POST',body:JSON.stringify({confirm:true,codes:input,accounts:targets})});
     if($('gift-code-input').value.trim()===input)$('gift-code-input').value='';
-    const started=data.results.filter(r=>r.accepted),refused=data.results.filter(r=>!r.accepted);
+    const refused=data.results.filter(r=>!r.accepted);
     if(refused.length)giftNote='未开始：'+refused.map(r=>r.title+'（'+r.error+'）').join('、');
-    if(!started.some(r=>r.id===giftViewed)){giftViewed=started[0].id;giftRows=[];giftPage=1;}
   }catch(error){giftNote=error.message;}
   giftStarting=false;
   await refreshGiftCodes();

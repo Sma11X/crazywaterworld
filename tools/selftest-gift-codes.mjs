@@ -147,8 +147,6 @@ try {
   const done=await list();
   assert.deepEqual(done.find(a=>a.id==='h1').counts,{success:2});
   assert.equal(done.find(a=>a.id==='h1').connected,true);
-  const records=await (await fetch(root+'/api/gift-codes?account=h1')).json();
-  assert.deepEqual(records.rows.map(r=>r.code),['甲','乙']);
 
   for(const [id,leave] of [
     ['h4',()=>post('/api/accounts/remove',{confirm:true,id:'h4'})],
@@ -180,6 +178,6 @@ try {
   assert.equal(resumedSession.client,null,'中途暂停再恢复后不重新登录');
 
   for(const script of PAGE.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))new vm.Script(script[1]);
-  for(const id of ['gift-account-list','gift-select-all','gift-select-none','gift-selected-count','gift-record-account','gift-code-start','gift-load-initial','gift-code-initial-note'])assert.equal((PAGE.match(new RegExp('id="'+id+'"','g'))??[]).length,1,id);
+  for(const id of ['gift-account-list','gift-select-all','gift-select-none','gift-selected-count','gift-code-start','gift-load-initial','gift-code-initial-note'])assert.equal((PAGE.match(new RegExp('id="'+id+'"','g'))??[]).length,1,id);
 } finally { await app.close(); }
 console.log('礼包码测试通过：真实协议编解码、逐码核验、去重、限频、超时、重启、账号隔离、多账号批量、发送前复查。');

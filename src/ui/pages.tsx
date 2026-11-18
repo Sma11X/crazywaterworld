@@ -28,8 +28,6 @@ export function giftCodesPage() {
         <p className="dim">未连接的账号会自动登录，可能把正在玩的游戏顶下线，兑换后保持连接。已暂停的账号不能选择。</p>
       </fieldset>
       <div className="bar"><Button id="gift-code-start">开始兑换</Button><span id="gift-code-state" role="status" /></div></Panel>
-    <Panel title="兑换记录"><div className="bar"><label htmlFor="gift-record-account">查看账号</label><select id="gift-record-account" /></div><div className="overflow-auto"><table><thead><tr>{['礼包码','状态','结果','时间'].map(t=><th key={t}>{t}</th>)}</tr></thead><tbody id="gift-code-history" /></table></div>
-      <div className="bar"><Button variant="outline" id="gift-prev">上一页</Button><span id="gift-page" /><Button variant="outline" id="gift-next">下一页</Button></div></Panel>
   </div>)
 }
 

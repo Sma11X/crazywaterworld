@@ -10,7 +10,7 @@ import {activityRankCatalog,readActivityRanking} from './activity-rankings.mjs';
 import {readActivityStatistics} from './activity-statistics.mjs';
 import { merchantActivity, readMerchantStatus, readMerchantJournal, merchantJournalSummary } from './merchant-activity.mjs';
 import { watchMerchant } from './merchant-monitor.mjs';
-import { giftCodeStatus, giftCodeSummary, startGiftCodeBatch } from './gift-codes.mjs';
+import { giftCodeSummary, startGiftCodeBatch } from './gift-codes.mjs';
 import { initialGiftCodeCatalog } from './gift-code-catalog.mjs';
 import {runtimeProgress, museumRuntimeStatus} from './runtime-progress.mjs';
 import {watchTreasureTravel} from './treasure-follow.mjs';
@@ -2708,10 +2708,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       if(route==='GET /api/gift-codes/initial'){
         json(initialGiftCodeCatalog());return;
       }
-      if(route==='GET /api/gift-codes'){
-        const {session}=scoped_(parsed);
-        json(giftCodeStatus(session.id));return;
-      }
       if(route==='GET /api/gift-codes/accounts'){
         json({accounts:loadStore().accounts.map(account=>{
           const session=sessionFor(account.id);
@@ -2738,8 +2734,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const results=startGiftCodeBatch(targets,payload.codes).map((result,index)=>({...result,...targets[index]}));
         const started=results.filter(result=>result.accepted);
         if(!started.length)throw Error(results.map(result=>result.title+'：'+result.error).join('；'));
-        for(const {done,session} of started)done.then(()=>emit(session,'info','礼包兑换完成，请查看兑换记录'),()=>emit(session,'error','礼包兑换中断，请核对记录'));
-        if(started.length>1)Promise.allSettled(started.map(result=>result.done)).then(()=>emit(null,'info','批量礼包兑换结束：共 '+started.length+' 个账号，请查看兑换记录'));
+        for(const {done,session} of started)done.then(()=>emit(session,'info','礼包兑换完成，请查看账号结果汇总'),()=>emit(session,'error','礼包兑换中断，请核对游戏内奖励'));
+        if(started.length>1)Promise.allSettled(started.map(result=>result.done)).then(()=>emit(null,'info','批量礼包兑换结束：共 '+started.length+' 个账号，请查看账号结果汇总'));
         json({accepted:started.length,results:results.map(({id,title,accepted,error})=>({id,title,accepted,error}))});return;
       }
       if(route==='GET /api/merchant/history'){

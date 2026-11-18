@@ -9,7 +9,6 @@ export const operationLabels = {
   '/api/hero-raid/settings': '设置超凡英雄活动',
   '/api/merchant/settings': '设置海商王活动',
   '/api/guild-ship/settings': '设置联盟商船活动',
-  '/api/gift-codes': '读取礼包兑换记录',
   '/api/gift-codes/accounts': '读取礼包兑换账号',
   '/api/gift-codes/initial': '读取初始礼包码',
   '/api/gift-codes/redeem': '兑换礼包码',
