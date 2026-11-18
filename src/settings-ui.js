@@ -163,6 +163,15 @@ const configGroups = [
     configField('guildFort.materials','捐赠物料','multi',{catalog:'materials',empty:'未选择，使用联盟互助允许物料；两处均为空则不捐赠'}),
     configField('guildFort.reserve','捐赠后库存保留','number'),configField('guildFort.dailyLimit','每日捐赠上限','number',{help:'0 表示不额外限制，仍遵守游戏日上限。'}),
   ]},
+  {id:'resourceFields',title:'资源田',category:'world',fields:[
+    configField('resourceFields.enabled','自动补满资源田空位','switch',{help:'仅派遣到本盟城市内自己尚未占领的资源田，每次检查最多派一队。已满额时等待，不自动放弃已有资源田。'}),
+    configField('resourceFields.preferredResource','优先资源','choice',{options:[['汽油','汽油'],['种子','种子'],['公会科技点','科技点']],help:'优先选择该类资源，同类按基础小时产出从高到低选择。没有符合条件的优先资源时可选择其他类型。'}),
+    configField('resourceFields.fleetIds','参与舰队','multi',{catalog:'expeditionFleets',empty:'请选择参与占领的舰队，空选不派遣',help:'只使用已编队、空闲且没有待确认任务的舰队，遵守舰队调度顺序与城战预留。'}),
+    configField('resourceFields.minDurabilityPercent','最低耐久','number',{unit:'%',help:'占领需要战斗；舰队需达到耐久门槛及田地推荐战力。出征返航后仍未确认占领时，当日暂停自动占田。'}),
+    configField('resourceFields.reserveFleetCount','保留空闲舰队','number',{unit:'队',help:'派遣后至少保留此数量的可用空闲舰队给其他任务。设为 0 可使用所有符合条件的舰队。'}),
+    configField('resourceFields.minLevel','最低资源田等级','number',{help:'只选择达到此等级且基础产出已同步的资源田。'}),
+    configField('resourceFields.checkEverySeconds','检查间隔','number',{unit:'秒',help:'挂机运行时按此间隔检查；总览手动刷新不会触发自动派遣。'}),
+  ]},
   {id:'silicon',title:'硅矿',category:'world',fields:[
     configField('silicon.enabled','硅矿自动化总开关','switch',{help:'按真实赛季与功能解锁条件运行。奖励由服务器自动结算；一般每10分钟检查，追击或追杀每2分钟，相关推送提前唤醒。'}),
     configField('silicon.dailyRewardLimit','每日奖励结算次数上限','number',{help:'0 表示不额外限制；同时遵守服务端周期上限。达限停止派遣并在游戏允许撤回时撤回；首次缺少当日基线时按当前周期累计次数保守计数。'}),
@@ -470,7 +479,7 @@ const configGroups = [
 
 
 // 世界页常用玩法置前；不覆盖用户已保存的实际派遣顺序。
-const worldFirst = ['cityWar','treasure','silicon'];
+const worldFirst = ['cityWar','treasure','silicon','resourceFields'];
 configGroups.sort((a,b)=>(worldFirst.includes(a.id)?worldFirst.indexOf(a.id):3)-(worldFirst.includes(b.id)?worldFirst.indexOf(b.id):3));
 // 全局攻守策略与逐队编辑共用字段定义；独立策略切回全局时保留原值。
 const cityWarStrategyKeys = ['targetMode','targetPriority','cityRefs','defenceTargetMode','defenceTargetPriority','defenceCityRefs'];
@@ -993,7 +1002,7 @@ function configRender() {
       section.setAttribute('role', direct ? 'group' : 'tabpanel');
       section.setAttribute('aria-labelledby', singleGroup ? 'config-tab-' + category : direct ? 'config-family-' + family.id : 'config-subtab-' + group.id);
       if (group.description) section.append(el('p','config-section-intro',group.description));
-      if (['cityWar','silicon','treasure'].includes(group.id) && !configEditor.data.catalog?.fleetAvailability?.known) {
+      if (['cityWar','silicon','treasure','resourceFields'].includes(group.id) && !configEditor.data.catalog?.fleetAvailability?.known) {
         section.append(el('p','config-section-intro','舰队名单尚未同步。连接游戏后重新打开挂机配置即可查看舰队名单。'));
       }
       const fields = group.fields.map(spec => ({ ...spec, category, groupId: group.id }));
@@ -1091,7 +1100,7 @@ function configDispatchOrder(spec, id) {
   const list = el('div'); list.setAttribute('role', 'list');
   const status = el('span', 'sr-only'); status.setAttribute('role', 'status');
   const labels = { cityWar: '城战接续', pirateHunt: '海盗讨伐 / 首杀', treasure: '巨轮普通参战',
-    follow: '巨轮跟随', worldBoss: '世界Boss首战', radar: '联盟情报', silicon: '硅矿采集' };
+    follow: '巨轮跟随', worldBoss: '世界Boss首战', radar: '联盟情报', silicon: '硅矿采集', resourceFields: '资源田占领' };
   const owner = configEditor.owner;
   let drag = null;
   const editable = () => owner === current && configEditor.owner === owner && !configEditor.busy && !configEditor.loading
@@ -1793,7 +1802,7 @@ async function configPreview() {
   configBusy(true); configUpdateState(); $('config-preview').textContent = '读取真实状态…';
   try {
     const selected=scope.startsWith('module:')?configEditor.groups.get(scope.slice(7)):null;
-    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
+    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon',resourceFields:'resourceFields','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
     const runtime=await call('/api/loop');
     const source=selected?dedicated[selected.id]:scope;
     let data;

@@ -16,7 +16,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 11;
+export const SETTINGS_SCHEMA_VERSION = 12;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -67,7 +67,8 @@ export const DEFAULT_SETTINGS = {
   progression: { enabled: false, mainline: false, trials: false, raidIds: ['1','2','3'], maxFailures: 3 },
   lineups: { presets: [], mainlinePresetId: '', trialPresets: [] },
   trials: { paid: false, ads: false, raidIds: ['1','2','3'], paidPerRaidLimit: 1, dailyDiamondBudget: 450, maxSingleCost: 50 },
-  fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon'] },
+  fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon','resourceFields'] },
+  resourceFields: { enabled: false, preferredResource: '汽油', fleetIds: [], minDurabilityPercent: 80, reserveFleetCount: 1, minLevel: 1, checkEverySeconds: 300 },
   fleetSpeed: { enabled: false, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
   worldBoss: { enabled: false, fleetIds: [], fleetPresets: [], minDurabilityPercent: 80 },
   radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
@@ -114,7 +115,10 @@ const constraints = {
   'merchant.monitorSeconds': int(300, 10), 'merchant.upgradeCoinValuePerDiamond': int(1000000, 1),
   'merchant.upgradeMinReturnPercent': int(10000, 100), 'merchant.upgradeMaxLevel': int(5, 1), 'merchant.upgradeDailyDiamondLimit': int(100000),
   'ads.waitSeconds':int(120,5),
-  'fleetDispatch.priority': {...strings(7),values:['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon']},
+  'fleetDispatch.priority': {...strings(8),values:['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon','resourceFields']},
+  'resourceFields.preferredResource': { kind: 'choice', values: ['汽油', '种子', '公会科技点'] },
+  'resourceFields.fleetIds': strings(10), 'resourceFields.minDurabilityPercent': int(100, 1),
+  'resourceFields.reserveFleetCount': int(3), 'resourceFields.minLevel': int(100, 1), 'resourceFields.checkEverySeconds': int(3600, 30),
   'worldBoss.fleetIds': strings(10), 'worldBoss.minDurabilityPercent': int(100),
   'worldBoss.fleetPresets': { kind: 'fleetLineups' },
   'events.otherOption': int(2,1), 'radar.fleetIds': strings(10), 'radar.types': {...strings(5),values:['pirate','collect','refugee','spy','fixed']},
@@ -273,7 +277,7 @@ export function nativeTaskValues(settings, current) {
 export function hasExtraWork(settings) {
   if (settings?.radar?.runEnabled && (settings.radar.enabled || settings.radar.repairIdle)) return true;
   if (settings?.weeklyActivity?.enabled && ['farm', 'pet', 'antique', 'order', 'forge', 'hero'].some(kind => settings.weeklyActivity[kind + 'Enabled'])) return true;
-  if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled) return true;
+  if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled || settings?.resourceFields?.enabled) return true;
   return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && ['enabled', 'upgrade', 'revenue', 'achievements', 'display'].some(key => settings.museum[key]) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
     || (settings.progression?.enabled && (settings.progression.mainline || settings.progression.trials)) || settings.pirateHunt?.enabled);
 }
@@ -372,7 +376,9 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   if (output.antique.star && !output.antique.starQualities.length) errors['antique.starQualities'] = '请选择自动升星的藏品品质';
   if (output.antique.suit && !output.antique.suitQualities.length) errors['antique.suitQualities'] = '请选择自动升级的藏品套装品质';
   if (['cityWar','pirateHunt','treasure','radar'].some(k=>!output.fleetDispatch.priority.includes(k))) errors['fleetDispatch.priority']='请保留全部任务，只调整顺序';
-  for(const key of ['worldBoss','follow','silicon'])if(!output.fleetDispatch.priority.includes(key))output.fleetDispatch.priority.push(key);
+  for(const key of ['worldBoss','follow','silicon','resourceFields'])if(!output.fleetDispatch.priority.includes(key))output.fleetDispatch.priority.push(key);
+  if (output.resourceFields.enabled && !output.resourceFields.fleetIds.length) errors['resourceFields.fleetIds'] = '请选择自动占领资源田的舰队';
+  if (output.resourceFields.fleetIds.some(value => !/^[1-9]\d*远征船$/.test(value))) errors['resourceFields.fleetIds'] = '请选择有效的远征舰队';
   if (output.silicon.windows.some(value => !/^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(value))) errors['silicon.windows'] = '时段格式为 HH:mm-HH:mm，每行一个；支持跨午夜';
   if (output.pirateHunt.fleetIds.some(value=>! /^[1-9]\d*远征船$/.test(value))) errors['pirateHunt.fleetIds']='请选择有效的海盗首杀舰队';
   if (output.pirateHunt.types.some(value=>! /^[1-9]\d*$/.test(value))) errors['pirateHunt.types']='请选择有效的海盗类型';
@@ -416,7 +422,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
       'treasure.fleetIds': 'expeditionFleets', 'treasure.rewardItems': 'materials',
       'treasure.fallbackMediumRewardPriority': 'materials', 'treasure.fallbackSmallRewardPriority': 'materials',
       'cityWar.fleetIds': 'expeditionFleets', ...Object.fromEntries([...legacyCityRefs].map(refs => ['cityWar.' + refs, 'cityTargets'])),
-      'radar.fleetIds':'expeditionFleets','worldBoss.fleetIds':'expeditionFleets',
+      'radar.fleetIds':'expeditionFleets','worldBoss.fleetIds':'expeditionFleets','resourceFields.fleetIds':'expeditionFleets',
       'pirateHunt.fleetIds': 'expeditionFleets', 'pirateHunt.types': 'pirateTypes',
       'forge.buildingIds': 'forgeBuildings', 'forge.recipeIds': 'forgeRecipes',
       'alliance.allowedMaterials': 'materials', 'alliance.blockedMaterials': 'materials',
@@ -506,7 +512,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function validateSettingsStore(store) {
@@ -756,4 +762,16 @@ function migrateVersion9Settings(settings) {
 function migrateVersion10Settings(settings) {
   if (!plain(settings) || !plain(settings.worldBoss) || Object.hasOwn(settings.worldBoss, 'fleetPresets')) return settings;
   return { ...settings, worldBoss: { ...settings.worldBoss, fleetPresets: [] } };
+}
+
+// Version 12 introduces opt-in resource field dispatch. Preserve task order and
+// append the new task without enabling it for any existing account.
+function migrateVersion11Settings(settings) {
+  if (!plain(settings)) return settings;
+  const next = { ...settings };
+  if (!Object.hasOwn(next, 'resourceFields')) next.resourceFields = copy(DEFAULT_SETTINGS.resourceFields);
+  if (Array.isArray(next.fleetDispatch?.priority) && !next.fleetDispatch.priority.includes('resourceFields')) {
+    next.fleetDispatch = { ...next.fleetDispatch, priority: [...next.fleetDispatch.priority, 'resourceFields'] };
+  }
+  return next;
 }

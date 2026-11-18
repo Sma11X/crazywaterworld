@@ -469,7 +469,7 @@ export async function runTreasureLoot(client, protocol, config, player, { getSet
     const snapshot = await readTreasureLoot(client, protocol, config, player, { preferences: getSettings().treasure });
     if (integer(petrolCeiling)) snapshot.fuel = Math.min(snapshot.fuel, petrolCeiling);
     reconcileKeys(snapshot, ledger, baseline);
-    const pendingFuel = () => { const counters = ledger.pendingCounters?.() ?? {}; return (counters.treasurePetrol ?? 0) + (counters.cityWarPetrol ?? 0) + (counters.piratePetrol ?? 0) + (counters.radarPetrol ?? 0) + (counters.worldBossPetrol ?? 0) + (counters.siliconPetrol ?? 0); };
+    const pendingFuel = () => { const counters = ledger.pendingCounters?.() ?? {}; return (counters.treasurePetrol ?? 0) + (counters.cityWarPetrol ?? 0) + (counters.piratePetrol ?? 0) + (counters.radarPetrol ?? 0) + (counters.worldBossPetrol ?? 0) + (counters.siliconPetrol ?? 0) + (counters.resourceFieldPetrol ?? 0); };
     const unavailableFleets = () => Object.fromEntries(getSettings().treasure.fleetIds.map(id => [id,
       legacyFleetReservationReason(client, id) || (!canUseFleet(id) ? '此舰队已预留给其他任务' : '')]));
     const acceleratedFleetIds = [];

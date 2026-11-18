@@ -197,6 +197,7 @@ function fixture(initial = sampleAccounts()) {
     const loginSettingsAccountChanged = () => {};
     const appointmentsAccountChanged = () => {};
     const siliconAccountChanged = () => {};
+    const resourceFieldsAccountChanged = () => {};
     const resetWorldMap = () => {};
     const resetProductionPlan = () => {};
     let accounts=structuredClone(env.serverRows),current=env.selected,dailyAccount=current,dailyVersion=0;

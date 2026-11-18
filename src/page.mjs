@@ -17,6 +17,8 @@ const productionPlanningScript = readFileSync(new URL('./production-planning-ui.
 const worldMapScript=readFileSync(new URL('./world-map-ui.js',import.meta.url),'utf8');
 const siliconOverviewScript = readFileSync(new URL('./silicon-overview-ui.js', import.meta.url), 'utf8');
 const siliconOverviewCss = readFileSync(new URL('./silicon-overview.css', import.meta.url), 'utf8');
+const resourceFieldsScript = readFileSync(new URL('./resource-fields-ui.js', import.meta.url), 'utf8');
+const resourceFieldsCss = readFileSync(new URL('./resource-fields.css', import.meta.url), 'utf8');
 import {mapMotionPosition} from './world-map-geometry.mjs';
 const phoneLoginScript = readFileSync(new URL('./phone-login-ui.js', import.meta.url), 'utf8');
 const alipayLoginScript = readFileSync(new URL('./alipay-login-ui.js', import.meta.url), 'utf8');
@@ -39,7 +41,7 @@ export const PAGE = `<!doctype html>
 <meta name="theme-color" content="#ffffff">
 <meta name="format-detection" content="telephone=no">
 <script id="theme-init">${themeScript}</script>
-<style>@layer properties, theme, base, components, page, utilities; @layer page { ${consoleCss} ${settingsCss} ${appointmentsCss} ${lineupCss} ${siliconOverviewCss} } ${componentCss}</style>
+<style>@layer properties, theme, base, components, page, utilities; @layer page { ${consoleCss} ${settingsCss} ${appointmentsCss} ${lineupCss} ${siliconOverviewCss} ${resourceFieldsCss} } ${componentCss}</style>
 </head>
 <body>
 ${chrome()}
@@ -725,6 +727,7 @@ function renderAccountSelect() {
   }
   if(worldMapOwner!==null&&worldMapOwner!==current)resetWorldMap();
   siliconAccountChanged();
+  resourceFieldsAccountChanged();
   if (productionPlanOwner !== null && (productionPlanOwner !== current || !snapshot.connected || snapshot.paused || disconnected.has(current))) resetProductionPlan();
   $('production-plan-refresh').disabled = productionPlanBusy || !snapshot.connected || snapshot.paused || disconnected.has(current);
   renderHostingControl();
@@ -2081,6 +2084,7 @@ ${helpTipsScript}
 ${mapMotionPosition.toString()}
 ${worldMapScript}
 ${siliconOverviewScript}
+${resourceFieldsScript}
 ${inventoryScript}
 ${productionPlanningScript}
 ${settingsScript}

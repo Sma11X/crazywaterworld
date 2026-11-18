@@ -6,6 +6,7 @@ import { runAllianceAutomation } from './alliance-automation.mjs';
 import { serviceGuildShips, watchGuildShipPushes } from './guild-ships.mjs';
 import { serviceGuildForts } from './guild-forts.mjs';
 import { runSiliconMining, watchSiliconMining, siliconInterval } from './silicon-mining.mjs';
+import { runResourceFields } from './resource-field-automation.mjs';
 import { runHeroRaidAutomation } from './hero-raid-automation.mjs';
 import { merchantMonitorSeconds, watchMerchant } from './merchant-monitor.mjs';
 import {runPirateSweeps} from './pirate-sweeps.mjs';
@@ -148,6 +149,9 @@ export async function runLoop(client, protocol, {
   let lastTreasureNotes = '';
   let radarAt=0;
   let siliconAt = 0, siliconPreference = null, extendedAt = 0, extendedPreference = null;
+  let resourceFieldsAt = 0, resourceFieldsPreference = null;
+  const resourceFieldsNext = () => getSettings()?.resourceFields?.enabled ?
+    (resourceFieldsPreference === getSettings().resourceFields ? resourceFieldsAt : 0) : Infinity;
   const siliconNext = () => getSettings()?.silicon?.enabled ?
     (siliconPreference === getSettings().silicon ? siliconAt : 0) : Infinity;
   const extendedEnabled = () => getSettings()?.alliance?.enabled || getSettings()?.guildShip?.enabled || getSettings()?.heroRaid?.enabled;
@@ -206,7 +210,7 @@ export async function runLoop(client, protocol, {
     if (stop.aborted || !getSettings()?.silicon?.enabled) return;
     siliconAt = 0; siliconVersion++; scheduler.wake();
   }));
-  const settingsWake = () => { fleetSpeedAt = 0; siliconAt = 0; extendedAt = 0; siliconVersion++; dispatchSettingsPending = true;
+  const settingsWake = () => { fleetSpeedAt = 0; siliconAt = 0; resourceFieldsAt = 0; extendedAt = 0; siliconVersion++; dispatchSettingsPending = true;
     rewards?.clearTask('guildShip'); rewards?.clearTask('guildFort'); wakeActivities(); scheduler.wake(); };
   const extendedPush = ({ name }) => {
     if (/^SCGuildShip|^SCFort|^SCHeroRaid/.test(name) || ['SCAllActivity','SCGuildOrder','SCNewGuildAidAsk','SCGuildAidHelp','SCGuildAidRemove','SCNewGuildWelfarePack'].includes(name)) {
@@ -422,7 +426,18 @@ export async function runLoop(client, protocol, {
         if (task === (getSettings()?.treasure.follow?'follow':'treasure')) await checkTreasure();
         if (task === 'worldBoss'&&getSettings()?.worldBoss.enabled) await checkBoss();
         if (task === 'silicon') await checkSilicon();
+        if (task === 'resourceFields') await checkResourceFields();
       }
+    }
+    async function checkResourceFields() {
+      if (stop.aborted || resourceFieldsNext() > Date.now()) return;
+      const preference = getSettings()?.resourceFields;
+      resourceFieldsPreference = preference;
+      try { await runResourceFields(client, protocol, config, player, { getSettings, ledger: usageLedger,
+        enabled: () => !stop.aborted && runtimeActive() && client.connected !== false && getSettings()?.resourceFields?.enabled,
+        report: entry => serviceReport('world', '资源田')({ ...entry, taskKey: 'resourceFields.enabled' }) }); }
+      catch (error) { phaseFailure('world', '资源田检查', error); }
+      finally { resourceFieldsAt = preference === getSettings()?.resourceFields ? Date.now() + preference.checkEverySeconds * 1000 : 0; }
     }
     async function checkSilicon() {
       if (stop.aborted || siliconNext() > Date.now()) return;
@@ -1119,7 +1134,7 @@ export async function runLoop(client, protocol, {
           const activityAt = activityVersion !== roundActivityVersion ? 0
             : nextActivityBoundary(client, activityConfigured, roundStartedMs);
           const afkAt = isEnabled && enabled('afk') ? (afkDeadline ?? Date.now() + 60_000) : Infinity;
-          const wakeAt = Math.min(nextRound, activityAt, weeklyAt, factorySchedule.nextAt(), siliconNext(), extendedNext(), merchantNext(), appointmentNext(),
+          const wakeAt = Math.min(nextRound, activityAt, weeklyAt, factorySchedule.nextAt(), siliconNext(), resourceFieldsNext(), extendedNext(), merchantNext(), appointmentNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
             fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
             getSettings()?.radar.runEnabled !== false && (getSettings()?.radar.enabled || getSettings()?.radar.repairIdle) ? radarAt : Infinity,
@@ -1143,7 +1158,7 @@ export async function runLoop(client, protocol, {
           await scheduler.runDue('merchant', merchantNext, checkMerchant);
           await scheduler.runDue('extended', extendedNext, checkExtended);
           await scheduler.runDue('appointments', appointmentNext, checkAppointments);
-          const dispatchNext = () => Math.min(siliconNext(),
+          const dispatchNext = () => Math.min(siliconNext(), resourceFieldsNext(),
             fleetMaintenanceEnabled(getSettings()) ? maintenanceAt : Infinity,
             fleetSpeedEnabled(getSettings()) ? fleetSpeedAt : Infinity,
             getSettings()?.radar.runEnabled !== false && (getSettings()?.radar.enabled || getSettings()?.radar.repairIdle) ? radarAt : Infinity,

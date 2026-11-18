@@ -17,7 +17,7 @@ export async function readWorldTarget(client,protocol,config,player,settings,led
  if(settings.cityWar.enabled&&settings.cityWar.reserveDuringWar&&['treasure','radar','pirates','boss'].includes(layer)){
   const war=await readCityWar(client,protocol,config,player,settings.cityWar);reserved=war.reason?[...settings.cityWar.fleetIds]:cityWarReservedFleets(war,settings);
  }
- if(layer==='fields'){view.notes.push('资源田他人归属未同步；本工具当前没有资源田自动派遣入口，不推测可进攻条件。');return view;}
+ if(layer==='fields'){view.notes.push('在总览的「资源田概览」查看本盟城市内可占田地、产量与快捷占领；可在资源田配置中开启自动补满名额。');return view;}
  if(layer==='fleets'){
   const own=await client.request('MyFleetsRequest',{},'MyFleetsResponse');
   view.fleets=fleetDispatchView(client,settings,ledger,own.fleets??[],exactAutomationId(player.worldId)).filter(f=>'fleet-'+f.buildingId===key).map(f=>({name:f.buildingId,reason:[f.reason,...f.reserved.map(r=>'预留给'+r),'允许任务顺序：'+(f.intents.map(i=>i.label+(i.key==='cityWar'?'（'+((settings.cityWar.defenceFleetIds??[]).includes(f.buildingId)?'防守':'进攻')+'）':'')).join(' → ')||'无'),'当前目标格：'+(f.targetGrid??'主城')].filter(Boolean).join('；')}));return view;

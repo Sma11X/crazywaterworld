@@ -7,6 +7,7 @@ import {recoverWorldBossLineups} from './world-boss-lineups.mjs';
 import { recoverPirateHunts } from './pirate-recovery.mjs';
 import {readGuildTech,upgradeGuildTech} from './guild-tech.mjs';
 import {resourceFieldRows,resourceFieldTotals} from './resource-fields.mjs';
+import { readResourceFieldsOverview, previewResourceField, runResourceFieldShortcut, previewResourceFieldPlan, previewResourceFieldGiveUp, runResourceFieldGiveUp } from './resource-field-automation.mjs';
 import {activityRankCatalog,readActivityRanking} from './activity-rankings.mjs';
 import {readActivityStatistics} from './activity-statistics.mjs';
 import { merchantActivity, readMerchantStatus, readMerchantJournal, merchantJournalSummary } from './merchant-activity.mjs';
@@ -2084,7 +2085,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!config) throw new Error('缺少游戏配置表，暂时不能预览');
         const settings = validateSettings(payload.settings ?? settingsView(session).settings, { catalog: settingsCatalog(config) });
         const category = payload.category ?? 'base';
-        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'equipmentGrowth', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid'].includes(category)) throw new Error('不支持的预览分类');
+        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'equipmentGrowth', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid','resourceFields'].includes(category)) throw new Error('不支持的预览分类');
 
         if (category === 'runtime') {
           json({ checkedAt: new Date().toISOString(), usage: usageFor(session).snapshot(), actions: [], counts: {}, viewOnly: true, scopeLabel: '运行安排（仅查看，不执行）',
@@ -2101,6 +2102,13 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             actions: plan.actions.map(step => ({ label: step.label, kind: step.kind, costs: (step.costs ?? []).map(item => ({ name: displayMaterial(config, item.id), num: item.num })) })),
             notes: [...new Set(plan.notes ?? [])],
           });
+          if (category === 'resourceFields') {
+            const player = session.player, generation = session.generation;
+            const plan = await previewResourceFieldPlan(client, protocolFor(client), config, player, {
+              getSettings: () => settings, ledger: usageFor(session), enabled: () => session.client === client && client.connected && !session.paused && session.player === player && session.generation === generation,
+            });
+            return output(plan, plan.counts, '资源田自动占领');
+          }
           // 草稿预览的预留结果仅在本请求使用，绝不写入运行中的调度缓存。
           let previewCityReserved=[];
           if(['radar','pirateHunt','worldBoss'].includes(category)&&settings.cityWar.enabled&&settings.cityWar.reserveDuringWar){
@@ -2153,7 +2161,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           if (category === 'cityWar') {
             const state = await readCityWar(client, protocolFor(client), config, session.player, settings.cityWar);
             const ledger = usageFor(session), pending = ledger.pendingCounters();
-            const plan = planCityWar(state, settings, { usage, keys: ledger.keyRecords(), pendingPetrol: (pending.cityWarPetrol ?? 0) + (pending.treasurePetrol ?? 0) + (pending.piratePetrol ?? 0) + (pending.radarPetrol ?? 0) + (pending.worldBossPetrol ?? 0) + (pending.siliconPetrol ?? 0) });
+            const plan = planCityWar(state, settings, { usage, keys: ledger.keyRecords(), pendingPetrol: (pending.cityWarPetrol ?? 0) + (pending.treasurePetrol ?? 0) + (pending.piratePetrol ?? 0) + (pending.radarPetrol ?? 0) + (pending.worldBossPetrol ?? 0) + (pending.siliconPetrol ?? 0) + (pending.resourceFieldPetrol ?? 0) });
             const online = await readWorldOnlineReward(client, config, session.player);
             if (!settings.schedule.worldOnlineRewards) plan.notes.push('城战在线奖励自动领取未开启');
             else if (online.ready && worldOnlineRewardKey(session.player, online)) {
@@ -3137,6 +3145,63 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const {session}=scoped_(parsed);
         if(!session.client?.connected||session.paused)throw Error('请先连接当前账号，再读取目标详情');
         const result=await readJob(session,()=>readWorldTarget(session.client,protocolFor(session.client),loadConfigSafe(),session.player,settingsView(session).settings,usageFor(session),{layer:parsed.searchParams.get('layer'),key:parsed.searchParams.get('key')}));json(result);return;
+      }
+      if (route === 'GET /api/resource-fields/overview') {
+        const { session } = scoped_(parsed);
+        if (!session.client?.connected || session.paused) throw Error('请先连接当前账号，再读取资源田');
+        if (!session.resourceFieldsRead) {
+          const client = session.client, generation = session.generation, player = session.player, settings = settingsView(session).settings;
+          const settingsKey = JSON.stringify(settings);
+          const enabled = () => session.client === client && client.connected && !session.paused && session.generation === generation
+            && session.player === player && JSON.stringify(settingsView(session).settings) === settingsKey;
+          const job = readJob(session, () => readResourceFieldsOverview(client, protocolFor(client), loadConfigSafe(), player,
+            { getSettings: () => settings, ledger: usageFor(session), enabled }))
+            .finally(() => { if (session.resourceFieldsRead === job) session.resourceFieldsRead = null; });
+          session.resourceFieldsRead = job;
+        }
+        json(await session.resourceFieldsRead); return;
+      }
+      if (route === 'POST /api/resource-fields/preview') {
+        const { session } = scoped_(parsed), intent = jsonBody();
+        if (intent.kind !== undefined && !['occupy', 'giveUp'].includes(intent.kind)) throw Error('不支持的资源田操作');
+        if (!session.client?.connected || session.paused) throw Error('请先连接当前账号，再操作资源田');
+        const client = session.client, generation = session.generation, player = session.player;
+        const settings = settingsView(session).settings, settingsKey = JSON.stringify(settings);
+        const enabled = () => session.client === client && client.connected && !session.paused && session.generation === generation
+          && session.player === player && JSON.stringify(settingsView(session).settings) === settingsKey;
+        const previewer = intent.kind === 'giveUp' ? previewResourceFieldGiveUp : previewResourceField;
+        const preview = await readJob(session, () => previewer(client, protocolFor(client), loadConfigSafe(), player, intent,
+          { getSettings: () => settings, ledger: usageFor(session), enabled }));
+        if (!enabled()) throw Error('账号或配置已变化，请重新选择');
+        const quotes = session.resourceFieldQuotes ??= new Map();
+        for (const [key, quote] of quotes) if (Date.now() >= quote.expiresAt && (!quote.job || quote.completed)) quotes.delete(key);
+        if (quotes.size >= 30) throw Error('待处理的确认过多，请稍后再试');
+        const available = preview.kind === 'giveUp' ? preview.available === true : preview.fleets.some(fleet => fleet.step);
+        const token = available ? randomUUID() : null, expiresAt = Date.now() + 120000;
+        if (token) quotes.set(token, { preview, expiresAt, enabled, settings, client, player, job: null });
+        const { worldId, identityKey, playerId, operationId, ...view } = preview;
+        json({ ...view, token, expiresAt, ...(preview.fleets ? { fleets: preview.fleets.map(({ step, ...fleet }) => fleet) } : {}) }); return;
+      }
+      if (route === 'POST /api/resource-fields/action') {
+        const payload = jsonBody(); needConfirm(payload);
+        const { session } = scoped_(parsed), quote = session.resourceFieldQuotes?.get(payload.token);
+        if (!quote) throw Error('操作确认已失效，请重新选择资源田');
+        const giveUp = quote.preview.kind === 'giveUp';
+        if (!giveUp && quote.job && quote.fleetId !== payload.fleetId) throw Error('本次确认已用于另一支舰队');
+        if (!quote.job) {
+          if (Date.now() >= quote.expiresAt || !quote.enabled()) throw Error('确认已过期或账号配置已变化，请重新选择');
+          if (giveUp ? quote.preview.available !== true : !quote.preview.fleets.some(fleet => fleet.id === payload.fleetId && fleet.step)) throw Error(giveUp ? '此田当前不能放弃，请重新确认' : '请选择本次确认中可用的舰队');
+          quote.fleetId = giveUp ? null : payload.fleetId;
+          quote.job = enqueue(session, async () => {
+            if (Date.now() >= quote.expiresAt || !quote.enabled()) throw Error('排队期间确认已过期或连接已变化，操作未发送');
+            const options = { getSettings: () => quote.settings, ledger: usageFor(session), enabled: quote.enabled,
+              report: entry => emit(session, entry.ok ? 'info' : 'warn', (entry.label || (giveUp ? '资源田放弃' : '资源田占领')) + '：' + (entry.reason || '结果待确认')) };
+            return giveUp
+              ? runResourceFieldGiveUp(quote.client, protocolFor(quote.client), loadConfigSafe(), quote.player, quote.preview, options)
+              : runResourceFieldShortcut(quote.client, protocolFor(quote.client), loadConfigSafe(), quote.player, quote.preview, quote.fleetId, options);
+          }, giveUp ? '手动放弃资源田' : quote.preview.replacement ? '手动替换资源田' : '手动占领资源田').finally(() => { quote.completed = true; });
+        }
+        json(await quote.job); return;
       }
       if (route === 'POST /api/silicon/preview') {
         const { session } = scoped_(parsed), intent = jsonBody();

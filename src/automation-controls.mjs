@@ -39,6 +39,7 @@ add('antique.enabled','藏品自动养成','藏品',{
  help:'开启后，挂机按下方已选动作培养藏品。关闭会暂停藏品养成，仍可编辑各项设置。养成只使用已有资源。',
 });
 add('appointments.enabled','自动英雄委任','英雄',{help:'在杂项 → 英雄与装备中设置开关和委任优先级，挂机按保存顺序调用游戏一键委任。'});
+add('resourceFields.enabled','资源田自动补位','世界与挑战',{help:'仅占领本盟城市内自己尚未占领的资源田。按资源偏好与基础产出选择，每轮最多派出一队，不自动放弃已有田。'});
 add('trials.paid','试炼钻石扫荡','世界与挑战');
 add('trials.ads','试炼免广告扫荡','世界与挑战');
 for (const [key,label,group,gates] of [
@@ -58,6 +59,7 @@ for (const task of automationTasks) {
 const idleModules = {
  'alliance.enabled':['世界','alliance','联盟募兵与互助'],
  'guildFort.enabled':['世界','guildFort','联盟工事'], 'silicon.enabled':['世界','silicon','硅矿'],
+ 'resourceFields.enabled':['世界','resourceFields','资源田'],
  'loop.world':['基地','building','基地运行'],
  'building.enabled':['基地','building','建筑'], 'factory.enabled':['基地','factory','工厂'],
  'farm.enabled':['基地','farm','农田'], 'resident.enabled':['基地','resident','居民需求'],

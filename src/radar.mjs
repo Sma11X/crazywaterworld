@@ -364,7 +364,7 @@ export async function runRadarIdleRepair(client, protocol, config, {
     return;
   }
   const pending = ledger?.pendingCounters() ?? {};
-  if (['radarPetrol', 'piratePetrol', 'treasurePetrol', 'cityWarPetrol', 'worldBossPetrol', 'siliconPetrol'].some(key => (pending[key] ?? 0) > 0)) {
+  if (['radarPetrol', 'piratePetrol', 'treasurePetrol', 'cityWarPetrol', 'worldBossPetrol', 'siliconPetrol', 'resourceFieldPetrol'].some(key => (pending[key] ?? 0) > 0)) {
     report({ key: 'radar.repairIdle', label: '空闲舰队维修', skipped: true, reason: '有汽油支出待确认，暂不维修' });
     return;
   }

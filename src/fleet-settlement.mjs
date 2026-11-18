@@ -5,7 +5,7 @@ import { emitDiagnostic } from './trace-log.mjs';
 import { fleetRepairConfirmed } from './fleet-repair-confirmation.mjs';
 import { fleetSpeedConfirmed } from './fleet-speed-evidence.mjs';
 
-const fleetKey = /^(?:fleet-speed|fleet-speed-wait|radar-send|world-boss|world-boss-lineup|pirate-first|cityWar|treasureRepair|treasureFollow|treasureSpeed|treasure|silicon|silicon-repair|silicon-retreat|silicon-speed):(\d+):/;
+const fleetKey = /^(?:fleet-speed|fleet-speed-wait|radar-send|world-boss|world-boss-lineup|pirate-first|cityWar|treasureRepair|treasureFollow|treasureSpeed|treasure|silicon|silicon-repair|silicon-retreat|silicon-speed|resource-field):(\d+):/;
 const repairKinds = new Set(['cityRepair', 'treasureRepair']);
 const integer = Number.isSafeInteger;
 const dayOf = (seconds) => Math.floor((seconds + 28800) / 86400);
@@ -116,7 +116,7 @@ export function outstandingFleets(records, worldId) {
     const match = fleetKey.exec(key),
       d = r.details;
     if (!match || match[1] !== String(worldId) || r.expired || !d?.buildingId) return false;
-    if (d.kind === 'radarSend' || d.kind === 'worldBoss') return d.active !== false;
+    if (d.kind === 'radarSend' || d.kind === 'worldBoss' || d.kind === 'resourceFieldDispatch') return d.active !== false;
     if (d.kind === 'pirateFirst') return !['won', 'lost'].includes(d.outcome);
     if (d.kind === 'fleetSpeed') return !r.confirmed;
     return (
@@ -152,10 +152,32 @@ function personalBattleMatches(details, report) {
   );
 }
 
+export function releaseResourceFieldReplacementLock(ledger, details) {
+  const lock = details?.replacement?.lock;
+  if (lock?.id && lock?.key && ledger.keyRecords()[lock.key]?.id === lock.id) ledger.cancel({ id: lock.id });
+}
+
+// Caller must have proof that no challenge was sent (or that it was explicitly rejected).
+export function cancelResourceFieldReplacement(ledger, key, record, now, reason) {
+  if (!record?.details?.replacement || record.confirmed || ledger.keyRecords()[key]?.id !== record.id) return;
+  const d = record.details;
+  const historyKey = `resource-field-partial:${d.worldId}:${dayOf(now)}`;
+  const history = { kind: 'resourceFieldReplacementResult', worldId: d.worldId,
+    oldGrid: d.replacement.grid, newGrid: d.gridIdx, released: true, at: now, reason };
+  // Save the partial outcome before freeing the slot; automatic filling stays paused today.
+  if (ledger.hasKey(historyKey)) ledger.updateKeyDetails(historyKey, history);
+  else {
+    try { ledger.confirm(ledger.reserve({}, {}, {}, { uniqueKey: historyKey, details: history })); }
+    catch (error) { if (!ledger.hasKey(historyKey)) throw error; }
+  }
+  ledger.cancel({ id: record.id });
+  releaseResourceFieldReplacementLock(ledger, d);
+}
+
 // 对已有派遣做结算，不发出游戏动作。先按读回前的记录编号限定范围，防止迟到快照释放新占用。
 export function settleFleetSnapshot(
   ledger,
-  { worldId, fleets, events, reports, kills, cargoUids, now, kinds, baseline, allowBossTimeout = true }
+  { worldId, fleets, events, reports, kills, cargoUids, resourceFields, now, kinds, baseline, allowBossTimeout = true }
 ) {
   if (!ledger?.keyRecords || !worldId || !Array.isArray(fleets)) return [];
   const records = ledger.keyRecords(),
@@ -171,6 +193,44 @@ export function settleFleetSnapshot(
     if (own.length !== 1) continue;
     const fleet = own[0],
       home = fleetAtHome(fleet);
+    if (d.kind === 'resourceFieldDispatch') {
+      if (!integer(d.gridIdx) || d.gridIdx < 0 || key !== 'resource-field:' + worldId + ':' + d.gridIdx) continue;
+      if (baseline && baseline[key].details?.phase !== d.phase) continue;
+      const fieldsSynced = Array.isArray(resourceFields)
+        && resourceFields.every(field => integer(field.gridIdx) && field.gridIdx >= 0
+          && integer(field.cityId) && field.cityId > 0 && integer(field.type) && field.type > 0)
+        && new Set(resourceFields.map(field => field.gridIdx)).size === resourceFields.length;
+      if (d.replacement && d.phase !== 'dispatching') {
+        // A live replacement owns the released slot. After an interrupted give-up, only
+        // observed removal and an ended lease can cancel its unspent challenge budget.
+        if (['givingUp', 'released'].includes(d.phase) && !r.confirmed && fieldsSynced
+          && integer(d.replacement.grid) && !resourceFields.some(field => field.gridIdx === d.replacement.grid)
+          && integer(now) && integer(d.replacementLeaseUntil) && d.replacementLeaseUntil <= now) {
+          cancelResourceFieldReplacement(ledger, key, r, now, '旧田已放弃，替换未继续，请重新选择');
+          changes.push({ key, reason: '旧田已放弃，替换未继续，已释放未花汽油和舰队占用' });
+        }
+        continue;
+      }
+      const occupied = fieldsSynced && resourceFields.some(field => field.gridIdx === d.gridIdx);
+      const atTarget = (fleet.state === 2 && fleet.targetGridIdx === d.gridIdx)
+        || (fleet.state === 3 && fleet.curGridIdx === d.gridIdx);
+      if (!r.confirmed && (occupied || atTarget)) {
+        ledger.resolveKey(key, true, { ...d, occupied, active: true });
+        changes.push({ key, reason: occupied ? '本人资源田列表确认占领' : '确认资源田派遣，战果待同步' });
+      }
+      const current = ledger.keyRecords()[key];
+      if (current?.confirmed && d.replacement) releaseResourceFieldReplacementLock(ledger, d);
+      // 自动占田关闭后仍结算手动出征；归队只能释放已确认派遣，未知请求继续保留。
+      if (current?.confirmed && home && !(fleet.targetGridIdx ?? 0) && !fleet.autoFight?.isOn
+        && fieldsSynced && integer(now) && current.details.active !== false) {
+        ledger.updateKeyDetails(key, { ...current.details, active: false, occupied, returnedAt: now });
+        changes.push({ key, reason: occupied ? '占田舰队已归队，释放舰队占用' : '占田舰队已归队，未确认占领，保留本日尝试记录' });
+      } else if (current?.confirmed && occupied && !current.details.occupied) {
+        ledger.updateKeyDetails(key, { ...current.details, occupied: true });
+        changes.push({ key, reason: '本人资源田列表确认占领，舰队尚未归队' });
+      }
+      continue;
+    }
     if (d.kind === 'fleetSpeed') {
       if (fleetSpeedConfirmed(fleet, d, now)) {
         ledger.resolveKey(key, true); changes.push({key,reason:'已确认舰队加速，保留本航程累计费用'});
@@ -417,11 +477,12 @@ export async function checkFleetSettlement(client, player, ledger, { afterPush =
         return null;
       }
     };
-    const [own, radar, pirate, cargo] = await Promise.all([
+    const [own, radar, pirate, cargo, fields] = await Promise.all([
       read('MyFleets'),
       kinds.has('radarSend') ? read('RadarInfo') : null,
       kinds.has('pirateFirst') ? read('PirateKillRecord') : null,
-      kinds.has('treasureDispatch') ? read('TreasureLootList') : null
+      kinds.has('treasureDispatch') ? read('TreasureLootList') : null,
+      kinds.has('resourceFieldDispatch') ? read('MyResFields') : null
     ]);
     if (!Array.isArray(own?.fleets) || !sameOwner() || client.connected === false) {
       emitDiagnostic(client, 'fleet-settlement', { worldId, readErrors, changes: [],
@@ -437,6 +498,7 @@ export async function checkFleetSettlement(client, player, ledger, { afterPush =
       fleets: own.fleets,
       events: radarEvents(radar?.radarInfo),
       kills: pirate?.records,
+      resourceFields: fields?.info?.fields,
       cargoUids:
         cargoIds && cargoIds.every(Boolean) && new Set(cargoIds).size === cargoIds.length ? cargoIds : null,
       now,
