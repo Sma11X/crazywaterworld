@@ -44,6 +44,21 @@ await test('世界Boss只读计划不写账本；城战预留、低耐久、实�
 await test('世界Boss旧汽油保留量不阻止库存充足时派遣',async()=>{const f=bossFixture();f.settings.worldBoss.petrolReserve=1000;await runWorldBoss(f.client,f.config,player,f.args);assert.equal(f.client.writes.length,1);});
 await test('世界Boss未知派遣保留汽油及舰队占用，重试不会再次发送',async()=>{const f=bossFixture('unknown');await runWorldBoss(f.client,f.config,player,f.args);await runWorldBoss(f.client,f.config,player,f.args);assert.equal(f.client.writes.length,1);assert.equal(f.ledger.pendingCounters().worldBossPetrol,300);assert(!f.output.some(e=>e.ok));});
 await test('世界Boss伤害达标领取并回读确认，未达第二档不再领',async()=>{const f=bossFixture();await claimWorldBossDamage(f.client,f.config,f.options);await claimWorldBossDamage(f.client,f.config,f.options);assert.deepEqual(f.client.writes,['WorldBossGetDamageRewardRequest']);});
+await test('世界Boss统一领奖独立于首战派遣，关闭后旧任务不能继续领奖',async()=>{
+ for(const rewardsEnabled of [true,false]){
+  const f=bossFixture(),reads=[],entries=[];
+  f.settings.worldBoss.enabled=false;f.settings.schedule.worldBossRewards=rewardsEnabled;
+  const request=f.client.request;f.client.request=async(...args)=>{reads.push(args[0]);return request(...args);};
+  await runLoop(f.client,protocol,{config:f.config,player,rounds:1,allowMutate:true,
+   isEnabled:key=>key==='worldBossDamage'||key==='worldBossRewards'&&rewardsEnabled,
+   getSettings:()=>f.settings,usageLedger:f.ledger,onStep:entry=>entries.push(entry)});
+  assert.deepEqual(entries.filter(entry=>entry.error&&!entry.skipped),[]);
+  assert.deepEqual(f.client.writes,rewardsEnabled?['WorldBossGetDamageRewardRequest']:[]);
+  assert(!reads.includes('ChallengeWorldBossRequest'),'领奖不授权派遣');
+  if(rewardsEnabled)assert(entries.some(entry=>entry.taskKey==='worldBossRewards'&&entry.ok));
+  else assert.deepEqual(reads,[],'关闭后旧任务值不得触发奖励查询或领取');
+ }
+});
 await test('新免费项目默认关闭，原有四项调度相对顺序保留，新任务补在末尾',()=>{const s=defaultSettings();for(const key of ['pirateRankRewards','warRankRewards','festivalActiveRewards','battleReportRewards','worldBossRewards','weekSupplyFree','leagueCollect','leaguePassRewards'])assert.equal(s.schedule[key],false);s.fleetDispatch.priority=['radar','cityWar','treasure','pirateHunt'];assert.deepEqual(dispatchOrder(s),['radar','cityWar','treasure','pirateHunt','worldBoss','follow','silicon']);});
 await test('开放活动与其他新项目经过整轮执行入口，等待状态和下次检查均可读取',async()=>{
  const keys=['pirateRankRewards','warRankRewards','festivalActiveRewards','battleReportRewards','worldBossRewards','weekSupplyFree','leagueCollect','leaguePassRewards'];

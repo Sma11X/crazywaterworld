@@ -15,7 +15,7 @@ for (const [type, task] of Object.entries(redPointTasks)) {
 assert.equal(protocol.RedPointType.CROSS_RANK_REWARD, 33);
 assert.equal(protocol.RedPointType.GUILD_AID_NEW, 43);
 assert.equal(protocol.RedPointType.TRADE_TASK, 53);
-for (const key of extraRewardKeys) assert.equal(taskSettings({})[key], false, key + ' 即使是免费领奖，也需用户主动开启');
+for (const key of extraRewardKeys) assert.equal(taskSettings({})[key], key === 'worldBossDamage' ? undefined : false, key + ' 免费领奖默认关闭，退役开关不再注册');
 for (const key of ['guildAidHelp', 'treasureLoot', 'heroGrowth', 'stageAuto']) assert.equal(taskSettings({})[key], false, key + ' 会消耗资源，必须默认关闭');
 
 function fakeClient(handlers, connected = true) {

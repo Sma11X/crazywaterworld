@@ -11,6 +11,7 @@ import { merchantMonitorSeconds, watchMerchant } from './merchant-monitor.mjs';
 import {runPirateSweeps} from './pirate-sweeps.mjs';
 import {claimGuildTitleReward} from './guild-title-rewards.mjs';
 import {runWorldBoss,claimWorldBossDamage} from './world-boss.mjs';
+import {recoverWorldBossLineups} from './world-boss-lineups.mjs';
 import { claimOpenRank, claimFestivalActive, claimReportRewards, claimLeagueCollect, claimLeaguePass, claimWeekSupply } from './missing-rewards.mjs';
 import { dispatchOrder, reserveDispatch, dispatchReservationReason, bridgeFleetReservations, legacyFleetReservationReason } from './fleet-availability.mjs';
 import { runAllianceRadar } from './alliance-radar.mjs';
@@ -273,7 +274,7 @@ export async function runLoop(client, protocol, {
     const active = key => !stop.aborted && runtimeActive() && weeklyLegacyTaskAllowed(getSettings(), key) && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && Boolean(isEnabled?.(key));
     const aliases = { vipDailyGift:['vipDaily'], worldOnlineRewards:['worldOnline'],
       festivalActiveRewards:['festivalActive'], battleReportRewards:['campaignReports'],
-      weekSupplyFree:['weekChipFree','weekUniqueFree'], worldBossRewards:['worldBossDamage'],
+      weekSupplyFree:['weekChipFree','weekUniqueFree'],
       merchantRewards:['tradeTasks'], festivalFreeGift:['festivalGifts'],
       riverScore:['snowballFree'], riverHelp:['snowballFree'],
       pirateRankRewards:['openRankRewards'], warRankRewards:['openRankRewards'] };
@@ -405,6 +406,8 @@ export async function runLoop(client, protocol, {
       if(stop.aborted)return;
       if(usageLedger){const changes=await checkFleetSettlement(client,player,usageLedger);for(const change of changes)if(change.repairRecovery)
         stepLog('world')({category:'战后维修',title:change.buildingId+'维修复查',ok:true,status:'confirmed',note:change.reason,taskKey:'舰队战后维修'});}
+      if(usageLedger)await recoverWorldBossLineups(client,player,usageLedger,{enabled:()=>!stop.aborted&&client.connected!==false,
+        report:entry=>stepLog('world')({...entry,title:entry.label,taskKey:'worldBoss'})});
       await checkMaintenance();
       // 加速补满后立即刷新维修占用，让同轮城战能使用已恢复的舰队。
       if(await checkFleetSpeed())await checkMaintenance();

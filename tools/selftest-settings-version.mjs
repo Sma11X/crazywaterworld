@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   SETTINGS_FORMAT, SETTINGS_SCHEMA_VERSION, defaultSettings, migrateSettingsVersion,
   importAutomationSettings, exportAutomationSettings, loadAutomationSettings, saveAutomationSettings,
-  nativeTaskValues, validateSettings, settingsUiRules,
+  nativeTaskValues, validateSettings, settingsUiRules, settingsFromNative, applyNativeTask,
 } from '../src/automation-settings.mjs';
 import { automationTasks, taskSettings } from '../src/automation.mjs';
 import { automationControls } from '../src/automation-controls.mjs';
@@ -46,6 +46,95 @@ function legacySettings() {
 }
 
 try {
+  test('世界Boss逐队阵容兼容旧配置，绑定验证与往返保存保留选择', () => {
+    const old = defaultSettings(); old.worldBoss.fleetIds = ['1远征船', '2远征船'];
+    old.worldBoss.enabled = true; delete old.worldBoss.fleetPresets;
+    const upgraded = importAutomationSettings({ format: SETTINGS_FORMAT, version: 10, settings: old });
+    assert.deepEqual(upgraded.worldBoss, { ...old.worldBoss, fleetPresets: [] });
+    assert.deepEqual(validateSettings(old).worldBoss, upgraded.worldBoss, '旧页面保存兼容新增空绑定');
+    assert(!Object.hasOwn(old.worldBoss, 'fleetPresets'), '不修改输入');
+    const settings = defaultSettings();
+    settings.lineups.presets = [{ id: 'boss', name: '首领队', formation: { presetId: 1, heroPositions: [{ heroId: 'a', pos: { x: 4, y: 4 } }], petUid: '0' } }];
+    settings.worldBoss.fleetIds = ['1远征船', '2远征船'];
+    settings.worldBoss.fleetPresets = [{ buildingId: '1远征船', presetId: 'boss' }];
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(settings)), validateSettings(settings));
+    const paused = structuredClone(settings); paused.worldBoss.fleetIds = [];
+    assert.deepEqual(validateSettings(paused).worldBoss.fleetPresets, settings.worldBoss.fleetPresets, '取消勾选保留下次使用的阵容');
+    for (const bindings of [null, {}, [{ buildingId: '0远征船', presetId: 'boss' }],
+      [{ buildingId: '1远征船', presetId: 'missing' }], [...settings.worldBoss.fleetPresets, ...settings.worldBoss.fleetPresets],
+      [{ buildingId: '1远征船', presetId: 'boss', extra: true }]]) {
+      const invalid = structuredClone(settings); invalid.worldBoss.fleetPresets = bindings;
+      assert.throws(() => validateSettings(invalid), error => !!error.fields?.['worldBoss.fleetPresets']);
+    }
+    assert.deepEqual(settingsFromNative({}).worldBoss.fleetPresets, []);
+  });
+
+  test('世界Boss旧、新领奖开关合并后保留启用状态和独立首战配置', () => {
+    for (const version of [1, 9]) for (const legacyEnabled of [false, true]) for (const rewardsEnabled of [false, true]) for (const dispatchEnabled of [false, true]) {
+      const settings = defaultSettings();
+      Object.assign(settings.schedule, { worldBossDamage: legacyEnabled, worldBossRewards: rewardsEnabled });
+      Object.assign(settings.worldBoss, { enabled: dispatchEnabled, fleetIds: ['2远征船'], minDurabilityPercent: 63 });
+      const before = structuredClone(settings);
+      const expected = structuredClone(settings);
+      expected.schedule.worldBossRewards = legacyEnabled || rewardsEnabled;
+      delete expected.schedule.worldBossDamage;
+      fs.writeFileSync(file, JSON.stringify({ version, accounts: {
+        boss: { settingsVersion: version, revision: 3, settings },
+        other: { settingsVersion: version, revision: 2, settings },
+      } }));
+      const bytes = fs.readFileSync(file), loaded = loadAutomationSettings('boss', { file });
+      assert.deepEqual(loaded.settings, expected);
+      assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version, settings }), expected);
+      assert.deepEqual(fs.readFileSync(file), bytes, '读取只在内存合并');
+      assert.deepEqual(settings, before, '迁移不修改输入');
+      const saved = saveAutomationSettings('boss', loaded.settings, { file, revision: loaded.revision });
+      assert.deepEqual(loadAutomationSettings('boss', { file }).settings, expected);
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings(saved.settings)), expected);
+      assert.deepEqual(JSON.parse(fs.readFileSync(file)).accounts.other.settings, before, '不改写其他账号');
+      const disabled = structuredClone(saved.settings);
+      disabled.schedule.worldBossRewards = false;
+      saveAutomationSettings('boss', disabled, { file, revision: saved.revision });
+      const restarted = loadAutomationSettings('boss', { file }).settings;
+      assert.deepEqual(restarted, disabled);
+      const tasks = nativeTaskValues(restarted, { worldBossDamage: true, worldBossRewards: true });
+      assert.equal(tasks.worldBossRewards, false, '关闭统一开关后旧任务值不能重新开启');
+      assert(!Object.hasOwn(tasks, 'worldBossDamage'));
+    }
+  });
+
+  test('世界Boss原生旧任务和旧页面保存迁移为统一领奖开关', () => {
+    const defaults = defaultSettings();
+    assert.equal(defaults.worldBoss.enabled, false);
+    assert.equal(defaults.schedule.worldBossRewards, false);
+    assert(!Object.hasOwn(defaults.schedule, 'worldBossDamage'));
+    assert(!automationTasks.some(task => task.key === 'worldBossDamage'));
+    assert(!automationControls.some(control => control.key === 'schedule.worldBossDamage'));
+    for (const legacyEnabled of [false, true]) for (const rewardsEnabled of [false, true]) {
+      const native = { worldBossDamage: legacyEnabled, worldBossRewards: rewardsEnabled };
+      const expected = legacyEnabled || rewardsEnabled;
+      assert.equal(taskSettings(native).worldBossRewards, expected);
+      assert(!Object.hasOwn(taskSettings(native), 'worldBossDamage'));
+      const migrated = settingsFromNative(native);
+      assert.equal(migrated.schedule.worldBossRewards, expected);
+      assert.equal(migrated.worldBoss.enabled, false, '领奖选择不自动授权首战派遣');
+      assert(!Object.hasOwn(migrated.schedule, 'worldBossDamage'));
+      const disabled = applyNativeTask(migrated, 'worldBossRewards', false);
+      assert.deepEqual(applyNativeTask(disabled, 'worldBossDamage', true), disabled, '退役入口不能重开领奖');
+      assert.equal(importAutomationSettings(exportAutomationSettings(disabled)).schedule.worldBossRewards, false);
+    }
+    const oldPage = defaultSettings(); oldPage.schedule.worldBossDamage = true;
+    const normalized = validateSettings(oldPage);
+    assert.equal(normalized.schedule.worldBossRewards, true, '已打开的旧页面仍能保存原先的领奖选择');
+    assert(!Object.hasOwn(normalized.schedule, 'worldBossDamage'));
+    normalized.schedule.worldBossRewards = false;
+    assert.equal(importAutomationSettings(exportAutomationSettings(normalized)).schedule.worldBossRewards, false);
+    for (const key of ['worldBossDamage', 'worldBossRewards']) {
+      const legacy = defaultSettings(); legacy.schedule[key] = 'true';
+      assert.throws(() => importAutomationSettings({ format: SETTINGS_FORMAT, version: 9, settings: legacy }),
+        error => !!error.fields?.['schedule.' + key]);
+    }
+  });
+
   test('汽油限制从旧文件、导入和旧页面保存中移除，保留其他资源与玩法设置', () => {
     const expected = defaultSettings();
     Object.assign(expected.resources, { allowDiamonds: true, diamondDailyLimit: 1234, diamondThreshold: 50 });
@@ -359,7 +448,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 9);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 11);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

@@ -587,6 +587,29 @@ test('模块主控单独置顶后子项回到组级，各字段只渲染一次',
   }
 });
 
+test('世界Boss领奖只在世界分组出现，首战派遣与领奖独立控制', () => {
+  const f = fixture({ navigation: true }); f.renderPage();
+  f.env.hash = '#config-group-worldBoss'; f.applyHash();
+  assert.equal(f.editor.category, 'world');
+  const group = f.editor.groups.get('worldBoss'), section = f.env.node('config-group-worldBoss');
+  const reward = f.widget('schedule.worldBossRewards');
+  assert.equal(group.fields.filter(field => field.key === 'schedule.worldBossRewards').length, 1);
+  assert.equal([...f.editor.groups.values()].flatMap(item => item.fields).filter(field => field.key === 'schedule.worldBossRewards').length, 1);
+  assert(!f.widget('schedule.worldBossDamage'), '旧领奖开关不再显示');
+  assert.equal(reward.spec.label, '自动领取伤害达标奖励');
+  assert.equal(reward.node.parentElement, section);
+  assert(visible(reward.node));
+  assert.equal(f.editor.draft.worldBoss.enabled, false);
+  f.set('schedule.worldBossRewards', true);
+  assert.equal(f.editor.draft.worldBoss.enabled, false, '开启领奖不自动派遣');
+  f.set('worldBoss.enabled', true);
+  f.set('worldBoss.enabled', false);
+  assert.equal(f.editor.draft.schedule.worldBossRewards, true, '关闭首战不关闭领奖');
+  assert(visible(reward.node), '关闭首战后领奖仍可编辑');
+  const challenges = f.editor.groups.get('daily-challenges');
+  assert.deepEqual(challenges.fields.map(field => field.key), ['schedule.leagueCollect', 'schedule.leaguePassRewards']);
+});
+
 test('所有模块主控与参数在同组，英雄组合主控保留细项，运行安排入口移除', () => {
   const f = fixture({ navigation: true }); f.renderPage();
   for (const control of settingsUiRules().moduleControls) {

@@ -470,7 +470,9 @@ const configGroups = [
   ] },
   { id:'worldBoss',title:'世界Boss',category:'world',fields:[
     configField('worldBoss.enabled','每日首战自动派遣'),
-    configField('worldBoss.fleetIds','首战可用舰队','multi',{catalog:'expeditionFleets',empty:'未选择，使用任意符合条件的空闲舰队',help:'每次仅派遣一队，遵守统一任务顺序和在途保护。'}),
+    configField('schedule.worldBossRewards','自动领取伤害达标奖励','switch',{help:'随挂机领取已达到伤害档位的奖励。独立于每日首战自动派遣，关闭首战派遣后仍可领奖；开启领奖不会派出舰队。'}),
+    configField('worldBoss.fleetIds','首战参与舰队','multi',{catalog:'expeditionFleets',selectAll:true,empty:'未选择，自动选一支空闲舰队',help:'勾选多支时一起派出符合条件的舰队；未选择时自动选一队。遵守统一任务顺序和在途保护。'}),
+    configField('worldBoss.fleetPresets','各舰队出战阵容','fleetLineups',{parent:'worldBoss.fleetIds',wide:true,help:'为已勾选的舰队选择保存的阵容；未指定时使用该舰队当前阵容。只切换英雄与阵型，英雄不得与其他舰队重复。战斗结束并返航后恢复原阵容。'}),
     configField('worldBoss.minDurabilityPercent','最低耐久','number',{unit:'%',help:'0表示不设百分比门槛，仍须有耐久。'}),
   ]},
   { id:'fleet-dispatch',title:'舰队调度',category:'world',fields:[configField('fleetDispatch.priority','任务优先顺序','dispatchOrder',{wide:true,help:'从上到下检查，已出征舰队不抢占。有效城战时段预留优先；已启动首杀对较低优先级任务预留舰队，无目标后释放。巨轮跟随独立排序；当天世界Boss首战完成后释放舰队。'})]},
@@ -770,7 +772,7 @@ function configUpdateVisibility() {
         ? '尚未选择执行动作，请在下方设置。' : enabled && labels.length ? '需先开启：' + labels.join('、') : '';
       widget.moduleNote.hidden = !widget.moduleNote.textContent;
     }
-    if (widget.spec.kind === 'lineup' || widget.spec.kind === 'trialLineups') widget.control?.refresh?.();
+    if (['lineup', 'trialLineups', 'fleetLineups'].includes(widget.spec.kind)) widget.control?.refresh?.();
     if (widget.childPanel) {
       if (hasError) configCollapsed.delete(key);
       const available = children.some(child => !child.node.hidden);
@@ -1063,7 +1065,7 @@ function configRenderField(spec) {
     control = el('select', 'config-select'); control.id = id;
     for (const [value, text] of spec.options) { const option = el('option', '', text); option.value = value; control.append(option); }
     control.value = configGet(spec.key); control.onchange = () => configSet(spec.key, spec.numeric ? Number(control.value) : control.value); box.append(control);
-  } else if (spec.kind === 'lineup' || spec.kind === 'trialLineups') {
+  } else if (['lineup', 'trialLineups', 'fleetLineups'].includes(spec.kind)) {
     control = configLineupPicker(spec, id); box.append(control);
   } else if (spec.kind === 'radio') {
     control = el('div', 'config-radio'); control.id = id; control.setAttribute('role', 'radiogroup'); control.setAttribute('aria-label', spec.label); control.tabIndex = -1;
@@ -1196,16 +1198,18 @@ function configLineupPicker(spec, id) {
   const root = el('div'); root.id = id; root.tabIndex = -1;
   root.setAttribute('role', 'group'); root.setAttribute('aria-label', spec.label);
   const presets = configGet('lineups.presets') ?? [];
+  const fleetPicker = spec.kind === 'fleetLineups', bindingField = fleetPicker ? 'buildingId' : 'raidId';
   const entries = spec.kind === 'trialLineups'
     ? (configEditor.data.catalog?.trialRaids ?? []).map(raid => ({ raidId: String(raid.value), label: raid.label }))
+    : fleetPicker ? (configEditor.data.catalog?.expeditionFleets ?? []).map(fleet => ({ raidId: String(fleet.value), label: fleet.label }))
     : [{ raidId: null, label: spec.label }];
   const controls = [];
   for (const entry of entries) {
     const line = el('div', 'config-add');
     const select = el('select', 'config-select'); select.id = id + (entry.raidId ? '-' + entry.raidId : '-select');
-    select.dataset.lineupBinding = entry.raidId ? 'trial:' + entry.raidId : 'mainline';
-    select.setAttribute('aria-label', entry.label + (entry.raidId ? '自动挑战阵容' : ''));
-    const empty = el('option', '', '使用游戏当前阵容'); empty.value = ''; select.append(empty);
+    select.dataset.lineupBinding = entry.raidId ? (fleetPicker ? 'fleet:' : 'trial:') + entry.raidId : 'mainline';
+    select.setAttribute('aria-label', entry.label + (fleetPicker ? '世界Boss出战阵容' : entry.raidId ? '自动挑战阵容' : ''));
+    const empty = el('option', '', fleetPicker ? '使用舰队当前阵容' : '使用游戏当前阵容'); empty.value = ''; select.append(empty);
     for (const preset of presets) {
       const option = el('option', '', preset.name); option.value = preset.id; select.append(option);
     }
@@ -1217,24 +1221,29 @@ function configLineupPicker(spec, id) {
     select.onchange = () => {
       if (entry.raidId === null) configSet(spec.key, select.value);
       else {
-        const bindings = configGet(spec.key).filter(binding => binding.raidId !== entry.raidId);
-        if (select.value) bindings.push({ raidId: entry.raidId, presetId: select.value });
+        const bindings = configGet(spec.key).filter(binding => binding[bindingField] !== entry.raidId);
+        if (select.value) bindings.push({ [bindingField]: entry.raidId, presetId: select.value });
         configSet(spec.key, bindings);
       }
       root.refresh();
     };
+    let label;
     if (entry.raidId) {
-      const label = el('label', 'config-label', entry.label); label.htmlFor = select.id; root.append(label);
+      label = el('label', 'config-label', entry.label); label.htmlFor = select.id; root.append(label);
     }
     line.append(select, view); root.append(line);
-    controls.push({ ...entry, select, view });
+    controls.push({ ...entry, select, view, line, label });
   }
-  if (!entries.length) root.append(el('p', 'config-help', '副本列表暂未载入，请刷新挂机配置。'));
+  const hint = el('p', 'config-help', fleetPicker ? '请先勾选参与舰队以逐队指定阵容。' : '副本列表暂未载入，请刷新挂机配置。');
+  if (fleetPicker || !entries.length) root.append(hint);
   root.refresh = () => {
-    for (const { raidId, select, view } of controls) {
-      select.value = raidId === null ? configGet(spec.key) : configGet(spec.key).find(binding => binding.raidId === raidId)?.presetId ?? '';
+    let visible = 0;
+    for (const { raidId, select, view, label, line } of controls) {
+      select.value = raidId === null ? configGet(spec.key) : configGet(spec.key).find(binding => binding[bindingField] === raidId)?.presetId ?? '';
       view.disabled = !select.value;
+      if (fleetPicker) { label.hidden = line.hidden = !configGet('worldBoss.fleetIds').includes(raidId); if (!line.hidden) visible++; }
     }
+    if (fleetPicker) hint.hidden = visible > 0;
   };
   root.refresh();
   return root;
@@ -1583,7 +1592,12 @@ function configMultiselect(spec, id, options = {}) {
   };
   root.onkeydown = event => { if (event.key === 'Escape') { root.open = false; summary.focus(); event.stopPropagation(); } };
   const reset = configButton('清空选择', () => { if (!disabled) { write([]); paintSummary(); paintList(); } });
-  reset.disabled = disabled; foot.append(count, reset);
+  reset.disabled = disabled; foot.append(count);
+  if (spec.selectAll) {
+    const selectAll = configButton('全选', () => { if (!disabled) { write(all().map(item => item.value)); paintSummary(); paintList(); } });
+    selectAll.setAttribute('aria-label', '全选' + spec.label); selectAll.disabled = disabled; foot.append(selectAll);
+  }
+  foot.append(reset);
   root.refresh = () => { paintSummary(); if (root.open) paintList(); };
   panel.append(search, list, more, foot); root.append(panel); paintSummary(); return root;
 }

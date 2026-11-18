@@ -7,7 +7,7 @@ export const maxCompassSpinCount = 999;
 
 // 旧字段仅兼容导入，统一停用，不能在新模块关闭后恢复执行。
 // 装备由 forge.enabled 控制；联盟互助由 alliance.enabled / mutual / autoHelp 控制；巨轮由 treasure.enabled 控制。
-export const migratedAutomationTasks = new Set(['museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'radarAuto', 'radarRepair', 'museumRevenue', 'museumAchievements']);
+export const migratedAutomationTasks = new Set(['museumCollect', 'museumExplore', 'petCollect', 'petBreed', 'radarAuto', 'radarRepair', 'museumRevenue', 'museumAchievements', 'worldBossDamage']);
 export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft', 'guildAidCollect', 'guildAidHelp', 'treasureLoot', ...migratedAutomationTasks]);
 
 export const automationTasks = [
@@ -37,7 +37,6 @@ export const automationTasks = [
   ['seasonTasks', '赛季任务奖励', '周期活动', false],
   ['seasonChest', '赛季宝箱用钥匙开启（每轮最多 5 箱）', '周期活动', false],
   ['crossRankDaily', '跨服排行每日奖励', '周期活动', false],
-  ['worldBossDamage', '世界 Boss 伤害奖励', '挑战', false],
   ['passStageRewards', '闯关基金奖励', '领奖', false],
   ['guildAidHelp', '响应联盟互助', '联盟', false],
   ['treasureLoot', '万吨巨轮派遣', '世界', false],
@@ -124,6 +123,8 @@ export const automationTasks = [
 ].map(([key, label, group, initial]) => ({ key, label, group, initial }));
 
 export function taskSettings(saved = {}) {
+  // 旧、新世界 Boss 领奖开关原先按“任一开启”执行，读取旧任务时保留此选择。
+  if (saved?.worldBossDamage === true) saved = { ...saved, worldBossRewards: true };
   return Object.fromEntries(automationTasks.map(({ key, initial }) =>
     [key, retiredAutomationTasks.has(key) ? false : typeof saved?.[key] === 'boolean' ? saved[key] : initial]));
 }

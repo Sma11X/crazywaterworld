@@ -8,7 +8,7 @@ import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, validat
 import { treasureRewardOptions } from './treasure-reward-filter.mjs';
 import { activityAutomationDefaults, activityAutomationFields } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
-import { validateLineupSettings } from './saved-lineups.mjs';
+import { validateLineupSettings, validateFleetLineupBindings } from './saved-lineups.mjs';
 import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
 import { cityWarFleetStrategy, cityWarUsesGlobalStrategy, validateCityWarFleetStrategies } from './city-war-settings.mjs';
 import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyActivitySettings, migrateWeeklyActivitySettings } from './weekly-activity-settings.mjs';
@@ -16,7 +16,7 @@ import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyAc
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
-export const SETTINGS_SCHEMA_VERSION = 9;
+export const SETTINGS_SCHEMA_VERSION = 11;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -69,7 +69,7 @@ export const DEFAULT_SETTINGS = {
   trials: { paid: false, ads: false, raidIds: ['1','2','3'], paidPerRaidLimit: 1, dailyDiamondBudget: 450, maxSingleCost: 50 },
   fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon'] },
   fleetSpeed: { enabled: false, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
-  worldBoss: { enabled: false, fleetIds: [], minDurabilityPercent: 80 },
+  worldBoss: { enabled: false, fleetIds: [], fleetPresets: [], minDurabilityPercent: 80 },
   radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
   pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, checkEverySeconds: 15 },
@@ -116,6 +116,7 @@ const constraints = {
   'ads.waitSeconds':int(120,5),
   'fleetDispatch.priority': {...strings(7),values:['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon']},
   'worldBoss.fleetIds': strings(10), 'worldBoss.minDurabilityPercent': int(100),
+  'worldBoss.fleetPresets': { kind: 'fleetLineups' },
   'events.otherOption': int(2,1), 'radar.fleetIds': strings(10), 'radar.types': {...strings(5),values:['pirate','collect','refugee','spy','fixed']},
   'radar.minDurabilityPercent':int(100), 'radar.checkEverySeconds':int(300,10),
   'loop.rounds': int(100000), 'loop.everySeconds': int(86400, 1),
@@ -221,7 +222,7 @@ export function settingsFromNative(tasks, { rounds = 0, everySeconds = 60, fishi
   // retired task registry discards them. Never reopen an existing module gate.
   for (const key of migratedAutomationTasks) if (typeof tasks?.[key] === 'boolean') result.schedule[key] = tasks[key];
   delete result.museum.revenue; delete result.museum.achievements;
-  return migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(result))));
+  return migrateVersion9Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(result)))));
 }
 
 // Only native-only accounts have no saved module gates. Infer these gates
@@ -295,7 +296,7 @@ export function validateSettings(input, options = {}) {
 function validateCurrentSettings(input, { partial = false, catalog = null } = {}) {
   // An already-open settings page can still submit the retired fields.
   // Ignore only these known fields; every other setting remains strict.
-  input = migrateVersion8Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input)))))));
+  input = migrateVersion10Settings(migrateVersion9Settings(migrateVersion8Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input)))))))));
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
@@ -336,6 +337,9 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
         if (!Array.isArray(value) || value.length > rule.max || value.some(v => typeof v !== 'string' || !v.trim() || v.length > 120) || new Set(value).size !== value.length) errors[name] = '选项必须为不重复的有效列表';
         else if (rule.values && value.some(v => !rule.values.includes(v))) errors[name] = '列表中含有不支持的选项';
         else output[group][key] = [...value];
+      } else if (rule?.kind === 'fleetLineups') {
+        try { output[group][key] = validateFleetLineupBindings(value, output.lineups.presets); }
+        catch (error) { errors[name] = error.message; }
       } else if (rule?.kind === 'siliconFleets') {
         const fleets = validateSiliconFleets(value, errors, catalog);
         if (fleets) output[group][key] = fleets;
@@ -502,7 +506,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1 && version <= SETTINGS_SCHEMA_VERSION;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function validateSettingsStore(store) {
@@ -730,4 +734,26 @@ function migrateVersion8Settings(settings) {
     if (!Object.hasOwn(forge, key)) forge[key] = DEFAULT_SETTINGS.forge[key];
   }
   return { ...settings, forge };
+}
+
+// Version 10 unifies the world Boss reward switches. Either old switch could
+// enable claims; preserve that choice once without enabling fleet dispatch.
+function migrateVersion9Settings(settings) {
+  if (!plain(settings) || !plain(settings.schedule) || !Object.hasOwn(settings.schedule, 'worldBossDamage')) return settings;
+  const schedule = { ...settings.schedule };
+  for (const key of ['worldBossDamage', 'worldBossRewards']) {
+    if (Object.hasOwn(schedule, key) && typeof schedule[key] !== 'boolean') {
+      throw new SettingsError({ ['schedule.' + key]: '开关值必须为 true 或 false' });
+    }
+  }
+  schedule.worldBossRewards = schedule.worldBossRewards === true || schedule.worldBossDamage === true;
+  delete schedule.worldBossDamage;
+  return { ...settings, schedule };
+}
+
+// Version 11 adds optional per-fleet boss formations. Existing accounts keep
+// their fleet selection and continue using each fleet's saved formation.
+function migrateVersion10Settings(settings) {
+  if (!plain(settings) || !plain(settings.worldBoss) || Object.hasOwn(settings.worldBoss, 'fleetPresets')) return settings;
+  return { ...settings, worldBoss: { ...settings.worldBoss, fleetPresets: [] } };
 }

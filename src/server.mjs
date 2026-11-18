@@ -3,6 +3,7 @@ import { createTraceLog, traceJson, redactLog } from './trace-log.mjs';
 import { createProtocolDiagnostics } from './protocol-diagnostics.mjs';
 import { createResourceUpdater } from './resource-updater.mjs';
 import {checkFleetSettlement,invalidateFleetReports} from './fleet-settlement.mjs';
+import {recoverWorldBossLineups} from './world-boss-lineups.mjs';
 import { recoverPirateHunts } from './pirate-recovery.mjs';
 import {readGuildTech,upgradeGuildTech} from './guild-tech.mjs';
 import {resourceFieldRows,resourceFieldTotals} from './resource-fields.mjs';
@@ -730,7 +731,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       throw new SettingsError({ revision: '阵容或游戏配置已更新，请刷新后再保存' });
     }
     const settings = structuredClone(current.settings);
-    update(settings.lineups);
+    update(settings.lineups, settings);
     settings.lineups = validateLineupSettings(settings.lineups);
     const entry = saveAutomationSettings(session.id, settings, { revision: current.revision });
     adoptPreferences(session, entry);
@@ -899,7 +900,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         enqueue(session,async()=>{
           settlementDirty=false;
           if(current()){const changes=await checkFleetSettlement(instance,session.player,usageFor(session),{afterPush:true});
-            for(const change of changes)if(change.repairRecovery)emit(session,'info','战后维修 · '+change.buildingId+' · '+change.reason+'（已确认）');}
+            for(const change of changes)if(change.repairRecovery)emit(session,'info','战后维修 · '+change.buildingId+' · '+change.reason+'（已确认）');
+            await recoverWorldBossLineups(instance,session.player,usageFor(session),{enabled:current,report:entry=>emit(session,entry.ok?'info':'warn',entry.label+' · '+(entry.reason||entry.error||''))});}
         }).catch(error=>{if(current())emit(session,'warn','舰队归队状态待核对：'+error.message);}).finally(()=>{
           settlementBusy=false;
           if(settlementDirty&&current())scheduleSettlement();
@@ -921,9 +923,15 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             .finally(()=>{session.reportClaim=null;});
         }
       }
-      if(['SCNewCampaignReport','SCMyFleetUpdate','SCRadarEventState','SCPirateCampaignEnd','SCPirateKillRecordUpdate'].includes(name))scheduleSettlement();
+      if(['SCNewCampaignReport','SCMyFleetUpdate','SCWorldBossCampaignEnd','SCRadarEventState','SCPirateCampaignEnd','SCPirateKillRecordUpdate'].includes(name))scheduleSettlement();
     });
-    instance.on('close',()=>{clearTimeout(settlementTimer);settlementTimer=null;settlementDirty=false;});
+    const lineupRecoveryTimer=setInterval(()=>{
+      if(!current())return;
+      try{if(Object.values(usageFor(session).keyRecords()).some(record=>record.details?.kind==='worldBossLineup'&&record.details.active!==false))scheduleSettlement();}
+      catch(error){emit(session,'warn','世界Boss阵容恢复记录待核对：'+error.message);}
+    },15000);
+    lineupRecoveryTimer.unref?.();
+    instance.on('close',()=>{clearInterval(lineupRecoveryTimer);clearTimeout(settlementTimer);settlementTimer=null;settlementDirty=false;});
     instance.on('message', ({ name, body }) => {
       if (session.client === instance && session.player && name === 'SCVipUpdate' && Number.isSafeInteger(body.vipLevel)) {
         session.player.vip = { ...session.player.vip, vipLevel: body.vipLevel, vipExp: body.vipExp };
@@ -1390,6 +1398,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
     try {await checkFleetSettlement(client,session.player,usageFor(session));}
     catch(error){emit(session,'warn','舰队历史占用待核对：'+error.message);}
+    try {await recoverWorldBossLineups(client,session.player,usageFor(session),{
+      enabled:()=>session.client===client&&session.generation===generation&&!session.paused&&client.connected,
+      report:entry=>emit(session,entry.ok?'info':'warn',entry.label+' · '+(entry.reason||entry.error||''))});}
+    catch(error){emit(session,'warn','世界Boss阵容仍待恢复：'+error.message);}
     if (session.client !== client || session.generation !== generation || session.paused || !client.connected) {
       throw new Error('连接初始化期间已断开或取消');
     }
@@ -2116,7 +2128,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             const state=await readWorldBoss(client,config,session.player,settings,usageFor(session),{cityReservedFleetIds:previewCityReserved});
             const plan={actions:[],notes:[state.reason||'当前可执行每日首战派遣']};
             if(!settings.worldBoss.enabled)plan.notes.push('世界Boss自动首战未开启');
-            else if(!state.reason)plan.actions.push({kind:'worldBoss',label:state.fleets.find(f=>!f.reason).buildingId+' → 世界Boss '+state.boss.bossId,costs:[{id:'汽油',num:state.cost}]});
+            else if(!state.reason)plan.actions.push({kind:'worldBoss',label:state.selectedFleetIds.join('、')+' → 世界Boss '+state.boss.bossId,costs:[{id:'汽油',num:state.totalCost}]});
             return {...output(plan,{fleets:state.fleets.length},'世界Boss首战'),dispatch:{fleets:state.fleets,fuel:state.fuel,pending:pendingPetrol(usageFor(session))}};
           }
           if (category === 'radar') {
@@ -2990,11 +3002,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if (route === 'POST /api/lineup-presets/delete') {
         const payload = jsonBody(); needConfirm(payload);
-        json(saveLineupPreferences(scoped_(parsed).session, payload, lineups => {
+        json(saveLineupPreferences(scoped_(parsed).session, payload, (lineups, settings) => {
           if (!lineups.presets.some(preset => preset.id === payload.id)) throw new Error('此阵容已删除，请刷新');
           lineups.presets = lineups.presets.filter(preset => preset.id !== payload.id);
           if (lineups.mainlinePresetId === payload.id) lineups.mainlinePresetId = '';
           lineups.trialPresets = lineups.trialPresets.filter(binding => binding.presetId !== payload.id);
+          settings.worldBoss.fleetPresets = settings.worldBoss.fleetPresets.filter(binding => binding.presetId !== payload.id);
         }));
         return;
       }

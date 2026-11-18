@@ -631,7 +631,7 @@ await test('攻守目标控件独立显示、校验和自动保存，刷新及�
   assert.deepEqual(f.editor.draft.cityWar.cityRefs, ['1:2']);
 });
 
-function lineupPickerFixture(f) {
+function lineupPickerFixture(f, { boss = false } = {}) {
   const node = (tag, className = '', textContent = '') => ({
     tag, className, textContent, children: [], attributes: {}, dataset: {}, value: '', disabled: false,
     append(...items) { this.children.push(...items); },
@@ -645,9 +645,12 @@ function lineupPickerFixture(f) {
   `)(f.editor, key => key.split('.').reduce((value, part) => value[part], f.editor.draft), f.set, node,
     (text, onclick) => Object.assign(node('button', '', text), { onclick }),
     (account, id) => viewed.push({ account, id }));
-  const fields = f.groups.find(group => group.id === 'progression').fields.filter(field => field.key.startsWith('lineups.'));
-  assert.deepEqual(fields.map(field => field.key), ['lineups.mainlinePresetId', 'lineups.trialPresets']);
-  assert.deepEqual(fields.map(field => field.parent), ['progression.mainline', 'progression.trials']);
+  const fields = boss ? f.groups.find(group => group.id === 'worldBoss').fields.filter(field => field.kind === 'fleetLineups')
+    : f.groups.find(group => group.id === 'progression').fields.filter(field => field.key.startsWith('lineups.'));
+  if (!boss) {
+    assert.deepEqual(fields.map(field => field.key), ['lineups.mainlinePresetId', 'lineups.trialPresets']);
+    assert.deepEqual(fields.map(field => field.parent), ['progression.mainline', 'progression.trials']);
+  }
   const roots = fields.map(field => render(field, 'config-field-' + field.key.replaceAll('.', '-')));
   const controls = roots.flatMap(root => root.children.flatMap(row => row.children));
   const select = binding => controls.find(control => control.dataset.lineupBinding === binding);
@@ -660,6 +663,30 @@ const lineupPresets = [
   { id: 'second', name: '副本队', formation: { presetId: 7, heroPositions: [{ heroId: 'b', pos: { x: 5, y: 1 } }], petUid: '9007199254740993' } },
 ];
 const lineupCatalog = { trialRaids: [{ value: '1', label: '金币副本' }, { value: '2', label: '强化石副本' }, { value: '3', label: '藏品副本' }] };
+
+await test('世界Boss逐队阵容跟随舰队勾选显隐，保存刷新与切号保留独立选择', async () => {
+  const f = fixture({ catalog: { expeditionFleets: [1, 2, 3].map(id => ({ value: id + '远征船', label: '舰队' + id })) } });
+  const initial = f.view('a'); initial.settings.lineups.presets = structuredClone(lineupPresets);
+  initial.settings.worldBoss.fleetIds = ['1远征船', '2远征船'];
+  saveAutomationSettings('a', initial.settings, { file: f.file, revision: initial.revision });
+  await f.load();
+  const picker = lineupPickerFixture(f, { boss: true }), root = picker.roots[0];
+  const row = id => root.children.find(node => node.children.includes(picker.select('fleet:' + id + '远征船')));
+  assert.equal(row(1).hidden, false); assert.equal(row(2).hidden, false); assert.equal(row(3).hidden, true);
+  picker.choose('fleet:1远征船', 'first'); picker.choose('fleet:2远征船', 'second');
+  picker.button('fleet:2远征船').onclick(); assert.deepEqual(picker.viewed, [{ account: 'a', id: 'second' }]);
+  f.set('worldBoss.fleetIds', ['2远征船']); root.refresh();
+  assert.equal(row(1).hidden, true); assert.equal(picker.select('fleet:1远征船').value, 'first');
+  await f.tick(600); await f.load(true);
+  assert.deepEqual(f.view('a').settings.worldBoss.fleetPresets, [{ buildingId: '1远征船', presetId: 'first' }, { buildingId: '2远征船', presetId: 'second' }]);
+  assert.equal(f.view('a').settings.worldBoss.enabled, false, '配置阵容不自动启用派遣');
+  f.set('worldBoss.fleetIds', []); root.refresh(); assert.equal(root.children.at(-1).hidden, false);
+  await f.tick(600);
+  assert.equal(await f.mayChange('b'), true); f.change('b'); await f.load();
+  assert.deepEqual(f.editor.draft.worldBoss.fleetPresets, []);
+  assert.equal(await f.mayChange('a'), true); f.change('a'); await f.load();
+  assert.equal(f.editor.draft.worldBoss.fleetPresets.length, 2);
+});
 
 await test('推关与试炼逐项选择阵容并查看，合并自动保存保留预设、其他副本和普通配置', async () => {
   const f = fixture({ catalog: lineupCatalog });
