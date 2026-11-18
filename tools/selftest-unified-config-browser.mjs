@@ -233,7 +233,7 @@ try {
   assert(newActions.every(action => growth[action])); assert.equal(growth.targetLevel, 35);
   await picker.locator('summary').click(); await picker.getByRole('button', { name: '清空选择' }).click();
   await picker.locator('summary').click(); await saved();
-  assert.equal(await picker.locator('summary').textContent(), '留空则不处理任何英雄');
+  assert.equal(await picker.locator('summary').textContent(), '留空则暂停培养，不影响技能展示领奖');
   assert.deepEqual(loadAutomationSettings('config-a').settings.heroes.heroIds, []);
   console.log('通过：资源页移除手动养成和远征舰队编队并保留其余功能，挂机配置仍可按名称选英雄、保存独立动作及目标、清空名单');
   const hero = page.locator('#config-field-heroes-enabled');

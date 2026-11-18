@@ -1080,12 +1080,13 @@ export async function runLoop(client, protocol, {
       }
       await checkFactoryDue({ checkpoint: true });
       const heroSettings = getHeroSettings();
-      if (heroSettings?.loop.heroes && heroSettings.heroes.enabled && heroSettings.heroes.heroIds.length && !stop.aborted) {
+      if (heroSettings?.loop.heroes && heroSettings.heroes.enabled
+        && (heroSettings.heroes.heroIds.length || heroSettings.heroes.showSkillReward) && !stop.aborted) {
         try {
           const { plan } = await readHeroGrowthPlan(client, config, player, heroSettings);
           const enabled = () => !stop.aborted && runtimeActive() && client.connected && getHeroSettings()?.loop.heroes;
           const heroGuard = getHeroSettings === getSettings ? guard : runtimeGuard(createActionGuard(client, getHeroSettings, heroUsageLedger, { player, enabled }));
-          rewards?.observe('loop.heroes','已读取指定英雄与库存，检查养成条件');rewards?.expect('loop.heroes',rewards.now()+Math.ceil(getEveryMs()/1000));
+          rewards?.observe('loop.heroes','已读取英雄信息，检查养成与展示领奖条件');rewards?.expect('loop.heroes',rewards.now()+Math.ceil(getEveryMs()/1000));
           const results = await runHeroPlan(client, protocol, plan, { allowMutate, config, player, enabled, getSettings: getHeroSettings,
             beforeAction: heroGuard.before, afterAction: heroGuard.after, cancelAction: heroGuard.cancel,
             onStep: entry => stepLog('tasks')({ ...entry, category: '英雄', title: heroStepLabel(entry.step, entry.targetLevel) }) });

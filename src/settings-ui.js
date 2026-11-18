@@ -429,11 +429,11 @@ const configGroups = [
   ] },
   { id: 'heroes', title: '英雄养成', category: 'heroes', fields: [
     configField('heroes.enabled', '养成总开关'), configField('loop.heroes', '加入自动挂机'),
-    configField('heroes.heroIds', '指定英雄', 'multi', { catalog: 'heroes', empty: '留空则不处理任何英雄', help: '可搜索并选择多个英雄。手动执行和挂机都只处理名单中已拥有的英雄。' }),
+    configField('heroes.heroIds', '指定英雄', 'multi', { catalog: 'heroes', empty: '留空则暂停培养，不影响技能展示领奖', help: '可搜索并选择多个英雄。升级、升星等培养操作只处理名单中已拥有的英雄；技能展示领奖覆盖所有已拥有的英雄。' }),
     configField('heroes.level', '自动升级'), configField('heroes.star', '自动升星'),
     configField('heroes.skill', '技能升级'), configField('heroes.skillAdvance', '技能进阶'),
     configField('heroes.exclusiveLevel', '专武升级'), configField('heroes.exclusiveStar', '专武升星'),
-    configField('heroes.showSkillReward', '领取技能展示奖励', 'switch', { help: '领取指定英雄的技能展示奖励，已领取的英雄自动跳过。' }),
+    configField('heroes.showSkillReward', '领取技能展示奖励', 'switch', { help: '领取所有已拥有英雄的技能展示奖励，不受指定英雄名单限制；已领取的英雄自动跳过。' }),
     configField('heroes.universal', '英雄升星允许使用万能碎片', 'switch', { section: '高级设置', startCollapsed: true }),
     configField('heroes.keepExp', '保留英雄经验', 'number', { section: '高级设置' }),
     configField('heroes.targetLevel', '目标等级', 'number', { section: '高级设置', unit: '级', help: '0 表示采用游戏当前允许的上限。' }),
