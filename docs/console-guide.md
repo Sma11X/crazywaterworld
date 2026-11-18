@@ -101,6 +101,21 @@ npm start
 
 密码和验证码仅用于本次验证，待保存凭证在内存中保留 10 分钟。到期后页面提示重新登录。本轮修复已处理新设备缺少 SDK 初始化导致的 1068。若仍有认证错误，应核对 APP 中使用的账号信息。初始化或认证超时后可重试。
 
+新设备从 8 组预设中随机选择 `model` 和配套的 Android 主版本 `sysVersion`，与随机设备标识一同保存。型号可能重复，设备标识独立生成；后续登录、重启及已有档案不会重新抽取机型。本机仍共用一份设备档案。
+
+型号标识参考 [Google 支持的设备列表](https://storage.googleapis.com/play_public/supported_devices.html)，Android 版本参考下列官方规格或发布说明：
+
+| 机型 | `model` | Android |
+| --- | --- | --- |
+| [vivo X80](https://www.vivo.com/en/products/param/x80) | `V2144` | 12 |
+| [vivo X90](https://www.vivo.com/en/products/param/x90) | `V2218` | 13 |
+| [Xiaomi 13](https://www.mi.com/es/product/xiaomi-13/specs/) | `2211133G` | 13 |
+| [OPPO Find X5](https://www.oppo.com/en/newsroom/press/oppo-launches-find-x-five-series/) | `CPH2307` | 12 |
+| [OPPO Find X5 Pro](https://www.oppo.com/en/newsroom/press/oppo-launches-find-x-five-series/) | `CPH2305` | 12 |
+| [Samsung Galaxy S23](https://image-us.samsung.com/SamsungUS/samsungbusiness/pdf/spec-sheets/s23/att/hhp-s23-spec-att.pdf) | `SM-S911B` | 13 |
+| [Google Pixel 6](https://support.google.com/pixelphone/answer/7158570?hl=en-GB) | `Pixel 6` | 12 |
+| [Google Pixel 7](https://support.google.com/pixelphone/answer/7158570?hl=en-GB) | `Pixel 7` | 13 |
+
 已有 APP 设备档案可通过高级选项导入，用于兼容性排查。JSON 需包含 64 位十六进制 `di` 和 16 位十六进制 `deviceCode`，显式 `oi` 的十六进制长度需为 32 的正整数倍，省略时按登录密钥加密空 OAID。导入档案使用原有显式字段。档案读取或格式校验失败时，页面会显示错误并展开导入入口。
 
 CLI 等价入口：

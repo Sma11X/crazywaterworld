@@ -48,6 +48,19 @@ export const PHONE_LOGIN = {
 
 export const DEVICE_PROFILE_PATH = path.join(DATA_DIR, 'ewan-device.json');
 
+// model 使用 Android 型号标识，系统版本与机型成对选择；仅用于新设备。
+// 型号来源：https://storage.googleapis.com/play_public/supported_devices.html
+export const DEVICE_PRESETS = Object.freeze([
+  { model: 'V2144', sysVersion: '12' }, // vivo X80
+  { model: 'V2218', sysVersion: '13' }, // vivo X90
+  { model: '2211133G', sysVersion: '13' }, // Xiaomi 13
+  { model: 'CPH2307', sysVersion: '12' }, // OPPO Find X5
+  { model: 'CPH2305', sysVersion: '12' }, // OPPO Find X5 Pro
+  { model: 'SM-S911B', sysVersion: '13' }, // Samsung Galaxy S23
+  { model: 'Pixel 6', sysVersion: '12' },
+  { model: 'Pixel 7', sysVersion: '13' },
+].map(preset => Object.freeze(preset)));
+
 // SDK 把 Android ID 和 OAID 分别用当前 API 的 AES 密钥加密，得到 di / oi。
 // 登录接口使用 PHONE_LOGIN.aesKey。模拟 Android ID 必须持久化并跨请求复用。
 export function loadDeviceProfile(file = process.env.CW_EWAN_DEVICE || DEVICE_PROFILE_PATH) {
@@ -93,7 +106,9 @@ function completeDeviceProfile(profile, randomBytes = crypto.randomBytes) {
 
 function generateDeviceProfile(randomBytes) {
   const deviceCode = randomBytes(8).toString('hex');
+  const preset = DEVICE_PRESETS[randomBytes(1)[0] % DEVICE_PRESETS.length];
   return completeDeviceProfile(normalizeDeviceProfile({
+    ...preset,
     di: encryptForm(deviceCode),
     deviceCode,
     source: 'generated',

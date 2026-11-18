@@ -14,7 +14,7 @@ process.once('exit', () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 const {
-  createPhoneLogin, decryptBody, encryptForm, PHONE_LOGIN, PhoneLoginError,
+  createPhoneLogin, decryptBody, encryptForm, PHONE_LOGIN, PhoneLoginError, DEVICE_PRESETS,
   ensureDeviceProfile, loadDeviceProfile, saveDeviceProfile, md5,
 } = await import('../src/phone-login.mjs');
 const execFileAsync = promisify(execFile);
@@ -143,12 +143,44 @@ function fakeFetch({ business = businessResponse, ewan = () => ewanPayload, init
       return size === 8 ? Buffer.from(deviceCode, 'hex') : Buffer.alloc(size, 0xa5);
     },
   });
-  assert.deepEqual(randomSizes, [8, 16]);
+  assert.deepEqual(randomSizes, [8, 1, 16]);
   assert.equal(vector.deviceCode, deviceCode);
   assert.equal(vector.di, expectedDi);
   assert.equal(vector.oi, emptyOaidCiphertext);
   assert.equal(decryptBody(vector.di), deviceCode);
   assert.equal(decryptBody(vector.oi), '');
+}
+
+{
+  // 每种预设都能生成并落盘；登录请求和 User-Agent 使用同一组机型与系统版本。
+  assert.equal(new Set(DEVICE_PRESETS.map(preset => preset.model)).size, DEVICE_PRESETS.length);
+  const cases = DEVICE_PRESETS.map((preset, sample) => ({ preset, sample }));
+  cases.push({ preset: DEVICE_PRESETS.at(-1), sample: 255 });
+  for (const { preset, sample } of cases) {
+    const file = path.join(directory, `preset-${sample}.json`);
+    const generated = ensureDeviceProfile({
+      file,
+      randomBytes: size => Buffer.alloc(size, size === 1 ? sample : 0x5a),
+    });
+    assert.equal(generated.model, preset.model);
+    assert.equal(generated.sysVersion, preset.sysVersion);
+    assert.deepEqual(loadDeviceProfile(file), generated);
+    const saved = fs.readFileSync(file, 'utf8');
+    assert.deepEqual(ensureDeviceProfile({ file, randomBytes: () => assert.fail('已有档案不能重新选择机型') }), generated);
+    assert.equal(fs.readFileSync(file, 'utf8'), saved);
+
+    const fetch = fakeFetch();
+    const client = createPhoneLogin({ device: loadDeviceProfile(file), fetchImpl: fetch.impl, now: () => fixedNow });
+    await client.loginWithPassword(account, password);
+    const businessInit = fetch.businessCalls.find(call => call.url.pathname === '/api/init');
+    assert.equal(businessInit.body.pm, preset.model);
+    assert.equal(businessInit.body.sv, preset.sysVersion);
+    for (const call of [...fetch.initCalls, ...fetch.authCalls]) {
+      assert.equal(call.fields.get('model'), preset.model);
+      assert.equal(call.fields.get('sysversion'), preset.sysVersion);
+      assert.ok(call.options.headers['User-Agent'].includes(`Android ${preset.sysVersion}; ${preset.model}`));
+    }
+  }
 }
 
 {
@@ -165,6 +197,7 @@ function fakeFetch({ business = businessResponse, ewan = () => ewanPayload, init
   await first.requestSmsCode(account);
   const generated = loadDeviceProfile();
   assert.equal(generated.source, 'generated');
+  assert.ok(DEVICE_PRESETS.some(preset => preset.model === generated.model && preset.sysVersion === generated.sysVersion));
   assert.match(generated.di, /^[0-9a-f]{64}$/);
   assert.equal(generated.di, encryptForm(generated.deviceCode));
   assert.equal(generated.oi, emptyOaidCiphertext);
@@ -183,7 +216,7 @@ function fakeFetch({ business = businessResponse, ewan = () => ewanPayload, init
     assert.equal(call.options.headers.oi, generated.oi);
     assert.equal(call.fields.get('devicecode'), generated.deviceCode);
   }
-  for (const key of ['di', 'oi', 'deviceCode', 'businessDid', 'businessDeviceCode']) {
+  for (const key of ['di', 'oi', 'deviceCode', 'businessDid', 'businessDeviceCode', 'model', 'sysVersion']) {
     assert.equal(first.device[key], generated[key]);
     assert.equal(second.device[key], generated[key]);
   }
@@ -232,6 +265,8 @@ function fakeFetch({ business = businessResponse, ewan = () => ewanPayload, init
   assert.equal(migrated.di, legacy.di);
   assert.equal(migrated.oi, emptyOaidCiphertext);
   assert.equal(migrated.deviceCode, legacy.deviceCode);
+  assert.equal(migrated.model, PHONE_LOGIN.deviceModel);
+  assert.equal(migrated.sysVersion, '12');
   assert.match(migrated.businessDid, /^[0-9A-F]{32}$/);
   assert.equal(migrated.businessDeviceCode, legacy.deviceCode);
   assert.deepEqual(loadDeviceProfile(), migrated);
@@ -248,6 +283,8 @@ function fakeFetch({ business = businessResponse, ewan = () => ewanPayload, init
     assert.deepEqual(ensureDeviceProfile(), imported);
     assert.equal(imported.businessDid, testDevice.businessDid);
     assert.equal(imported.businessDeviceCode, testDevice.businessDeviceCode);
+    assert.equal(imported.model, testDevice.model);
+    assert.equal(imported.sysVersion, testDevice.sysVersion);
   }
 
   const saved = fs.readFileSync(process.env.CW_EWAN_DEVICE, 'utf8');
