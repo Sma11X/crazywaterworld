@@ -72,6 +72,12 @@ try {
     assert.equal(await page.locator('#config-group-' + control.configTarget + ' ' + selector).count(), 1, control.key + ' 配置归属');
   }
   assert.equal(await page.locator('[data-config-key="loop.heroes"]').count(), 0);
+  for (const key of ['guildAidCollect', 'guildAidHelp']) {
+    assert.equal(await page.locator('[data-config-key="schedule.' + key + '"]').count(), 0, '退役互助开关不再显示');
+  }
+  for (const key of ['alliance.mutual', 'alliance.autoHelp', 'alliance.autoAsk']) {
+    assert.equal(await page.locator('#config-group-alliance [data-config-key="' + key + '"]').count(), 1, '互助只保留统一入口');
+  }
   assert.equal(await page.locator('#config-root').getByRole('button', { name: /重新载入/ }).count(), 0);
   assert.equal(await page.locator('#config-root').getByText(/上次保存/).count(), 0);
   console.log('通过：30个模块开关各自归位，旧导航与跨页跳转移除');

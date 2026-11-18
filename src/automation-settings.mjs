@@ -200,6 +200,7 @@ const nativeFields = {
 };
 export function applyNativeTask(settings, key, enabled) {
   const result = copy(settings);
+  if (retiredAutomationTasks.has(key)) enabled = false;
   if (Object.hasOwn(result.schedule, key)) result.schedule[key] = enabled;
   for (const field of nativeFields[key] ?? []) { const [group, name] = field.split('.'); result[group][name] = enabled; }
   if (key === 'speedUp' && !enabled) {

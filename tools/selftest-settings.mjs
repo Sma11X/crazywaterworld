@@ -14,7 +14,7 @@ import { planHeroes } from '../src/heroes.mjs';
 import { DAILY_DRIVERS, runDailies } from '../src/dailies.mjs';
 import { serviceCargo } from '../src/cargo.mjs';
 import { runLoop } from '../src/loop.mjs';
-import { retiredAutomationTasks } from '../src/automation.mjs';
+import { retiredAutomationTasks, taskSettings } from '../src/automation.mjs';
 
 const parent = path.join(os.tmpdir(),'cw-parameter-test-runs');
 fs.mkdirSync(parent, { recursive: true });
@@ -364,9 +364,9 @@ try {
     assert.deepEqual(draft.factory.speedUpSources, []);
   });
 
-  await check('两版任务设置迁移保留有效开关，退役装备开关与缺省消费任务保持关闭', () => {
+  await check('两版任务设置迁移保留有效开关，退役装备及互助开关与缺省消费任务保持关闭', () => {
     const keys = ['festivalActive', 'festivalGifts', 'snowballFree', 'weekLotterySpin', 'weekCharge', 'weekChipFree', 'weekUniqueFree', 'weekOrderFinal', 'weekOrderSubmit', 'vipDaily', 'campaignReports', 'openRankRewards',
-      'guildOrders', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft', 'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
+      'guildOrders', 'guildAidCollect', 'guildAidHelp', 'radarAuto', 'radarRepair', 'equipmentCollect', 'equipmentCraft', 'museumCollect', 'museumExplore', 'petCollect', 'petBreed'];
     for (const enabled of [true, false]) {
       const tasks = Object.fromEntries(keys.map(key => [key, enabled]));
       const settings = settingsFromNative(tasks);
@@ -378,13 +378,15 @@ try {
       }
     }
     const legacy = defaultSettings();
-    legacy.schedule.equipmentCollect = legacy.schedule.equipmentCraft = true;
+    for (const key of retiredAutomationTasks) legacy.schedule[key] = true;
     Object.assign(legacy.forge, { enabled: true, buildingIds: ['1装备厂'], recipeIds: ['1001'], dailyLimit: 7 });
     const normalized = validateSettings(legacy);
     assert.deepEqual(normalized.forge, legacy.forge, '兼容旧装备开关时不改已授权的锻造设置');
     for (const key of retiredAutomationTasks) {
       assert.equal(normalized.schedule[key], false);
       assert.equal(nativeTaskValues(legacy, { [key]: true })[key], false, '未迁移的旧开关也不能参与执行');
+      assert.equal(taskSettings({ [key]: true })[key], false, '仅有旧任务配置的账号也不能恢复退役任务');
+      assert.equal(applyNativeTask(legacy, key, true).schedule[key], false, '旧快捷开关不能重新打开退役任务');
     }
     const oldDocument = exportAutomationSettings(defaultSettings());
     for (const key of keys) delete oldDocument.settings.schedule[key];
@@ -748,6 +750,13 @@ try {
     try {
       const before = fs.readFileSync(path.join(directory, 'accounts.json'));
       const a = (await api('qa-a', '/api/settings')).body; a.settings.building.keepBlueprints = 123;
+      for (const key of ['guildAidCollect', 'guildAidHelp']) {
+        assert(!a.tasks.some(task => task.key === key), '旧互助任务不再返回配置页面');
+        const rejected = await api('qa-a', '/api/loop/task', { key, enabled: true, confirm: true });
+        assert.equal(rejected.status, 400);
+        assert.match(rejected.body.error, /联盟互助已统一/);
+        assert.equal(app.sessions.get('qa-a').loop.tasks[key], false);
+      }
       const rewardIds = a.catalog.treasureRewards.slice(0, 2).map(item => item.value);
       Object.assign(a.settings.treasure, { marchSpeedUp: true, marchTargetSeconds: 90, dailyDiamondLimit: 180,
         fallbackEnabled: true, fallbackAfter: '23:10', fallbackTargetRewards: 2,

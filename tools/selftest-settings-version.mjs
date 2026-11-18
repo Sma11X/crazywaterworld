@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   SETTINGS_FORMAT, SETTINGS_SCHEMA_VERSION, defaultSettings, migrateSettingsVersion,
   importAutomationSettings, exportAutomationSettings, loadAutomationSettings, saveAutomationSettings,
-  nativeTaskValues,
+  nativeTaskValues, validateSettings,
 } from '../src/automation-settings.mjs';
 import { automationTasks, taskSettings } from '../src/automation.mjs';
 import { automationControls } from '../src/automation-controls.mjs';
@@ -46,6 +46,30 @@ function legacySettings() {
 }
 
 try {
+  test('旧互助开关在读取、导入、保存和重启后始终停用，不改变新版联盟授权', () => {
+    for (const version of [1, SETTINGS_SCHEMA_VERSION]) for (const enabled of [false, true]) for (const mutual of [false, true]) {
+      const settings = defaultSettings();
+      settings.schedule.guildAidCollect = settings.schedule.guildAidHelp = true;
+      Object.assign(settings.alliance, { enabled, mutual, autoHelp: true, autoAsk: true, recruit: true, autoTech: true,
+        allowedMaterials: ['木材'], stockReserve: 123, helpDailyLimit: 7 });
+      const document = { format: SETTINGS_FORMAT, version, settings };
+      fs.writeFileSync(file, JSON.stringify({ version: SETTINGS_SCHEMA_VERSION, accounts: {
+        aid: { settingsVersion: version, settings, revision: 3 },
+      } }));
+      const loaded = loadAutomationSettings('aid', { file });
+      for (const normalized of [loaded.settings, importAutomationSettings(document), validateSettings(settings)]) {
+        assert.equal(normalized.schedule.guildAidCollect, false);
+        assert.equal(normalized.schedule.guildAidHelp, false);
+        assert.deepEqual(normalized.alliance, settings.alliance, '不自动开启联盟或互助，也不改已选分项和限制');
+      }
+      saveAutomationSettings('aid', loaded.settings, { file, revision: loaded.revision });
+      const restarted = loadAutomationSettings('aid', { file }).settings;
+      assert.deepEqual(restarted, loaded.settings);
+      assert.equal(exportAutomationSettings(restarted).settings.schedule.guildAidHelp, false);
+      assert.equal(settings.schedule.guildAidHelp, true, '规范化不修改输入对象');
+    }
+  });
+
   test('旧商人工厂任务迁移为普通建筑配置，保留原建造升级授权', () => {
     assert(!automationTasks.some(task => task.key === 'weekFactory'));
     assert(!automationControls.some(control => control.key === 'schedule.weekFactory'));

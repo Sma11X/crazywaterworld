@@ -136,11 +136,11 @@ const weeklyActivityFields = [
 const configGroups = [
   {id:'weekly-activities',title:'军备竞赛',category:'daily',fields:weeklyActivityFields},
   {id:'alliance',title:'联盟 · 募兵与互助',category:'world',fields:[
-    configField('alliance.enabled','联盟自动化总开关','switch',{help:'开启后接管联盟募兵、互助和福利任务；关闭保留本组细项。原有独立任务开关仍可在原入口管理。'}),
+    configField('alliance.enabled','联盟自动化总开关','switch',{help:'开启后接管联盟募兵、互助和福利任务；关闭保留本组细项并停止全部自动互助。旧版独立互助开关已停用，不会在关闭本组后恢复执行。'}),
     configField('alliance.recruit','自动在联盟城市募兵'),
     configField('alliance.recruitDailyLimit','每日募兵上限','number',{ parent: 'alliance.recruit',help:'0 表示不额外限制，仍遵守游戏按赛季和等级配置的每日次数。'}),
     configField('alliance.recruitProduction','募兵缺料自动备料','switch',{ parent: 'alliance.recruit',help:'独立于按需优先生产；仍需开启工厂生产。次数用完或上次募兵结果未知时停止下一次备料。'}),
-    configField('alliance.mutual','联盟互助总开关'),
+    configField('alliance.mutual','联盟互助总开关','switch',{help:'与联盟自动化总开关同时开启后，自动收取已收到的援助；赠送与求助按下方开关执行。关闭本项停止全部自动收取、赠送和求助。属于普通联盟互助，与城战无关。'}),
     configField('alliance.mutualMode','互助模式','choice',{ parent: 'alliance.mutual',options:[['custom','自定义'],['exchange','刷贡献互助']],when:d=>d.alliance.mutual,help:'贡献模式按当前赛季选择对应已解锁物料；先求助一次，收到并确认领取后继续同物料求助。切换模式保留自定义选择。'}),
     configField('alliance.autoHelp','自动赠送盟友','switch',{ parent: 'alliance.mutual',when:d=>d.alliance.mutual,help:'关闭只停止赠送，已收到的援助仍会领取；自动求助独立。'}),
     configField('alliance.autoAsk','自动请求援助','switch',{ parent: 'alliance.mutual',when:d=>d.alliance.mutual}),

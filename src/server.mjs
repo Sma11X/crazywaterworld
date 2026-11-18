@@ -3659,7 +3659,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { session } = scoped_(parsed);
         const task = automationTasks.find(item => item.key === payload.key);
         if (!task || typeof payload.enabled !== 'boolean') throw new Error('无效的自动任务设置');
-        if (retiredAutomationTasks.has(task.key)) throw new Error('装备领取与续产已统一，请在装备自动锻造中设置自动挂机');
+        if (retiredAutomationTasks.has(task.key)) throw new Error(['guildAidCollect', 'guildAidHelp'].includes(task.key)
+          ? '联盟互助已统一，请在“联盟 · 募兵与互助”中设置互助总开关和自动赠送'
+          : '装备领取与续产已统一，请在装备自动锻造中设置自动挂机');
         const tasks = { ...session.loop.tasks, [task.key]: payload.enabled };
         if (session.preferences) {
           const current = settingsView(session);

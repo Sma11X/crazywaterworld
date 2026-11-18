@@ -5,8 +5,9 @@ export const defaultFishingGoldReserve = 10_000;
 export const defaultCompassSpinCount = 10;
 export const maxCompassSpinCount = 999;
 
-// 保留旧配置字段用于导入，装备领取与续产统一由 forge.enabled 控制。
-export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft']);
+// 旧字段仅兼容导入，统一停用，不能在新模块关闭后恢复执行。
+// 装备由 forge.enabled 控制；联盟互助由 alliance.enabled / mutual / autoHelp 控制。
+export const retiredAutomationTasks = new Set(['equipmentCollect', 'equipmentCraft', 'guildAidCollect', 'guildAidHelp']);
 
 export const automationTasks = [
   ['armsRaceRewards', '自动领奖', '周期活动', false],
@@ -131,7 +132,7 @@ export const automationTasks = [
 
 export function taskSettings(saved = {}) {
   return Object.fromEntries(automationTasks.map(({ key, initial }) =>
-    [key, typeof saved?.[key] === 'boolean' ? saved[key] : initial]));
+    [key, retiredAutomationTasks.has(key) ? false : typeof saved?.[key] === 'boolean' ? saved[key] : initial]));
 }
 
 export function worldTaskKey(kind) {

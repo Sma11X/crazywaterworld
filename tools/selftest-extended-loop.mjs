@@ -21,9 +21,10 @@ try {
   const { watchHeroRaidPushes } = await import('../src/hero-raid-automation.mjs');
   const { loadConfig } = await import('../src/config.mjs');
   const { siliconFixture, siliconSettings } = await import('./fixtures/silicon.mjs');
+  const { guildMutualFixture } = await import('./fixtures/guild-mutual.mjs');
 
-  function integration({ rounds = 1, mainEveryMs = 3600000 } = {}) {
-    const fixture = siliconFixture(), settings = siliconSettings();
+  function integration({ rounds = 1, mainEveryMs = 3600000, isEnabled = () => false, fixture = siliconFixture() } = {}) {
+    const settings = siliconSettings();
     for (const key of Object.keys(settings.schedule)) settings.schedule[key] = false;
     Object.assign(settings.loop, { world: false, tasks: false, dailies: false, heroes: false, everySeconds: mainEveryMs / 1000 });
     settings.resident.rewards = false; settings.dailies.enabled = false; settings.progression.enabled = false;
@@ -58,7 +59,7 @@ try {
     const run = async () => {
       const result = await runLoop(fixture.client, fixture.protocol, {
         config: fixture.config, player: fixture.player, rounds, everyMs: mainEveryMs,
-        getEveryMs: () => mainEveryMs, allowMutate: true, isEnabled: () => false,
+        getEveryMs: () => mainEveryMs, allowMutate: true, isEnabled,
         getSettings: () => currentSettings, usageLedger: ledger, stop, schedule,
         sleep: async ms => {
           assert(ms > 0, '不能零毫秒忙轮询');
@@ -89,6 +90,63 @@ try {
   const dispatches = f => f.client.writes.filter(row => row.name === 'ChipMineSendFleetRequest');
   const fillHighMine = f => { for (let index = 0; index < 3; index++) f.enemy(index, '占位船长' + index, 100000); };
   const stopAfterDispatch = (f, count = 1) => f.reportHook(() => { if (dispatches(f).length >= count) f.stop.aborted = true; });
+
+  function allianceIntegration(options = {}) {
+    const fixture = guildMutualFixture();
+    fixture.config.tables.CargoUnlockCfg = { data: [{ index: 1, playerLevel: 9 }] };
+    const request = fixture.client.request;
+    fixture.client.request = async (name, ...args) => {
+      if (name === 'OnWaterRequest') return { workerOrder: [], buildings: [] };
+      if (name === 'WeekInfoRequest') return { activityTime: [] };
+      if (name === 'CargoShipsRequest') return { ship: [] };
+      return request(name, ...args);
+    };
+    const legacyKeys = new Set(['guildAidCollect', 'guildAidHelp']);
+    const f = integration({ ...options, fixture, isEnabled: key => legacyKeys.has(key) });
+    f.settings.silicon.enabled = false;
+    // 绕过配置规范化，模拟更新前仍留在内存与账号文件中的两项 true。
+    f.settings.schedule.guildAidCollect = f.settings.schedule.guildAidHelp = true;
+    Object.assign(f.settings.alliance, { enabled: true, mutual: true, autoHelp: true });
+    return f;
+  }
+
+  await test('旧互助开关残留开启时，联盟总开关关闭阻止所有互助读写', async () => {
+    const f = allianceIntegration(); f.settings.alliance.enabled = false;
+    await f.run();
+    assert.deepEqual(f.protocolCalls, [], '旧任务的启用回调仍为 true，也不能读取或执行互助');
+    f.clean();
+  });
+  await test('旧互助开关残留开启时，互助总开关关闭阻止所有互助读写', async () => {
+    const f = allianceIntegration(); f.settings.alliance.mutual = false;
+    await f.run();
+    assert.deepEqual(f.protocolCalls, [], '联盟总开关开启不能让旧收取或赠送入口复活');
+    f.clean();
+  });
+  for (const gate of ['enabled', 'mutual']) await test('运行中关闭联盟' + (gate === 'enabled' ? '总开关' : '互助') + '后，推送及下一轮不回退旧互助', async () => {
+    const f = allianceIntegration({ rounds: 2, mainEveryMs: 60000 });
+    const received = id => ({ reqId: id, reqItemId: '橡胶圈', endTime: Math.floor(wall / 1000) + 3600,
+      helper: { playerId: f.friend, nickname: '盟友' } });
+    f.state.own.push(received('9007199254780001'));
+    let callsAtDisable;
+    f.sleepHook((ms, index) => {
+      if (index === 1) {
+        assert(f.state.writes.some(row => row.name === 'GotMyGuildAidRequest'), '第一轮通过统一互助领取');
+        assert(f.state.writes.some(row => row.name === 'GuildAidHelpRequest'), '第一轮通过统一互助赠送');
+        wall += 1000; callsAtDisable = f.protocolCalls.length;
+        const next = structuredClone(f.getSettings()); next.alliance[gate] = false; f.setSettings(next);
+        f.state.own.push(received('9007199254780002'));
+        f.client.emit('automationSettingsChanged');
+        f.client.emit('message', { name: 'SCNewGuildAidAsk', body: {} });
+        f.client.emit('message', { name: 'SCGuildAidRemove', body: {} });
+      } else wall += ms;
+    });
+    const result = await f.run();
+    assert.equal(result.history.length, 2, '关闭后仍完整执行下一主轮');
+    assert.notEqual(callsAtDisable, undefined, '必须在运行期间执行关闭');
+    assert.equal(f.protocolCalls.length, callsAtDisable, '关闭后即使有旧开关、推送和新援助，也不能继续互助读写');
+    assert.equal(f.state.own.length, 1, '关闭后到达的援助不能被旧路径收取');
+    assert(f.sleeps.length >= 1); f.clean();
+  });
 
   function withHeroRaid(f) {
     f.settings.silicon.enabled = false;
