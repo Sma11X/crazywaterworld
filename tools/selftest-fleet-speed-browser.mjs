@@ -52,6 +52,17 @@ try{
     assert.equal(await page.locator('#config-field-cityWar-targetMode, #config-field-cityWar-defenceTargetMode, #config-field-cityWar-targetPriority, #config-field-cityWar-defenceTargetPriority, #config-field-cityWar-cityRefs, #config-field-cityWar-defenceCityRefs').count(),6);
     assert.equal(await page.locator('#config-section-cityWar-targetMode > summary').textContent(),'全局策略');
     assert.equal(await fleet(1).count(),1);assert.equal(await fleet(2).count(),1);assert.equal(await fleet(3).count(),0);
+    const participants=city.locator('[data-config-branch="cityWar.fleetIds"]');
+    assert.equal(await participants.locator('#config-field-cityWar-defenceFleetIds').count(),1);
+    assert.equal(await participants.locator(':scope > .config-row .config-disclosure').count(),0);
+    assert.equal(await participants.locator('#config-field-cityWar-defenceFleetIds').isVisible(),true);
+    assert.equal(await city.locator('[id^="config-section-fleetSpeed-fleets-"]').count(),0);
+    for(const number of [1,2])for(const mode of ['repair','march']){
+      const selector='#config-field-fleetSpeed-fleets-'+(number-1)+'-'+mode;
+      assert.equal(await page.locator(selector).count(),1,'每队加速开关只有一个入口');
+      assert.equal(await fleet(number).locator(selector).count(),1,'加速开关属于对应舰队');
+      assert.equal(await fleet(number).locator(selector).isVisible(),false,'逐队设置默认收起');
+    }
     await saved();const writesBefore=settingsWrites;
     await open(1);assert.equal(await strategy(1,'strategyMode').inputValue(),'global');
     assert.equal(await strategy(1,'targetMode').isVisible(),false);
@@ -155,9 +166,10 @@ try{
     await page.screenshot({path:path.resolve('output/fleet-speed/fleet-strategies-'+name+'.png'),fullPage:true});
     await page.locator('#config-field-cityWar-defenceFleetIds').screenshot({path:path.resolve('output/playwright/city-war-fleet-strategies-'+name+'.png')});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
-    const fleetSection=page.locator('#config-section-fleetSpeed-fleets-0-repair');
-    const branch=mode=>page.locator('[data-config-branch="fleetSpeed.fleets.0.'+mode+'"]');
+    const fleetSection=fleet(1);
+    const branch=mode=>fleetSection.locator('[data-config-branch="fleetSpeed.fleets.0.'+mode+'"]');
     const expand=async mode=>{await branch(mode).locator(':scope > .config-row .config-disclosure').click();};
+    await open(1);
     await expand('repair');await expand('march');
     const repair=page.locator('#config-field-fleetSpeed-fleets-0-repairSmartSave'),march=page.locator('#config-field-fleetSpeed-fleets-0-marchSmartSave');
     assert.equal(await repair.isVisible(),true);assert.equal(await march.isVisible(),true);
@@ -172,7 +184,8 @@ try{
       assert.equal(saved[1].repairSmartSave,true);assert.equal(saved[1].marchSmartWaitSeconds,5);
       await page.reload();await page.locator('#tabs [data-tab=settings]').click();await page.locator('[data-config-tab=world]').click();await page.locator('[data-config-group=cityWar]').click();
       assert.equal(await city.locator('.config-field-section[open]').count(),await city.locator('.config-field-section').count()-1);
-    assert.equal(await page.locator('#config-section-cityWar-targetMode').getAttribute('open'),null);
+      assert.equal(await page.locator('#config-section-cityWar-targetMode').getAttribute('open'),null);
+      await open(1);
       await expand('repair');await expand('march');
       assert.equal(await repair.isChecked(),false);assert.equal(await march.isChecked(),true);
       // 开启功能与展开配置是两件事；重新启用维修不会自动显示其参数。

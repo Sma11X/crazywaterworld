@@ -395,8 +395,8 @@ const configGroups = [
     configField('schedule.guildTitleReward', '联盟每日职级礼包', 'switch', { help:'默认关闭。按服务器提供的可领取职级核对每日礼包，不以当前职位替代；确认奖励回执及当日领取时间后才记为成功。' }),
     configField('schedule.worldOnlineRewards', '领取城战在线奖励', 'switch', { help: '在服务器城战时段内，按实际计时逐档领取免费在线奖励。独立于下方城战接续开关；默认关闭，保存后随挂机检查，不自动启动挂机。请求结果未知时等待计数确认，不重复领取。' }),
     configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟城战”；不会宣战或改变集结目标。' }),
-    configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队' }),
-    configField('cityWar.defenceFleetIds', '舰队职责与策略', 'cityWarRoles', { wide: true, help: '为已选舰队分别选择进攻或防守；展开后可选择跟随全局，或独立设置本队的目标来源、城市和优先策略。切换职责保留本队另一套策略；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
+    configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队', collapsible: false }),
+    configField('cityWar.defenceFleetIds', '舰队职责与策略', 'cityWarRoles', { parent: 'cityWar.fleetIds', wide: true, help: '为已选舰队分别选择进攻或防守；展开后可设置本队策略、维修加速和派遣加速。策略可跟随全局，也可独立设置目标来源、城市和优先策略。加速还需开启下方的城战逐队加速总开关，并遵守公共预算。切换职责保留本队另一套策略；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
     configField('cityWar.nativeCommissionLimit', '原生委任次数', 'number', { unit: '次', help: '-1 表示按服务器 VIP 规则等待额度用尽。0 表示关闭所选舰队的原生委任，由工具立即接续。N 表示先让原生委任使用 N 次（不超过 VIP 额度），再关闭开关并由工具接续。原生委任跟随联盟集结，攻守职责与各自目标配置在工具接管后生效。需要立即按设置执行时设为 0，工具会先回读确认关闭。' }),
     configField('cityWar.targetMode', '进攻目标来源', 'choice', { options: [['alliance', '跟随联盟有效进攻目标'], ['selected', '只选择指定城市']], help: '进攻队使用本组目标来源、城市和优先策略。目标须为本盟已宣战且当前属于敌方的城市。攻守目标设置在工具接管后生效，需要立即执行时将原生委任次数设为 0。' }),
     configField('cityWar.targetPriority', '进攻目标优先', 'choice', { options: [['fewestAllied', '按队数与距离选择'], ['original', '沿用集结／指定城市顺序']], help: '按攻方队列、本盟正在交战和已同步在途舰队总数选城，本轮安排也计入。以队数最少的城为基准，相差 0–9 队时选较近目标，差 10 队及以上时优先队列较少的城。多联盟同攻时进攻人数无法拆分，或数量无法确认时跳过。发送前重新核对。' }),
@@ -774,7 +774,6 @@ function configUpdateVisibility() {
         ? '尚未选择执行动作，请在下方设置。' : enabled && labels.length ? '需先开启：' + labels.join('、') : '';
       widget.moduleNote.hidden = !widget.moduleNote.textContent;
     }
-    if (widget.spec.kind === 'cityWarRoles') widget.control?.refresh?.();
     if (widget.spec.kind === 'lineup' || widget.spec.kind === 'trialLineups') widget.control?.refresh?.();
     if (widget.childPanel) {
       if (hasError) configCollapsed.delete(key);
@@ -796,6 +795,10 @@ function configUpdateVisibility() {
   for (const widget of configEditor.widgets.values()) {
     if (!widget.parentKey) update(widget);
   }
+  // 逐队控件内部的字段独立更新；待其显隐就绪后再恢复舰队入口和焦点。
+  for (const widget of configEditor.widgets.values()) {
+    if (widget.spec.kind === 'cityWarRoles') widget.control?.refresh?.();
+  }
 }
 function configSwitchValue(spec) {
   return (spec.controlFields ?? [spec.key]).every(key => configGet(key) === true);
@@ -809,6 +812,12 @@ function configButton(text, onClick, extra = '') {
 }
 
 function configRenderFields(fields, host) {
+  // 逐队加速随职责编辑器一起渲染，保留原配置键和每种加速的参数层级。
+  if (fields.some(field => field.kind === 'cityWarRoles')) {
+    const speedFields = fields.filter(field => field.fleetGroup === 'fleetSpeed');
+    fields = fields.filter(field => field.fleetGroup !== 'fleetSpeed').map(field =>
+      field.kind === 'cityWarRoles' ? { ...field, speedFields } : field);
+  }
   const keys = new Set(fields.map(field => field.key));
   const children = new Map();
   for (const field of fields) {
@@ -1464,6 +1473,11 @@ function configCityWarRoles(spec, id) {
         } };
     });
     configRenderFields([mode, ...fields], panel); panel.append(note);
+    const speedFields = (spec.speedFields ?? []).filter(field =>
+      availableIds.has(buildingId) && configGet('fleetSpeed.fleets.' + field.fleetIndex + '.id') === buildingId
+    ).map(field => ({ ...field, section: undefined, label: field.label.replace(/^舰队\d+ · /, '') }));
+    entry.keys.push(...speedFields.map(field => field.key));
+    configRenderFields(speedFields, panel);
     row.append(label, select, disclosure); branch.append(row, panel); root.append(branch); expand(false);
   }
   root.append(empty);

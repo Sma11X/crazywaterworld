@@ -108,6 +108,9 @@ function fixture({ navigation = false } = {}) {
       label.append(name); box.append(control, error); row.append(label, box);
       const widget = { row, control, error, spec, clearError() { error.hidden = true; control.removeAttribute('aria-invalid'); } };
       configEditor.widgets.set(spec.key, widget);
+      if (spec.kind === 'cityWarRoles') {
+        configRenderFields((spec.speedFields ?? []).map(field => ({ ...field, section: undefined })), control);
+      }
       return row;
     };
     return {
@@ -301,15 +304,21 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['treasure.marchTargetSeconds', 'treasure.marchSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.marchSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
 });
-test('全局策略按需展开，其余一级分区展开，维修与派遣省钻仍各自嵌套',()=>{
+test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省钻仍各自嵌套',()=>{
   const f=fixture({navigation:true});f.editor.draft.cityWar.enabled=true;
   f.editor.draft.fleetSpeed.enabled=true;Object.assign(f.editor.draft.fleetSpeed.fleets[0],{repair:true,march:true});
   f.renderPage();f.activate('world');f.activateGroup('cityWar');
   const sections=f.env.node('config-group-cityWar').querySelectorAll('.config-field-section');
   const global=f.env.node('config-section-cityWar-targetMode');
-  assert(sections.length>=5);assert.equal(global.open,false);
+  assert.equal(sections.length,4);assert.equal(global.open,false);
   assert(sections.filter(section=>section!==global).every(section=>section.open));
+  const participants=f.widget('cityWar.fleetIds'),roles=f.widget('cityWar.defenceFleetIds');
+  assert.equal(roles.parentKey,participants.spec.key);
+  assert.equal(roles.node.parentElement,participants.childPanel);
+  assert.equal(participants.disclosure,null,'参与舰队直接展示职责，不增加折叠入口');
+  assert(visible(roles.node));
   for(const mode of ['repair','march']){
+    assert(roles.control.contains(f.widget('fleetSpeed.fleets.0.'+mode).node));
     const smart=f.widget('fleetSpeed.fleets.0.'+mode+'SmartSave');
     assert.equal(smart.parentKey,'fleetSpeed.fleets.0.'+mode);assert(!visible(smart.node));
     assert.equal(f.widget('fleetSpeed.fleets.0.'+mode+'SmartWaitSeconds').parentKey,smart.spec.key);
