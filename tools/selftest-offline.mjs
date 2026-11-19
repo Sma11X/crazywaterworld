@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cw-offline-'));
 const cases = [
+  ['selftest-start-console.mjs'],
   ['selftest-campaign-report-rewards.mjs'],
   ['selftest-world-boss-fleets.mjs'],
   ['selftest-world-boss-lineups.mjs'],
