@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-微信/抖音小游戏《疯狂水世界》的协议侧挂机工具：直连游戏 WebSocket 网关，并提供本地网页控制台。仅面向 Windows，Node.js ^20.19.0 或 >=22.12.0，ESM。文档、界面和日志均为中文。
+微信/抖音小游戏《疯狂水世界》的协议侧挂机工具：直连游戏 WebSocket 网关，并提供本地网页控制台。主要面向 Windows，提供 macOS 微信缓存路径识别、默认浏览器打开和读取权限提示等基础兼容；电脑微信和电脑抖音采集仍仅适用于 Windows。Node.js ^20.19.0 或 >=22.12.0，ESM。文档、界面和日志均为中文。
 
 ## 常用命令
 
@@ -69,7 +69,7 @@ npm run sync-art              # 同步素材；缓存缺图可加 -- --fetch
 - 挂机使用外层运行 controller 和每连接独立 attemptController。普通网络、心跳连续超时和重传失败会中断旧轮次，待其退出后退避重连（3 秒起、最高 60 秒），保留进度、账本与预留。异地登录按账号的 `login.autoReconnect` 授权恢复，登录设置提供常规/深夜间隔、随机抖动及重试上限。未运行挂机的账号也按策略恢复连接并保持挂机停止状态。等待时间与已尝试次数持久保存以便重启接续，等待中保存配置立即重算下一次重试时间，页面读取遵守账号的重连等待。手动暂停、停止、断开或关闭自动重连取消重试，拒绝登录、协议错误及次数耗尽终止重试，手动暂停需明确恢复托管。重连后先自动同步工厂、农田和库存再接续原有任务，同步失败保留旧记录并暂缓写入。`GameClient.closeReason` 和登录错误 `recoverable` 决定分类。Webhook 仍未恢复。
 - CLI 的 `console-output.mjs` 在支持 VT 的 TTY 使用滚动区固定地址/提示，日志分批且有界，非 TTY 保留纯文本；关闭恢复滚动区。不要绕过此输出器打印普通控制台日志或全局替换 console；`CW_PIN_HEADER=0` 可关闭顶部固定。
 - `reward-schedule.mjs` 记录奖励下次检查时间，相关推送提前唤醒。推送只触发串行检查，不能另开并行派遣绕过预算。
-- `accounts.mjs`、`capture.mjs`、`tools/mitm-*.mjs` 管理账号与采集。`src/platform/` 封装 Windows 代理、证书、客户端路径、浏览器和终端能力，`tools/start-console.mjs` 承担启动脚本逻辑。采集阶段与归属持久保存在 `data/capture-session.json`，恢复入口包括账号页按钮和 `start-console.cmd recover`。
+- `accounts.mjs`、`capture.mjs`、`tools/mitm-*.mjs` 管理账号与采集。`src/platform/` 封装 Windows 代理和证书，以及客户端路径、浏览器和终端能力；macOS 使用微信容器缓存路径和系统 `open` 命令，缓存权限错误提供授权指引。`tools/start-console.mjs` 承担启动脚本逻辑。采集阶段与归属持久保存在 `data/capture-session.json`，恢复入口包括账号页按钮和 `start-console.cmd recover`。
 
 ### 控制台页面
 

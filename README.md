@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-需要 Windows，建议使用 Node.js 22.12 或更高版本；同时兼容 Node.js 20.19+（20.x）。请先在电脑版微信中打开一次《疯狂水世界》，供工具读取本机游戏协议包。配置表和世界地图默认从游戏 CDN 自动更新。添加抖音账号需要登录本机电脑抖音，再从客户端打开游戏供工具采集。支付宝扫码首次使用时会自动下载与 Playwright 版本匹配的 Chromium（需服务器可访问下载源并预留磁盘空间）；已有浏览器可继续复用，也可通过 `CW_BROWSER_EXECUTABLE` 指定。
+Windows 用户按以下步骤启动；请先安装 Node.js，建议使用 22.12 或更高版本，同时兼容 20.19+（20.x）。请先在电脑版微信中打开一次《疯狂水世界》，供工具读取本机游戏协议包。配置表和世界地图默认从游戏 CDN 自动更新。添加抖音账号需要登录本机电脑抖音，再从客户端打开游戏供工具采集。支付宝扫码首次使用时会自动下载与 Playwright 版本匹配的 Chromium（需服务器可访问下载源并预留磁盘空间）；已有浏览器可继续复用，也可通过 `CW_BROWSER_EXECUTABLE` 指定。
 
 ```powershell
 git clone https://github.com/xutongxue233/crazywaterworld.git
@@ -16,6 +16,16 @@ cd crazywaterworld
 npm ci
 npm start
 ```
+
+macOS 提供基础运行适配：自行安装符合上述版本要求的 Node.js 后，在终端执行相同的 `npm ci`、`npm start` 命令。启动后通过系统默认浏览器打开控制台；游戏协议与配置缓存会从 `~/Library/Containers/` 下的 `com.tencent.xinWeChat` 或 `com.tencent.WeChat` 容器中查找，缓存根目录为 `Data/Documents/app_data/radium/users`。
+
+若提示无权读取微信缓存，请在系统设置的“隐私与安全性 → 完全磁盘访问”中授权当前终端，完全退出并重开终端后重试。也可以自行准备游戏协议包，显式指定后启动：
+
+```sh
+CW_PROTO_BUNDLE="/绝对路径/_src_chunks_.wxapkg" npm start
+```
+
+如还需提供本地配置表，可同时设置 `CW_CONFIG_PACK` 指向完整配置 JSON。Mac 可使用现有的支付宝扫码、益世界 APP 手机号登录或账号导入；电脑微信和电脑抖音采集仍仅适用于 Windows。
 
 默认控制台地址为 `http://127.0.0.1:17321/`。
 
