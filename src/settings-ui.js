@@ -342,7 +342,7 @@ const configGroups = [
     configField('resources.diamondDailyLimit', '每日钻石使用量', 'number', { parent: 'resources.allowDiamonds', unit: '钻石', help: '0 表示禁止自动花钻石。统计启用本版本后的自动消费，升级前与游戏内手动消费不计入。北京时间零点重置；结果不明的已发送消费仍占额度。' }),
   ] },
   { id: 'gold', title: '每日点金', category: 'base', fields: [
-    configField('gold.enabled', '每日付费点金'), configField('gold.times', '点金次数', 'number', { unit: '次 / 天', help: '按游戏当天已付费次数补足目标，包含手动次数；免费点金不计入。结果不明的请求保留次数与钻石额度。' }),
+    configField('gold.enabled', '每日付费点金'), configField('gold.times', '点金次数', 'number', { unit: '次 / 天', help: '请先用完当天的免费点金，可手动使用或开启免费点金挂机。这个目标只统计付费次数，包含手动付费。上笔结果待确认时会保留额度，暂停追加。' }),
   ] },
   { id: 'treasure', title: '万吨巨轮', category: 'world', fields: [
     configField('treasure.enabled', '巨轮自动化总开关', 'switch', { help: '开始挂机后生效，独立于基地自动化。按所选舰队、参与模式和实际汽油库存出征；耐久不足可先普通维修。不会召回、补油或修改编队。' }),

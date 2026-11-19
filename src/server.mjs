@@ -4422,7 +4422,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       pirateAdvance: session.pirateAdvance.view(),
       controls: automationControlView(settingsView(session).settings).filter(control => !control.taskKey || isActivityTaskAvailable(control.taskKey, session.client)).map(control=>{
         const aliases={'factory.produce':'startProduce','factory.cooperateNative':'nativeProduce','factory.gain':'collect','factory.speedUp':'speedUp','building.build':'build','building.upgrade':'upgrade','building.finish':'finishUpgrade','resident.enabled':'finishOrder','resident.reroll':'denyOrder','farm.enabled':'farm','radar.enabled':'联盟情报','treasure.enabled':'万吨巨轮','cityWar.enabled':'城战接续','forge.enabled':'装备锻造','antique.enabled':'藏品养成','dailies.claimTasks':'dailyRewards','dailies.claimDailyChest':'chests','dailies.claimWeeklyChest':'chests','dailies.claimGift':'gift','resident.rewards':'orderDaily','trials.paid':'trialPaidSweep','trials.ads':'trialAdSweep'};
-        const key=control.taskKey||aliases[control.key]||({'worldBoss.enabled':'worldBoss','gather.fishing':'autoFish','gather.upgradeFishing':'fishEnhance','gather.diving':'autoDive','gather.salvage':'autoSalvage','gather.upgradeDiving':'diveEnhance','gather.upgradeSalvage':'salvageEnhance','gather.floaters':'floaters','gather.antiqueFloaters':'antiqueFloaters','cargo.enabled':'cargo','building.collect':'collect','building.supply':'buildSupply','building.speedUp':'speedUp','gold.enabled':'paidGold'})[control.key]||control.key;
+        const key=control.taskKey||aliases[control.key]||({'worldBoss.enabled':'worldBoss','gather.fishing':'autoFish','gather.upgradeFishing':'fishEnhance','gather.diving':'autoDive','gather.salvage':'autoSalvage','gather.upgradeDiving':'diveEnhance','gather.upgradeSalvage':'salvageEnhance','gather.floaters':'floaters','gather.antiqueFloaters':'antiqueFloaters','cargo.enabled':'cargo','building.collect':'collect','building.supply':'buildSupply','building.speedUp':'speedUp'})[control.key]||control.key;
         const challengeKeys=control.key==='progression.mainline'?['stageAuto']:control.key==='pirateHunt.enabled'?['pirateAuto']:control.key==='progression.trials'?settingsView(session).settings.progression.raidIds.map(id=>'trialAuto:'+id):[key];
         const recorded=challengeKeys.map(k=>loop.controlStatus?.get(k)).filter(Boolean).sort((a,b)=>(b.checkedAt??0)-(a.checkedAt??0))[0],observed=rewards?.status(key);
         let state=(observed?.checkedAt??0)>(recorded?.checkedAt??0)?observed:recorded||observed;
@@ -4450,7 +4450,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       stopping: !!loop.controller?.signal.aborted,
       tasks: automationTasks.filter(task => !retiredAutomationTasks.has(task.key) && isActivityTaskAvailable(task.key, session.client)).map(({ key, label, group }) => ({
         key, label, group, enabled: loop.tasks[key], blockedBySettings: loop.tasks[key] && !nativePreferenceEnabled(session.preferences, key),
-        nextCheck: loop.tasks[key] && nativePreferenceEnabled(session.preferences, key) ? rewards?.nextCheck(key) : null,
+        nextCheck: loop.tasks[key] && nativePreferenceEnabled(session.preferences, key) ? rewards?.nextCheck(key === 'paidGold' ? 'gold.enabled' : key) : null,
       })),
       fishingGoldReserve: loop.fishingGoldReserve,
       compassSpinCount: session.preferences?.eventActions.compassDrawCount ?? loop.compassSpinCount,

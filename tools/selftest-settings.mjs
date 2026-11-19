@@ -721,12 +721,136 @@ try {
 
   await check('点金按游戏当天付费次数补差且受钻石预算限制', () => {
     const settings = quiet(); settings.gold.enabled = true; settings.gold.times = 3; settings.resources.allowDiamonds = true; settings.resources.diamondDailyLimit = 15;
-    const snapshot = extra(survey({ RUBY: 100 }), { gold: { info: { paidTimes: 1, maxPaidTimes: 7 } } });
+    const snapshot = extra(survey({ RUBY: 100 }), { gold: { info: { freeTimes: 1, paidTimes: 1, maxPaidTimes: 7 } } });
     const action = planBaseAutomation(snapshot, config, settings).actions.find(a => a.kind === 'paidGold'); assert.equal(action.body.times, 1); assert.equal(action.costs[0].num, 10);
     assert.ok(!planBaseAutomation(snapshot, config, settings, { counters: { diamonds: 10 } }).actions.some(a => a.kind === 'paidGold'));
     snapshot.gold.info.paidTimes = 3; assert.ok(!planBaseAutomation(snapshot, config, settings).actions.some(a => a.kind === 'paidGold'));
     const driver = DAILY_DRIVERS[1006].evaluate({ task: { targetProgress: 5, progress: 0 }, probe: () => ({ info: { freeTimes: 1, paidTimes: 3, maxPaidTimes: 7 } }), config, ruby: 100, settings });
     assert.equal(driver.actions?.length ?? 0, 0);
+  });
+
+  await check('钻石点金先用完免费次数，按官方单点和多点按钮安排每次请求', () => {
+    const settings = quiet();
+    Object.assign(settings.gold, { enabled: true, times: 12 });
+    Object.assign(settings.resources, { allowDiamonds: true, diamondDailyLimit: 120, diamondThreshold: 0 });
+    const info = { freeTimes: 0, paidTimes: 0, maxPaidTimes: 12 };
+    const snapshot = extra(survey({ RUBY: 120 }), { gold: { info } });
+    const next = () => planBaseAutomation(snapshot, config, settings).actions.find(step => step.kind === 'paidGold');
+    assert.equal(next(), undefined);
+    info.freeTimes = 1;
+    assert.deepEqual(next().body, { times: 10, free: false });
+    assert.deepEqual(next().costs, [{ id: 'RUBY', num: 100 }]);
+    info.paidTimes = 10;
+    assert.deepEqual(next().body, { times: 2, free: false });
+    info.paidTimes = 0;
+    settings.gold.times = 3;
+    assert.deepEqual(next().body, { times: 1, free: false });
+    settings.gold.times = 12;
+    settings.resources.diamondDailyLimit = 90;
+    assert.deepEqual(next().body, { times: 1, free: false });
+    settings.resources.diamondDailyLimit = 9;
+    assert.equal(next(), undefined);
+  });
+
+  await check('钻石点金核对奖励与当天次数；读数落后或超时时，续查不重复消费', async () => {
+    const protocol = { ClickGoldInfoRequest: {}, ClickGoldInfoResponse: {}, ClickGoldRequest: {}, ClickGoldResponse: {} };
+    for (const mode of ['confirmed', 'stale', 'timeout']) {
+      const settings = quiet();
+      Object.assign(settings.gold, { enabled: true, times: 1 });
+      Object.assign(settings.resources, { allowDiamonds: true, diamondDailyLimit: 100, diamondThreshold: 0 });
+      const ledger = createUsageLedger('gold-' + mode, { file: path.join(directory, 'gold-evidence.json') });
+      const world = survey({ RUBY: 100 });
+      const player = { playerId: '44002', worldId: 1002001 };
+      const now = Math.floor(Date.now() / 1000);
+      world.now = world.serverNow = now;
+      const resetTime = Date.parse(beijingDay(now * 1000) + 'T00:00:00+08:00') / 1000 + 86400;
+      const info = { freeTimes: 1, paidTimes: 0, maxPaidTimes: 12, resetTime };
+      const writes = [];
+      let readAfterWrite = false;
+      const client = { connected: true, async request(name, body) {
+        if (name === 'AllResourceRequest') return { list: [{ res: 4, amount: { low: 100, high: 0, unsigned: false } }] };
+        if (name === 'ClickGoldInfoRequest') {
+          if (readAfterWrite && mode === 'timeout') throw Error('读取点金次数超时');
+          return { info: { ...info } };
+        }
+        assert.equal(name, 'ClickGoldRequest');
+        writes.push({ ...body });
+        readAfterWrite = true;
+        if (mode === 'confirmed') info.paidTimes += body.times;
+        return { result: [{ gold: 7500, ratio: 1 }] };
+      } };
+      const run = () => {
+        const snapshot = extra(world, { player, gold: { info: { ...info } } });
+        const plan = planBaseAutomation(snapshot, config, settings, ledger.snapshot());
+        return runBaseAutomation(client, protocol, config, plan, { player, ledger, getSettings: () => settings });
+      };
+      const [initial] = await run();
+      assert.deepEqual(writes, [{ times: 1, free: false }]);
+      if (mode === 'confirmed') assert.equal(initial.ok, true);
+      else {
+        assert.equal(initial.status, 'pending');
+        assert.equal(ledger.snapshot().uncertain, 1);
+        assert.deepEqual(ledger.snapshot().counters, { diamonds: 10, goldPaidTimes: 1 });
+        readAfterWrite = false;
+        settings.gold.times = 2;
+        await run();
+        assert.equal(writes.length, 1, '旧读数与更高目标不能触发新的付费点金');
+        assert.equal(ledger.snapshot().uncertain, 1);
+        settings.gold.times = 1;
+        info.paidTimes = 1;
+      }
+      await run();
+      assert.equal(writes.length, 1);
+      assert.equal(ledger.snapshot().uncertain, 0);
+      assert.deepEqual(ledger.snapshot().counters, { diamonds: 10, goldPaidTimes: 1 });
+      assert.deepEqual(ledger.confirmedCounters(), { diamonds: 10, goldPaidTimes: 1 });
+    }
+  });
+
+  await check('钻石点金区分发送前状态变化、服务器明确拒绝和结果不明', async () => {
+    const protocol = { ClickGoldInfoRequest: {}, ClickGoldInfoResponse: {}, ClickGoldRequest: {}, ClickGoldResponse: {} };
+    for (const mode of ['freeChanged', 'paidChanged', 'rejected', 'missingReward', 'writeTimeout']) {
+      const settings = quiet();
+      Object.assign(settings.gold, { enabled: true, times: 1 });
+      Object.assign(settings.resources, { allowDiamonds: true, diamondDailyLimit: 100, diamondThreshold: 0 });
+      const player = { playerId: '44003', worldId: 1002001 };
+      const ledger = createUsageLedger('gold-' + mode, { file: path.join(directory, 'gold-evidence.json') });
+      const info = { freeTimes: 1, paidTimes: 0, maxPaidTimes: 12 };
+      const snapshot = extra(survey({ RUBY: 100 }), { player, gold: { info } });
+      const plan = planBaseAutomation(snapshot, config, settings, ledger.snapshot());
+      assert.equal(plan.actions.filter(action => action.kind === 'paidGold').length, 1);
+      if (mode === 'freeChanged') info.freeTimes = 0;
+      if (mode === 'paidChanged') info.paidTimes = 1;
+      let writes = 0;
+      const client = { connected: true, async request(name) {
+        if (name === 'ClickGoldInfoRequest') return { info: { ...info } };
+        if (name === 'AllResourceRequest') return { list: [{ res: 4, amount: 100 }] };
+        assert.equal(name, 'ClickGoldRequest');
+        writes++;
+        if (mode === 'rejected') throw Object.assign(Error('点金请求被拒绝'), { prompt: {}, request: name });
+        if (mode === 'writeTimeout') throw Error('点金请求超时');
+        return { result: [] };
+      } };
+      const run = plan => runBaseAutomation(client, protocol, config, plan, { getSettings: () => settings, player, ledger });
+      const [entry] = await run(plan);
+      assert.equal(entry.ok, false);
+      const beforeSend = mode === 'freeChanged' || mode === 'paidChanged';
+      assert.equal(writes, beforeSend ? 0 : 1);
+      if (beforeSend || mode === 'rejected') {
+        assert.equal(ledger.snapshot().uncertain, 0);
+        assert.equal(ledger.snapshot().counters.goldPaidTimes ?? 0, 0);
+        assert.equal(ledger.snapshot().counters.diamonds ?? 0, 0);
+        continue;
+      }
+      assert.equal(entry.status, 'pending');
+      info.paidTimes = 1;
+      settings.gold.times = 2;
+      await run(planBaseAutomation(snapshot, config, settings, ledger.snapshot()));
+      assert.equal(writes, 1, '缺少本笔奖励时，其他来源的次数增长不能确认本笔或继续消费');
+      assert.equal(ledger.snapshot().uncertain, 1);
+      assert.deepEqual(ledger.snapshot().counters, { diamonds: 10, goldPaidTimes: 1 });
+      assert.equal(ledger.confirmedCounters().goldPaidTimes ?? 0, 0);
+    }
   });
 
   await check('博物馆完成探索后继续领奖，领奖回执不完整时不报告成功', async () => {
@@ -750,15 +874,15 @@ try {
     const client = { connected: true, async request(name) {
       if (name === 'AllItemRequest') return { items: [{ itemId: '博物馆加速', num: 5 }] };
       if (name === 'AllResourceRequest') return { list: [{ res: 4, amount: 100 }] };
-      if (name === 'ClickGoldInfoRequest') return { info: { paidTimes: 0 } };
+      if (name === 'ClickGoldInfoRequest') return { info: { freeTimes: 1, paidTimes: 0, maxPaidTimes: 7 } };
       return {};
     } };
-    const protocol = { MuseumSpeedUpExploreRequest: {}, MuseumSpeedUpExploreResponse: {}, ClickGoldRequest: {}, ClickGoldResponse: {} };
+    const protocol = { MuseumSpeedUpExploreRequest: {}, MuseumSpeedUpExploreResponse: {}, ClickGoldRequest: {}, ClickGoldResponse: {}, ClickGoldInfoRequest: {}, ClickGoldInfoResponse: {} };
     const guide = await runBaseAutomation(client, protocol, config, planBaseAutomation(snapshot, config, settings), { getSettings: () => settings, ledger });
     assert.equal(guide[0].ok, false); assert.equal(ledger.snapshot().counters.museumGuides, 1); assert.equal(ledger.snapshot().uncertain, 1);
     assert.ok(!planBaseAutomation(snapshot, config, settings, ledger.snapshot()).actions.some(action => action.kind === 'museumGuide'));
     settings.museum.enabled = false; settings.gold.enabled = true; settings.gold.times = 1; settings.resources.allowDiamonds = true;
-    snapshot.gold = { info: { paidTimes: 0, maxPaidTimes: 7 } };
+    snapshot.gold = { info: { freeTimes: 1, paidTimes: 0, maxPaidTimes: 7 } };
     const gold = await runBaseAutomation(client, protocol, config, planBaseAutomation(snapshot, config, settings, ledger.snapshot()), { getSettings: () => settings, ledger });
     assert.equal(gold[0].ok, false); assert.equal(ledger.snapshot().counters.diamonds, 10); assert.equal(ledger.snapshot().counters.goldPaidTimes, 1);
     assert.ok(!planBaseAutomation(snapshot, config, settings, ledger.snapshot()).actions.some(action => action.kind === 'paidGold'));
