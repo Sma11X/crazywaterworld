@@ -337,11 +337,19 @@ export function accountPage() {
 
 export function guildPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="联盟福利">
-      <div className="bar"><Button id="guild-refresh" variant="outline">刷新联盟</Button></div>
-      <div id="guild-view" className="progression-view" aria-live="polite" />
-    </Panel>
-    <Panel title="联盟求助"><div id="guild-aid-view" className="progression-view" /></Panel>
-    <Panel title="联盟科技" help="当前角色的科技等级与加成。升级只执行一级，扣除对应科技点；发送前重新核对等级、阶段、前置科技和费用。"><div className="bar"><Button id="guild-tech-refresh" variant="outline" size="sm">刷新科技</Button></div><div id="guild-tech-view" className="progression-view" aria-live="polite" /></Panel>
+    <Card>
+      <CardHeader>
+        <CardTitle>联盟求助</CardTitle>
+        <CardAction className="row-span-1 self-center"><Button id="guild-refresh" variant="outline" size="sm">刷新求助</Button></CardAction>
+      </CardHeader>
+      <CardContent><div id="guild-aid-view" className="progression-view" /></CardContent>
+    </Card>
+    <Card className="gap-3 max-md:gap-3">
+      <CardHeader>
+        <CardTitle className="title-with-help">联盟科技<HelpTip title="联盟科技">等级上限随赛季阶段开放。选择一项科技可设置目标等级，确认费用后逐级升级。</HelpTip></CardTitle>
+        <CardAction className="row-span-1 self-center"><Button id="guild-tech-refresh" variant="outline" size="sm">刷新科技</Button></CardAction>
+      </CardHeader>
+      <CardContent><div id="guild-tech-view" aria-live="polite" /></CardContent>
+    </Card>
   </div>)
 }

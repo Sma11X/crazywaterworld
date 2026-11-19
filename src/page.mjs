@@ -122,32 +122,55 @@ function createConsoleVersionGuard() {
   const reject = () => {
     if (stale) return;
     stale = true;
-    const banner = document.createElement('section'); banner.id = 'console-version-warning'; banner.className = 'config-message';
-    banner.dataset.kind = 'error'; banner.setAttribute('role', 'alert');
-    const text = document.createElement('p'); text.textContent = message; banner.append(text);
-    const actions = document.createElement('div'); Object.assign(actions.style, { display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' });
-    const action = (label, run) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'config-small-button'; button.textContent = label; button.onclick = run; actions.append(button); return button; };
-    const download = action('下载游戏配置草稿', () => configDownloadDraft()); download.disabled = !configHasDraft();
-    action('刷新页面', () => {
-      if (!window.confirm('刷新会丢弃本页未保存的修改。请先下载游戏配置草稿或复制需要保留的内容，确认已保留后再刷新。')) return;
-      location.reload();
-    });
-    for (const [label, route] of [['停止当前账号挂机', '/api/loop/stop'], ['断开当前账号', '/api/disconnect']]) {
-      const button = action(label, async () => {
-        if (!current) return; button.disabled = true;
-        try { await call(route, { method: 'POST', body: JSON.stringify({ confirm: true }) }); await refreshLoop(); }
-        catch (error) { reportError(error); }
-        finally { button.disabled = !current; }
-      }); button.disabled = !current;
-    }
-    banner.append(actions); (document.querySelector('header') || document.body).prepend(banner);
     window.dispatchEvent(new Event('cw-console-version-stale'));
+    showStalePageDialog();
   };
   const observe = value => { if (value && value !== version) reject(); };
   return Object.freeze({ version, message, isStale: () => stale, observe, reject,
     check(response, data) { observe(response?.headers?.get('X-CW-Console-Version')); if (data?.code === 'CLIENT_VERSION_MISMATCH') reject(); return !stale; },
     assertWritable(path, method = 'POST') { if (stale && !allowed(path, method)) throw failure(); },
   });
+}
+
+function showStalePageDialog() {
+  const dialog = $('console-version-warning'), opener = $('console-version-open');
+  const download = $('console-version-download'), accountActions = $('console-version-account');
+  const result = $('console-version-result');
+  function open() {
+    download.hidden = !configHasDraft();
+    accountActions.hidden = !current;
+    accountActions.open = false;
+    result.textContent = '';
+    dialog.showModal();
+  }
+  opener.hidden = false;
+  opener.onclick = open;
+  $('console-version-dismiss').onclick = () => dialog.close();
+  download.onclick = () => configDownloadDraft();
+  $('console-version-reload').onclick = () => {
+    if (window.confirm('刷新会丢弃本页未保存的修改。请确认已保留需要的内容，再刷新页面。')) location.reload();
+  };
+  for (const [id, route, success] of [
+    ['console-version-stop', '/api/loop/stop', '当前账号已停止挂机。'],
+    ['console-version-disconnect', '/api/disconnect', '当前账号已断开。'],
+  ]) {
+    const button = $(id);
+    button.onclick = async () => {
+      const account = current;
+      if (!account || button.disabled) return;
+      button.disabled = true;
+      result.textContent = '';
+      try {
+        await call(route, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+        if (account === current) result.textContent = success;
+        await refreshLoop();
+      } catch (error) {
+        if (account === current) result.textContent = error.message;
+        reportError(error);
+      } finally { button.disabled = false; }
+    };
+  }
+  open();
 }
 window.cwConsoleVersion = createConsoleVersionGuard();
 

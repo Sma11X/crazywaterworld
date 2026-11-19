@@ -3272,10 +3272,20 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const payload = jsonBody();
         needConfirm(payload);
         const label = operationLabels[parsed.pathname];
-        const key = JSON.stringify([route, payload.techId, payload.heroId, payload.uid, payload.expectedLevel, payload.maxCost, payload.targetKey, payload.fleetKey, payload.buildingId, payload.previewKey]);
+        const key = route === 'POST /api/guild/tech/upgrade'
+          ? JSON.stringify([route, payload.techId, payload.expectedIdentity, payload.expectedLevel, payload.maxCost])
+          : JSON.stringify([route, payload.techId, payload.heroId, payload.uid, payload.expectedLevel, payload.maxCost, payload.targetKey, payload.fleetKey, payload.buildingId, payload.previewKey]);
         json(await progressionJob(session, account, key, label, async (client, enabled) => {
           const config = loadConfigSafe(), player = session.player;
-          if(route==='POST /api/guild/tech/upgrade'){const result=await upgradeGuildTech(client,config,player,{...payload,enabled,ledger:usageFor(session)});emit(session,'info',result.label);return result;}
+          if (route === 'POST /api/guild/tech/upgrade') {
+            const { techId, expectedLevel, maxCost, expectedIdentity } = payload;
+            const result = await upgradeGuildTech(client, config, player, {
+              techId, expectedLevel, maxCost, expectedIdentity, ledger: usageFor(session),
+              enabled: () => session.player === player && enabled(),
+            });
+            emit(session, 'info', result.label);
+            return result;
+          }
           if (route === 'POST /api/equipment/wear') {
             const result = await equipHeroEmptySlots(client, config, player.level, payload.heroId, enabled);
             for (const line of result.lines) emit(session, 'info', line);
