@@ -20,10 +20,8 @@ function Option({id, label, checked = false}: {id: string; label: string; checke
 export function giftCodesPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
     <Panel title="礼包兑换">
-      <fieldset className="gift-accounts"><legend>兑换账号</legend>
-        <div className="bar"><Button variant="outline" size="sm" id="gift-select-all">全选</Button><Button variant="outline" size="sm" id="gift-select-none">清空</Button><span id="gift-selected-count" className="dim" /></div>
-        <div id="gift-account-list" className="gift-account-list" />
-      </fieldset>
+      <div className="bar"><Button variant="outline" size="sm" id="gift-select-all">全选</Button><Button variant="outline" size="sm" id="gift-select-none">清空</Button><span id="gift-selected-count" className="dim" /></div>
+      <div id="gift-account-list" className="gift-account-list" role="group" aria-label="兑换账号" />
       <div className="bar gift-redeem-actions"><Button id="gift-code-start" disabled>开始兑换</Button><span id="gift-code-state" role="status" aria-live="polite" /></div>
     </Panel>
     <Panel title="共享礼包码库">
