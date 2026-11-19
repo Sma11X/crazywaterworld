@@ -27,7 +27,10 @@ const check = async (name, action) => {
 const ledger = () => createUsageLedger('模拟城战优先级账号', { file: path.join(directory, 'usage-' + (++sequence) + '.json') });
 const read = (f, settings) => readCityWar(f.client, f.protocol, f.config, f.player, settings.cityWar, { mapLoader: f.mapLoader });
 const preview = async (f, settings) => planCityWar(await read(f, settings), settings);
-const multilateral = f => f.state.war.declarations.push({ attackGuildIdx: 9, defenceGuildIdx: 8, cityId: 2 });
+const multilateral = f => {
+  f.state.war.declarations.push({ attackGuildIdx: 9, defenceGuildIdx: 8, cityId: 2 });
+  f.state.cities.find(city => city.id === 2).attackFleetNum = 1;
+};
 const mapFile = path.join(directory, 'map.json');
 fs.writeFileSync(mapFile, JSON.stringify([null, null, null, null, null, [[null, null, {
   mapInfo: { width: 10, height: 10, tileWidth: 100, tileHeight: 75 },

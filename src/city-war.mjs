@@ -68,6 +68,30 @@ export function cityPetrolCost(map, sourceCityId, targetCityId, brackets) {
   return integer(cost) ? cost : null;
 }
 
+function alliedAttackQueue(city, attackers, fleets, snapshot, total) {
+  if (!Array.isArray(fleets)) return total === 0 ? 0 : null;
+  const seen = new Map();
+  let attackCount = 0, alliedCount = 0;
+  // 同一次世界快照里的排队明细可能只覆盖部分舰队，必须与攻方两类队列的总数核对。
+  for (const fleet of fleets) {
+    if (fleet.state !== 5 || fleet.cityId !== city.id || fleet.treasureLootUid > 0 || fleet.chipWar) continue;
+    const guildId = exactAutomationId(fleet.owner?.guildId), playerId = exactAutomationId(fleet.owner?.playerId);
+    if (!guildId || !playerId || !fleet.buildingId) return null;
+    const key = playerId + ':' + fleet.buildingId;
+    if (seen.has(key)) {
+      if (seen.get(key) !== guildId) return null;
+      continue;
+    }
+    seen.set(key, guildId);
+    const guildIdx = Number(BigInt(guildId) % 1000n);
+    if (guildIdx === city.guildIdx) continue;
+    if (!attackers.has(guildIdx) || (guildIdx === snapshot.guildIdx && guildId !== snapshot.guildId)) return null;
+    attackCount++;
+    if (guildId === snapshot.guildId) alliedCount++;
+  }
+  return attackCount === total ? alliedCount : null;
+}
+
 export async function readCityWar(client, protocol, config, player, preferences, { mapLoader = loadMapAsset } = {}) {
   const now = nowOf(client), worldId = exactAutomationId(player?.worldId), guildId = exactAutomationId(player?.guildId);
   const scenarioId = integer(player?.scenarioId, 1) ? player.scenarioId : 1;
@@ -125,17 +149,21 @@ export async function readCityWar(client, protocol, config, player, preferences,
       const distance = cityDistance(map, home.id, live.id);
       const petrol = role === 'defence' ? 0 : cityPetrolCost(map, home.id, live.id, costs);
       if (distance === null || !integer(petrol, role === 'defence' ? 0 : 1)) { snapshot.notes.push((definition.name || '城市' + live.id) + '的行军距离或汽油费用未确认'); continue; }
-      const attackers = [...new Set(war.declarations.filter(row => row.cityId === live.id).map(row => row.attackGuildIdx))];
+      const attackers = new Set(war.declarations.filter(row => row.cityId === live.id).map(row => row.attackGuildIdx));
       let alliedCount = null, countReason = '';
       const queue = role === 'defence' ? live.defenceFleetNum : live.attackFleetNum;
       const priorityQueue = role === 'defence' ? live.priorityDefFleetNum : live.priorityAtkFleetNum;
       // 守方队列直接采用服务器计数，不承诺已排除城防 NPC；交战点仅计本盟非 NPC。
-      if (role === 'attack' && (attackers.length !== 1 || attackers[0] !== snapshot.guildIdx)) countReason = '多联盟共同进攻，无法拆分本联盟排队舰队数';
-      else if (!integer(queue) || !integer(priorityQueue) || !Array.isArray(live.battlePoints)) countReason = roleName(role) + '队列数据未确认';
+      if (!integer(queue) || !integer(priorityQueue) || !Array.isArray(live.battlePoints)) countReason = roleName(role) + '队列数据未确认';
       else {
+        const jointAttack = role === 'attack' && attackers.size > 1;
+        const alliedQueue = jointAttack ? alliedAttackQueue(live, attackers, world.fleets, snapshot, queue + priorityQueue) : queue + priorityQueue;
         const fighting = live.battlePoints.map(point => role === 'defence' ? point.rightFighter : point.leftFighter).filter(fighter => fighter && !fighter.isNpc);
-        if (fighting.some(fighter => fighter.guildIdx !== snapshot.guildIdx)) countReason = roleName(role) + '方身份已变化，等待重新核对';
-        else alliedCount = queue + priorityQueue + fighting.length;
+        if (alliedQueue === null) countReason = '多联盟共同进攻，排队明细与攻方队列总数无法核对，本盟队数未知';
+        else if (fighting.some(fighter => jointAttack
+          ? !integer(fighter.guildIdx, 1) || !attackers.has(fighter.guildIdx)
+          : fighter.guildIdx !== snapshot.guildIdx)) countReason = roleName(role) + '方身份已变化，等待重新核对';
+        else alliedCount = alliedQueue + fighting.filter(fighter => fighter.guildIdx === snapshot.guildIdx).length;
       }
       // 已同步在途：世界地图里的本盟舰队按目标城汇总；本人的在途舰队以 MyFleets 为准，
       // 避免和世界地图重复计数。归属不明的在途舰队不能当成 0。

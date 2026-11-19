@@ -172,6 +172,7 @@ await check('人数未知时只阻止本队的人数优先策略，同目标其�
   const { f, settings } = multipleTargetsFixture();
   settings.cityWar.defenceFleetIds = [];
   f.state.war.declarations.push({ attackGuildIdx: 9, defenceGuildIdx: 8, cityId: 2 });
+  f.state.cities.find(city => city.id === 2).attackFleetNum = 1;
   settings.cityWar.fleetStrategies = {
     '1远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'], targetPriority: 'original' }),
     '2远征船': independentStrategy({ targetMode: 'selected', cityRefs: ['1:2'], targetPriority: 'fewestAllied' }),
@@ -394,6 +395,7 @@ await check('攻守独立按各自名单顺序或队数距离排序', async () =
 await check('人数未知按各自攻守优先策略处理并继续预留对应舰队', async () => {
   const { f, settings } = defenceFixture();
   f.state.war.declarations.push({ attackGuildIdx: 9, defenceGuildIdx: 8, cityId: 2 });
+  f.state.cities.find(city => city.id === 2).attackFleetNum = 1;
   f.state.cities.find(city => city.id === 3).battlePoints = [
     { index: 0, leftFighter: fighter(8), rightFighter: fighter(9) },
   ];
