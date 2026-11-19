@@ -232,8 +232,14 @@ function placeWorldMapPopup(){
   dialog.style.removeProperty('--city-max-height');
   dialog.style.removeProperty('--city-room');
   dialog.style.removeProperty('--city-min-width');
+  let initialHeight=dialog.offsetHeight;
+  if(dialog.dataset.city && !$('world-map-city-actions').childElementCount){
+   // 只在地图上给可能出现的按钮留出空间，空操作区本身不占高。
+   const style=getComputedStyle($('world-map-city-actions'));
+   initialHeight+=parseFloat(style.minHeight)+parseFloat(style.marginTop);
+  }
   worldMapPopupPlacement={key,below:belowRoom>=aboveRoom,fromRight:cx>stage.width/2,
-   initialWidth:dialog.offsetWidth,initialHeight:dialog.offsetHeight};
+   initialWidth:dialog.offsetWidth,initialHeight};
  }
  // 本次打开只按标记与视口选边。舰队列表的加载、刷新和换行均不参与定位。
  const placement=worldMapPopupPlacement;
@@ -309,9 +315,10 @@ function paintWorldCityActions(view){
  const controls=el('div','world-city-buttons');
  const status=el('p','dim');status.setAttribute('role','status');
  if(view.message){const feedback=el('p','',view.message);feedback.setAttribute('role','status');root.append(feedback);}
- if(worldCitySending.has(view.account)||view.loading){
-  status.textContent=worldCitySending.has(view.account)?'正在提交…':'正在读取可用操作…';root.append(status);return;
+ if(worldCitySending.has(view.account)){
+  status.textContent='正在提交…';root.append(status);return;
  }
+ if(view.loading)return;
  if(!view.quote){
   status.textContent=view.readError||'尚未读取城池操作';
   const retry=smallButton('重试');retry.onclick=()=>loadWorldCityActions(view);
@@ -432,10 +439,7 @@ async function showWorldMapTarget(point,refresh=false,source='click'){
  }
  $('world-map-target-name').textContent=point.name;
  const actions=$('world-map-city-actions');
- if(point.cityInfo && dialog.dataset.city!==point.key){
-  clear(actions);
-  actions.setAttribute('aria-busy','true');
- }
+ if(point.cityInfo && dialog.dataset.city!==point.key)clear(actions);
  actions.hidden=!point.cityInfo;
  presentWorldMapDetail(point,refresh?'refresh':source);
  dialog.scrollTop=scrollTop;

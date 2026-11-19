@@ -253,13 +253,43 @@ try {
     await checkFleetSummary(page, mobile, speedFleets);
     speedFleets = null;
     await page.locator('#world-map-scroll').evaluate(node => node.scrollIntoView({ block: 'center' }));
-    await openCity(hillCity.cityId); await detail.waitFor();
-    await page.waitForFunction(() => !callsInFlight);
-    assert.equal((await panel.textContent()).trim(), '', '普通城无可用操作');
+    const emptyHillBox = async () => {
+      const measurement = await detail.evaluate(async node => {
+        await Promise.all(node.getAnimations().map(animation => animation.finished));
+        const actions = node.querySelector('#world-map-city-actions');
+        const { x, y, width, height } = node.getBoundingClientRect();
+        return { text: actions.innerText.trim(), actionHeight: actions.getBoundingClientRect().height,
+          overflowY: node.scrollHeight - node.clientHeight, box: { x, y, width, height } };
+      });
+      assert.equal(measurement.actionHeight, 0, '普通城读取操作和无操作时均不应占位：' + measurement.text);
+      assert(measurement.overflowY <= 1, '读取操作不应使双舰队弹窗出现纵向滚动条');
+      return measurement.box;
+    };
+    let popup;
+    for (const phase of ['首次打开', '舰队状态刷新']) {
+      previewGate = { city: hillCity.cityId, started: deferred(), release: deferred() };
+      if (phase === '首次打开') await openCity(hillCity.cityId);
+      else {
+        ownFleets[0].status = '维修中';
+        await page.evaluate(() => refreshWorldMap());
+      }
+      await waitForGate(previewGate);
+      let pendingBox;
+      try {
+        pendingBox = await emptyHillBox();
+      } finally { previewGate.release.resolve(); }
+      await page.waitForFunction(() => !callsInFlight);
+      const readyBox = await emptyHillBox();
+      for (const key of ['x', 'y', 'width', 'height']) {
+        assert(Math.abs(pendingBox[key] - readyBox[key]) <= 1, phase + '收到空操作前后，弹窗的 ' + key + ' 应保持稳定');
+        if (popup) assert(Math.abs(popup[key] - readyBox[key]) <= 1, '后台刷新保留弹窗的 ' + key);
+      }
+      popup = readyBox;
+    }
+    previewGate = null; ownFleets[0].status = '行军中';
     const idleCards = detail.getByRole('article');
     assert.equal(await idleCards.count(), 2);
     const [firstCard, secondCard] = await idleCards.evaluateAll(cards => cards.map(card => card.getBoundingClientRect().toJSON()));
-    const popup = await detail.boundingBox();
     const overflow = await detail.evaluate(node => ({ x: node.scrollWidth - node.clientWidth, y: node.scrollHeight - node.clientHeight }));
     assert(overflow.x <= 1 && popup.x >= 0 && popup.x + popup.width <= width + 1, '两支舰队的弹窗应在屏内且没有横向滚动');
     if (!mobile) {
@@ -295,6 +325,7 @@ try {
       const initial = await popupPosition();
       // 右侧城池的其他操作从固定的右边缘向地图内部展开。
       assertPosition(initial, loading, '首次加载舰队', true);
+      assert(await detail.evaluate(node => node.scrollHeight <= node.clientHeight + 1), '上方空间足够时，读回的操作按钮应完整可见');
       previewGate = { city: 12, started: deferred(), release: deferred() };
       ownFleets[0].status = '维修中';
       await page.evaluate(() => refreshWorldMap()); await waitForGate(previewGate);
