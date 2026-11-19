@@ -52,11 +52,17 @@ function assets(value, name) {
 }
 
 function orderLimit(config, season, level) {
-  // Never borrow a more generous quota from another season.
-  const available = rows(config, 'GuildOrderNumCfg').filter(row => row.season === season && row.playerLevel <= level);
-  const best = available.sort((a, b) => b.playerLevel - a.playerLevel)[0];
-  if (!best || !Number.isSafeInteger(best.playerLevel) || best.playerLevel < 1
-    || !Number.isSafeInteger(best.maxNum) || best.maxNum < -1
+  // The offline client's SeasonUtil.seasonCfgList falls back to the highest
+  // season that does not exceed the current one when the config pack has no
+  // rows for the current season yet (e.g. new S8+ servers on an old pack);
+  // PlayerUtil.levelCfg then picks the highest tier at or below the player
+  // level. Never borrow a quota from a season above the current one.
+  const all = rows(config, 'GuildOrderNumCfg');
+  const seasons = all.map(row => row.season).filter(s => Number.isSafeInteger(s) && s >= 1 && s <= season);
+  const available = all.filter(row => row.season === (seasons.length ? Math.max(...seasons) : null)
+    && Number.isSafeInteger(row.playerLevel) && row.playerLevel >= 1);
+  const best = available.sort((a, b) => b.playerLevel - a.playerLevel).find(row => row.playerLevel <= level);
+  if (!best || !Number.isSafeInteger(best.maxNum) || best.maxNum < -1
     || available.filter(row => row.playerLevel === best.playerLevel).length !== 1) throw new Error('缺少当前赛季和等级的联盟订单次数配置');
   return best.maxNum;
 }

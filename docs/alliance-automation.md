@@ -21,7 +21,7 @@
 ## 实际协议与客户端规则
 
 - `GuildCityArmyPop._onBtnFinishGuildOrder` 发送 `FinishGuildOrderRequest({cityId})`，回执为 `FinishGuildOrderResponse.reward`。截图的「募兵」与项目的「联盟订单」是同一个协议动作，不是英雄招募接口。
-- `GuildOrderNumCfg` 按当前赛季及不高于玩家等级的最高档决定上限；`maxNum=-1` 表示游戏未限制，0 表示当前档不可提交。每日已完成次数来自完整 `CounterInfoResponse.counters` 中的 `DAILY_FINISH_GUILD_ORDER`。
+- `GuildOrderNumCfg` 按当前赛季及不高于玩家等级的最高档决定上限；`maxNum=-1` 表示游戏未限制，0 表示当前档不可提交。当前赛季没有专属行时（如黑潮赛季开始的新服沿用旧配置包），按客户端 `SeasonUtil.seasonCfgList` 回退到不超过当前赛季的最高赛季档位。每日已完成次数来自完整 `CounterInfoResponse.counters` 中的 `DAILY_FINISH_GUILD_ORDER`。
 - `GuildOrderRequest` 返回 `order.requirements` 与 `nextRefreshTime`。`GuildCityInfoRequest` 返回本联盟城市与推荐标记，使用已确认的推荐城市，无推荐时选择已确认的本盟城市。
 - `GuildUtil.isGuildHelpItem` 只允许 `GuildHelpCfg` 中、`season <= 当前赛季` 的材料；`getMaxAidNum()` 读取 `GuildParamCfg` 的「每日求助次数上限」（当前配置为 20）。
 - 普通联盟援助为 `AidType.AID_GUILD = 0`。发布 `GuildAidAskRequest({reqItemId,type:0})`，每条求助需求一件材料；该协议没有数量或批量字段，达到设定次数需连续发送多个请求。客户端普通求助入口仅检查每日次数，未发现必须先收到回赠或限制未完成求助条数的规则。

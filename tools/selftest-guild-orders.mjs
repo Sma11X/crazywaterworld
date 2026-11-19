@@ -81,6 +81,13 @@ export async function testGuildOrders() {
   assert.equal((await f.run()).ok, true);
   assert.equal(f.writes().length, 2);
 
+  const future = fixture();
+  future.player.worldId = 2010000402; // S10 server: the config pack has no rows for this season, so the client falls back to the highest older one
+  const futureView = await readGuildOrderView(future.client, protocol, config, future.options);
+  assert.equal(futureView.season, 10);
+  assert.equal(futureView.maxNum, 10, 'a season missing from the config falls back to the highest older season instead of erroring or going unlimited');
+  assert.equal((await future.run()).ok, true);
+
   const production = fixture();
   production.hook(name=>{if(name==='FinishGuildOrderRequest'){
     production.bodies.AllItemRequest.items[0].num+=10;
@@ -161,9 +168,13 @@ export async function testGuildOrders() {
   const high = fixture(); high.player.level = 25;
   high.bodies.CounterInfoRequest.counters = [{ type: 'DAILY_FINISH_GUILD_ORDER', num: 20 }];
   assert.equal((await high.run()).ok, true);
-  const unknownSeason = fixture(); unknownSeason.player.worldId = 9000001;
-  assert.match((await unknownSeason.run()).error, /次数配置/);
-  assert.equal(unknownSeason.writes().length, 0);
+  const futureSeason = fixture(); futureSeason.player.worldId = 9000001; // S9: no rows for this season in the config pack
+  assert.equal((await futureSeason.run()).ok, true, 'falls back to the highest season not above the current one, matching the client');
+  assert.equal(futureSeason.writes().length, 1);
+  const noQuota = fixture(); noQuota.player.worldId = 9000001;
+  assert.match((await serviceGuildOrders(noQuota.client, protocol,
+    { ...config, tables: { ...config.tables, GuildOrderNumCfg: { data: [] } } }, noQuota.options)).error, /次数配置/);
+  assert.equal(noQuota.writes().length, 0);
 
   for (const name of ['GuildInfoRequest', 'GuildCityInfoRequest', 'CounterInfoRequest', 'AllItemRequest', 'WeekInfoRequest', 'CargoShipsRequest', 'OnWaterRequest']) {
     const broken = fixture(); broken.bodies[name] = {};
