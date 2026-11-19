@@ -36,12 +36,17 @@ function responseCookies(headers) {
 export function createWechatHttp({ fetcher = fetch, now = Date.now } = {}) {
   const jar = new Map();
   function remember(url, headers) {
+    const accepted = [];
     for (const text of responseCookies(headers)) {
       if (text.length > 8192) continue;
       const [pair, ...attributes] = text.split(';'), split = pair.indexOf('=');
       if (split < 1) continue;
-      const name = pair.slice(0, split).trim(), value = pair.slice(split + 1).trim();
-      if (!cookieName.test(name) || !cookieValue.test(value) || /[;,]/.test(value)) continue;
+      const name = pair.slice(0, split).trim();
+      let value = pair.slice(split + 1).trim();
+      // net/http accepts a quoted cookie value and removes only its outer
+      // quotes. Do not URL-decode tokens: their original bytes are signed.
+      if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+      if (!cookieName.test(name) || !cookieValue.test(value) || /[";,\\]/.test(value)) continue;
       const flags = new Map(attributes.map(part => {
         const i = part.indexOf('=');
         return i < 0 ? [part.trim().toLowerCase(), ''] : [part.slice(0, i).trim().toLowerCase(), part.slice(i + 1).trim()];
@@ -58,10 +63,12 @@ export function createWechatHttp({ fetcher = fetch, now = Date.now } = {}) {
       else if (flags.has('expires') && Number.isFinite(Date.parse(flags.get('expires')))) expiry = Date.parse(flags.get('expires'));
       if (expiry <= now()) { jar.delete(key); continue; }
       if (jar.size >= 64 && !jar.has(key)) continue;
-      jar.set(key, { name, value, domain, path: cookiePath, expiry, group: group(url.hostname), hostOnly: !flags.has('domain') });
+      const cookie = { name, value, domain, path: cookiePath, expiry, group: group(url.hostname), hostOnly: !flags.has('domain') };
+      jar.set(key, cookie); accepted.push(cookie);
     }
+    return accepted;
   }
-  function cookies(value) {
+  function matchingCookies(value) {
     const url = officialUrl(value), result = [];
     for (const [key, cookie] of jar) {
       if (cookie.expiry <= now()) { jar.delete(key); continue; }
@@ -70,10 +77,15 @@ export function createWechatHttp({ fetcher = fetch, now = Date.now } = {}) {
       const pathMatch = url.pathname === cookie.path || url.pathname.startsWith(cookie.path.endsWith('/') ? cookie.path : cookie.path + '/');
       if (domainMatch && pathMatch && cookie.group === group(url.hostname)) result.push(cookie);
     }
-    return result.sort((a, b) => b.path.length - a.path.length).map(({ name, value }) => ({ name, value }));
+    return result.sort((a, b) => b.path.length - a.path.length);
   }
-  async function request(value, { method = 'GET', headers = {}, body, signal, timeoutMs = 20000, maxBytes = 2 * 1024 * 1024, redirects = 0 } = {}) {
+  const cookies = value => matchingCookies(value).map(({ name, value }) => ({ name, value }));
+  async function request(value, { method = 'GET', headers = {}, body, signal, timeoutMs = 20000, maxBytes = 2 * 1024 * 1024, redirects = 0, completeOnCookies } = {}) {
     let url = officialUrl(value);
+    const callback = url.href, freshCookies = new Set();
+    if (completeOnCookies !== undefined && (method !== 'GET' || url.hostname !== 'yybadaccess.3g.qq.com'
+      || url.pathname !== '/pc_yyb/pcyyb_oauth' || !Array.isArray(completeOnCookies) || completeOnCookies.length !== 2
+      || !completeOnCookies.includes('openid') || !completeOnCookies.includes('accesstoken'))) throw Error('微信授权回调选项无效');
     throwIfAborted(signal);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 45000) throw Error('微信授权请求超时设置无效');
     const deadline = AbortSignal.timeout(timeoutMs), combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -96,13 +108,29 @@ export function createWechatHttp({ fetcher = fetch, now = Date.now } = {}) {
         if (response.redirected || response.url && officialUrl(response.url).href !== url.href) throw Error('微信授权服务发生未允许的跳转');
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           void response.body?.cancel?.().catch(() => {});
+          for (const cookie of remember(url, response.headers)) freshCookies.add(cookie);
+          if (completeOnCookies) {
+            const visible = matchingCookies(callback);
+            const complete = completeOnCookies.every(name => {
+              const cookie = visible.find(item => item.name === name);
+              return cookie?.value && freshCookies.has(cookie);
+            });
+            // The OAuth callback can finish by setting the credentials and
+            // redirecting to a product page. Do not visit that page or forward
+            // its query/Cookies. Old jar values cannot make a failed callback
+            // look successful: every required cookie must be set this request.
+            if (complete) {
+              throwIfAborted(combined);
+              return { bytes: Buffer.alloc(0), headers: response.headers, status: response.status };
+            }
+          }
           if (method !== 'GET' || hop >= redirects) throw Error('微信授权服务发生未允许的跳转');
           const location = response.headers.get('location');
           if (!location) throw Error('微信授权跳转地址无效');
           let next;
           try { next = officialUrl(new URL(location, url).href); } catch { throw Error('微信授权跳转地址无效'); }
           if (next.origin !== url.origin) throw Error('微信授权服务不允许跨域跳转');
-          remember(url, response.headers); url = next; continue;
+          url = next; continue;
         }
         if (!response.ok) { void response.body?.cancel?.().catch(() => {}); throw Error('微信授权请求失败（HTTP ' + response.status + '）'); }
         const length = Number(response.headers.get('content-length'));

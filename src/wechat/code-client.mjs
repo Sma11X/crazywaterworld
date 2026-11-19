@@ -1,6 +1,7 @@
 // Login-scoped application-store protocol client: no server, account database,
 // proxy configuration or background credential renewal is started here.
 import { randomBytes } from 'node:crypto';
+import { notifyWechatStage } from './diagnostics.mjs';
 import { connectMmtls, pickAccessPSK } from './mmtls-client.mjs';
 import { discoverWechatTargets, requestWechatHTTP } from './newdns.mjs';
 import { send0RTT } from './shortlink.mjs';
@@ -28,7 +29,7 @@ function wipeSession(session) {
 export async function getWechatLoginCode(loginBuffer, {
   appId = 'wx2ea52a972ea18e5e', signal, timeoutMs = 45000, fetcher = requestWechatHTTP,
   connect = connectMmtls, discover = discoverWechatTargets, shortlinkSender = send0RTT,
-  targets, device, now = Date.now, authOptions,
+  targets, device, now = Date.now, authOptions, onStage,
 } = {}) {
   if (!/^wx[0-9a-f]{16}$/.test(appId)) throw Error('微信小游戏 AppID 无效');
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw Error('微信取码超时参数无效');
@@ -40,6 +41,7 @@ export async function getWechatLoginCode(loginBuffer, {
   if (!Buffer.isBuffer(identity.appDeviceId) || !Buffer.isBuffer(identity.sessDevice)) throw Error('微信设备标识无效');
   let session, access;
   try {
+    notifyWechatStage(onStage, 'discovery');
     const endpoints = targets ?? await abortable(() => discover({ signal: active, timeoutMs: Math.min(6000, timeoutMs / 3 | 0) || 1, fetcher }), active);
     if (!Array.isArray(endpoints.longlink) || !Array.isArray(endpoints.shortlink)) throw Error('微信传输地址列表无效');
     const candidates = endpoints.longlink.slice(0, 6);
@@ -52,7 +54,9 @@ export async function getWechatLoginCode(loginBuffer, {
       const attempt = AbortSignal.any([active, AbortSignal.timeout(perAttempt)]);
       let client, temp;
       try {
+        notifyWechatStage(onStage, 'handshake');
         client = await abortable(() => connect(candidates[index], { signal: attempt, timeoutMs: perAttempt }), attempt, late => late.close());
+        notifyWechatStage(onStage, 'manual-auth');
         const request = buildLoginBody(loginBuffer, identity.appDeviceId, authOptions); temp = request.temp;
         const sequence = await abortable(() => client.sendApp(CMD_MANUAL_AUTH, request.body), attempt);
         const response = await abortable(() => client.recvApp(), attempt);
@@ -73,6 +77,7 @@ export async function getWechatLoginCode(loginBuffer, {
     }
     if (!session || !access) throw last ?? Error('没有可用的微信授权连接');
     active.throwIfAborted();
+    notifyWechatStage(onStage, 'code');
     const envelope = buildTransferPacket(session, buildJSLoginPlaintext(session, appId, identity.sessDevice));
     const raw = await abortable(() => shortlinkSender(endpoints.shortlink, access, session.recvKey, envelope, {
       signal: active, timeoutMs: Math.min(10000, Math.max(1, deadline - Date.now())), fetcher, now,

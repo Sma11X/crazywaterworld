@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { notifyWechatStage } from './diagnostics.mjs';
 
 // Public client channel parameters, not an account credential. Keep this wire
 // profile separate from the host OS: it describes the game's WeChat channel.
@@ -19,12 +20,13 @@ async function textBody(response) {
 
 // Complete the game-specific exchange after the one-time wx.login code has
 // been obtained. URLs are fixed; redirects must never forward the code/token.
-export async function exchangeWechatGameCode(code, { fetcher = fetch, signal, profile = WECHAT_GAME_PROFILE, now = Date.now } = {}) {
+export async function exchangeWechatGameCode(code, { fetcher = fetch, signal, profile = WECHAT_GAME_PROFILE, now = Date.now, onStage } = {}) {
   if (typeof code !== 'string' || !code || code.length > 512) throw Error('微信未返回有效小游戏登录 code，请重新扫码');
   signal?.throwIfAborted();
   const config = profile, did = crypto.randomUUID(), dc = crypto.randomUUID(), clientKey = crypto.randomBytes(16).toString('hex');
   let initId = '', tid = '';
   const request = async (route, body = {}, method = 'POST', extra = {}) => {
+    notifyWechatStage(onStage, { '/public/info': 'game-public', '/init': 'game-init', '/user/login': 'game-login' }[route]);
     signal?.throwIfAborted();
     const nonce = '1' + crypto.randomBytes(4).toString('hex');
     const query = { sign: '', ts: now().toString(), nonce: tid || nonce, initId: initId || tid || nonce,
@@ -39,7 +41,7 @@ export async function exchangeWechatGameCode(code, { fetcher = fetch, signal, pr
     signal?.throwIfAborted();
     let result;
     try { result = JSON.parse(await textBody(response)); } catch { throw Error('游戏登录服务返回格式无效'); }
-    if (!response.ok || result.code !== 0 || !result.data) throw Error('游戏登录服务拒绝请求，请重新扫码或稍后重试');
+    if (!response.ok || result.code !== 0 || !result.data) throw Object.assign(Error('游戏登录服务拒绝请求，请重新扫码或稍后重试'), { code: 'WECHAT_GAME_REJECTED', httpStatus: response.status, responseCode: result.code });
     if (result.meta?.tid) tid = String(result.meta.tid);
     return result.data;
   };
@@ -56,6 +58,7 @@ export async function exchangeWechatGameCode(code, { fetcher = fetch, signal, pr
     devicecode: dc, platform: config.platform, system: config.system, gameversion: config.appVersion, shareid: 0, shareposition: 0,
     shareserverid: '', shareroleid: '', traceId: Buffer.from(encodeURIComponent('{}')).toString('base64') };
   signal?.throwIfAborted();
+  notifyWechatStage(onStage, 'game-channel');
   const response = await fetcher('https://minigame.ewan.cn/minigame', { method: 'POST', headers: { 'content-type': 'text/plain;charset=utf-8',
     ai: String(channel.appId), pi: String(channel.mchId), ci: config.channelId, traceId: crypto.randomUUID(), reqId: '3' + now().toString().slice(-7) },
     body: Buffer.from(encodeURIComponent(JSON.stringify(params))).toString('base64'),
@@ -65,7 +68,7 @@ export async function exchangeWechatGameCode(code, { fetcher = fetch, signal, pr
     try { login = JSON.parse(decodeURIComponent(Buffer.from(text, 'base64').toString())); } catch { throw Error('微信游戏授权响应格式无效'); }
   }
   signal?.throwIfAborted();
-  if (!response.ok || login.status !== 200 || !login.mopenid || !login.openid) throw Error('微信游戏授权失败，请重新扫码');
+  if (!response.ok || login.status !== 200 || !login.mopenid || !login.openid) throw Object.assign(Error('微信游戏授权失败，请重新扫码'), { code: 'WECHAT_GAME_REJECTED', httpStatus: response.status, responseCode: login.status });
   login.channeluid = String(login.openid); login.openid = login.mopenid; login.useractiveflag = 1;
   login.userInfo = { channelUid: login.channeluid, bandPhoneFlag: !!login.bandphoneflag, shareId: '0', sharePosition: '0', shareServerId: '',
     shareRoleId: '', userType: login.usertype, usertype: login.usertype, visitBackStatus: 0 };

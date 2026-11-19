@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createWechatDevice } from '../src/wechat/device.mjs';
+import { wechatFailure } from '../src/wechat/diagnostics.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createWechatLogin } from '../src/wechat-login.mjs';
 import { exchangeWechatGameCode, WECHAT_GAME_APPID } from '../src/wechat/game-auth.mjs';
@@ -122,6 +123,32 @@ try {
     assert.equal(requests, 0);
     await assert.rejects(exchangeWechatGameCode('fixture', { fetcher: async () => Response.json({ code: 0, data: { publicKey: 'invalid' } }) }), /公钥/);
     await assert.rejects(exchangeWechatGameCode('fixture', { fetcher: async () => Response.json({ code: 1, message: 'secret=fixture' }) }), /拒绝/);
+  });
+  await test('失败显示具体阶段与安全状态码，日志不回显票据或上游正文', async () => {
+    const events = [];
+    const error = Object.assign(Error('secret=fixture-secret cookie=fixture-cookie https://example.invalid/?code=fixture-code'), {
+      code: 'WECHAT_BUFFER_REJECTED', statusCode: 40001, httpStatus: 200,
+      body: { token: 'fixture-token' }, responseCode: 'fixture-private-value',
+    });
+    const login = createWechatLogin({
+      createQr: async () => ({ id: 'fixture', qrImage, expiresAt: Date.now() + 10000,
+        poll: async () => ({ phase: 'authorized' }), getLoginBuffer: async ({ onStage }) => { onStage('ticket'); throw error; }, close() {} }),
+      onEvent: event => events.push(event),
+    });
+    try {
+      await login.start(); await until(() => login.status().phase === 'error');
+      assert.match(login.status().error, /微信登录票据获取失败/);
+      assert.match(login.status().error, /WX_TICKET_REJECTED/);
+      assert.deepEqual(login.status().diagnostic, { stage: 'ticket', code: 'REJECTED', httpStatus: 200, statusCode: 40001 });
+      assert.equal(events.length, 1);
+      assert.doesNotMatch(JSON.stringify([login.status(), events]), /fixture-secret|fixture-cookie|fixture-code|fixture-token|fixture-private/);
+    } finally { await login.close(); }
+    const unknown = wechatFailure(Error('opaque-user-secret'), 'opaque-user-secret');
+    assert.equal(unknown.diagnostic.stage, 'code');
+    assert.doesNotMatch(JSON.stringify(unknown), /opaque-user-secret/);
+    const game = wechatFailure(Object.assign(Error('游戏授权失败'), { code: 'WECHAT_GAME_REJECTED', responseCode: 403, httpStatus: 200 }), 'game-channel');
+    assert.equal(game.diagnostic.statusCode, 403);
+    assert.match(game.message, /游戏渠道授权失败/);
   });
   console.log(`微信扫码控制器与游戏授权 ${passed}/${passed} 通过（假网络，零游戏连接）`);
 } finally { clearTimeout(watchdog); }

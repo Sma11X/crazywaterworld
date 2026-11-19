@@ -164,7 +164,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   let alipaySaving = false;
   let pendingAlipayLogin = null;
   let cancelledAlipayLoginId = null;
-  const wechatLogin = wechatLoginController ?? createWechatLogin();
+  const wechatLogin = wechatLoginController ?? createWechatLogin({
+    onEvent: event => { if (event.type === 'error') emit(null, 'warn', event.message, { category: 'system', diagnostic: event.diagnostic }); },
+  });
   let wechatSaving = false, pendingWechatLogin = null, cancelledWechatLoginId = null;
   const traceLog = createTraceLog(TRACE_PATH, { maxBytes: TRACE_MAX_BYTES });
   const protocolDiagnostics = createProtocolDiagnostics(path.join(DATA_DIR, 'protocol-errors'));

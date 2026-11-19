@@ -129,6 +129,94 @@ await test('Cookie遵守来源分组、路径、过期，重定向不泄漏Cooki
   transport.close(); assert.deepEqual(transport.cookies('https://yybadaccess.3g.qq.com/ok'), []);
 });
 
+await test('授权回调设置完整Cookie后跳转即可取票据，不访问外站且阶段观察失败不影响登录', async () => {
+  const f = fixture({ callback: () => {
+    const headers = new Headers({ location: 'https://sj.qq.com/ignored?code=must-not-forward' });
+    for (const [name, value] of [['openid', credentials.openid], ['accesstoken', credentials.accessToken], ['refreshtoken', credentials.refreshToken]]) {
+      headers.append('set-cookie', `${name}=${value}; Path=/; Secure; HttpOnly`);
+    }
+    return new Response('', { status: 302, headers });
+  } });
+  const session = await createWechatQrSession({ fetcher: f.fetcher }), stages = [];
+  try {
+    await session.poll();
+    const result = await session.getLoginBuffer({ onStage: name => {
+      stages.push(name);
+      if (name === 'callback') throw Error('observer failure');
+      return Promise.reject(Error('async observer failure'));
+    } });
+    await turn();
+    assert.equal(result, buffer);
+    assert.deepEqual(stages, ['callback', 'ticket']);
+    assert.equal(f.calls.filter(call => call.url.pathname === '/pc_yyb/pcyyb_oauth').length, 1);
+    assert.equal(f.calls.filter(call => call.url.href === WECHAT_BUFFER_URL).length, 1);
+    assert(f.calls.every(call => call.url.hostname !== 'sj.qq.com'));
+  } finally { session.close(); }
+});
+
+await test('带引号的Cookie去掉外层引号，签名字段保留原百分号编码', async () => {
+  let ticketRequests = 0;
+  const f = fixture({ callback: () => {
+    const headers = new Headers();
+    headers.append('set-cookie', 'openid="fixture%2Bid"; Path=/; Secure');
+    headers.append('set-cookie', 'accesstoken="fixture%2Btoken"; Path=/; Secure');
+    headers.append('set-cookie', 'refreshtoken="fixture%2Brefresh"; Path=/; Secure');
+    return new Response('', { headers });
+  }, loginBuffer: (_url, options) => {
+    ticketRequests++;
+    const body = JSON.parse(options.body);
+    assert.deepEqual(body.extInfo.listS.user_id.value, ['fixture%2Bid']);
+    assert.deepEqual(body.extInfo.listS.access_token.value, ['fixture%2Btoken']);
+    assert.equal(options.headers.get('cookie'), 'openid=fixture%2Bid; accesstoken=fixture%2Btoken; refreshtoken=fixture%2Brefresh');
+    return success();
+  } });
+  const session = await createWechatQrSession({ fetcher: f.fetcher });
+  try { await session.poll(); assert.equal(await session.getLoginBuffer(), buffer); assert.equal(ticketRequests, 1); }
+  finally { session.close(); }
+  const transport = createWechatHttp({ fetcher: async () => {
+    const headers = new Headers();
+    headers.append('set-cookie', 'a="unterminated; Path=/');
+    headers.append('set-cookie', 'b=mis"quoted; Path=/');
+    headers.append('set-cookie', 'c="bad\\slash"; Path=/');
+    return new Response('', { headers });
+  } });
+  await transport.request('https://yybadaccess.3g.qq.com/');
+  assert.deepEqual(transport.cookies('https://yybadaccess.3g.qq.com/'), []); transport.close();
+});
+
+await test('旧Cookie、缺失凭据或HTTP失败不能完成回调，其他请求仍禁止跨站跳转', async () => {
+  const callback = 'https://yybadaccess.3g.qq.com/pc_yyb/pcyyb_oauth?code=fixture-code&state=web';
+  for (const scenario of ['none', 'partial', 'wrong-path', 'expired', 'http-error', 'ordinary']) {
+    const calls = [];
+    const transport = createWechatHttp({ fetcher: async url => {
+      const current = new URL(url); calls.push(current.hostname);
+      const headers = new Headers({ location: 'https://sj.qq.com/' });
+      if (current.pathname === '/seed') {
+        headers.append('set-cookie', 'openid=old-id; Path=/');
+        headers.append('set-cookie', 'accesstoken=old-token; Path=/');
+        return new Response('', { headers });
+      }
+      if (scenario !== 'none') {
+        const suffix = scenario === 'wrong-path' ? 'Path=/other' : scenario === 'expired' ? 'Path=/; Max-Age=0' : 'Path=/';
+        headers.append('set-cookie', 'openid=new-id; ' + suffix);
+        if (scenario !== 'partial') headers.append('set-cookie', 'accesstoken=new-token; ' + suffix);
+      }
+      return new Response('', { status: scenario === 'http-error' ? 500 : 302, headers });
+    } });
+    await transport.request('https://yybadaccess.3g.qq.com/seed');
+    await assert.rejects(transport.request(callback, { redirects: 3,
+      ...(scenario === 'ordinary' ? {} : { completeOnCookies: ['openid', 'accesstoken'] }),
+    }), /跳转|HTTP 500/);
+    assert.deepEqual(calls, ['yybadaccess.3g.qq.com', 'yybadaccess.3g.qq.com']);
+    transport.close();
+  }
+  let requests = 0;
+  const invalid = createWechatHttp({ fetcher: async () => { requests++; throw Error('unexpected'); } });
+  await assert.rejects(invalid.request('https://open.weixin.qq.com/', { completeOnCookies: ['openid', 'accesstoken'] }), /回调选项/);
+  await assert.rejects(invalid.request(callback, { method: 'POST', completeOnCookies: ['openid', 'accesstoken'] }), /回调选项/);
+  assert.equal(requests, 0); invalid.close();
+});
+
 await test('二维码图片、状态响应和响应长度严格检查，不接受HTML或执行脚本', async () => {
   for (const qrImage of [Buffer.from('<html>blocked</html>'), png]) await assert.rejects(createWechatQrSession({ fetcher: fixture({ qrImage }).fetcher }), /图片无效/);
   await assert.rejects(createWechatQrSession({ fetcher: fixture({ html: '<img src="/connect/qrcode/../escape">' }).fetcher }), /获取微信登录二维码/);

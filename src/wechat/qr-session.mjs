@@ -110,10 +110,11 @@ export async function createWechatQrSession({ fetcher = fetch, signal, now = Dat
       }
       return withAbort(pollJob, extra);
     },
-    async getLoginBuffer({ signal: extra } = {}) {
+    async getLoginBuffer({ signal: extra, onStage } = {}) {
       ensure(extra);
       if (phase !== 'authorized' || authorizationFailed) throw Error('请重新获取二维码并确认微信授权');
       if (loginBuffer) return loginBuffer;
+      const stage = name => { try { Promise.resolve(onStage?.(name)).catch(() => {}); } catch {} };
       if (!bufferJob) bufferJob = (async () => {
         if (!credentials) {
           if (authorizationAttempted) throw Error('授权结果未确认，请重新扫码');
@@ -121,7 +122,9 @@ export async function createWechatQrSession({ fetcher = fetch, signal, now = Dat
           const callback = new URL(CALLBACK);
           callback.search = new URLSearchParams({ login_type: 'WX', code: authorizeCode, state }).toString();
           try {
-            await http.request(callback, { signal: requestSignal(extra), timeoutMs, maxBytes: 1024 * 1024, redirects: 3, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            stage('callback');
+            await http.request(callback, { signal: requestSignal(extra), timeoutMs, maxBytes: 1024 * 1024, redirects: 3,
+              completeOnCookies: ['openid', 'accesstoken'], headers: { 'User-Agent': 'Mozilla/5.0' } });
             ensure(extra);
             const values = new Map();
             for (const cookie of [...http.cookies(callback), ...http.cookies('https://yybadaccess.3g.qq.com/')]) if (!values.has(cookie.name)) values.set(cookie.name, cookie.value);
@@ -130,6 +133,7 @@ export async function createWechatQrSession({ fetcher = fetch, signal, now = Dat
             authorizeCode = '';
           } catch (error) { authorizationFailed = true; authorizeCode = ''; http.close(); throw error; }
         }
+        stage('ticket');
         const value = await fetchWechatLoginBuffer(credentials, { http, signal: requestSignal(extra), now, timeoutMs });
         ensure(extra); loginBuffer = value;
         return value;
