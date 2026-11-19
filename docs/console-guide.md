@@ -10,6 +10,18 @@
 
 手动启动时，在包含 `package.json` 的项目根目录执行 `npm ci --include=dev`，再执行 `npm start`。界面构建需要开发依赖，不要使用 `--omit=dev`。更新代码前先停止旧控制台，更新完成后重新运行脚本，成功启动后刷新网页。
 
+项目根目录的 `.npmrc` 默认使用境内镜像 `https://registry.npmmirror.com`，一键启动的依赖安装和在项目目录执行的 npm 命令均会读取，无需修改用户级或全局 npm 配置。
+
+需要临时切换安装源时，可在启动前设置 npm 环境变量。例如 PowerShell 中切回官方源（重新打开终端后恢复项目默认值）：
+
+```powershell
+$env:npm_config_registry='https://registry.npmjs.org'
+$env:npm_config_replace_registry_host='always'
+.\start-console.cmd
+```
+
+`replace_registry_host` 让锁文件中的既有镜像下载地址也使用所选源；只替换下载地址，依赖版本和完整性校验仍由锁文件约束。
+
 **控制台启动前就需要游戏协议包。** 没有可读取的协议时，服务会在监听端口之前报错，无法先打开网页再扫码补齐。准备方式任选其一：
 
 - 在本机电脑版微信打开《疯狂水世界》，等待游戏完成加载后退出游戏，让工具读取下载好的缓存。

@@ -17,7 +17,7 @@ git clone https://github.com/xutongxue233/crazywaterworld.git
 cd crazywaterworld
 ```
 
-也可下载仓库 ZIP 并解压。Windows 一键启动脚本会自动检查并安装项目依赖，无需提前执行 npm 安装命令。
+也可下载仓库 ZIP 并解压。Windows 一键启动脚本会自动检查并安装项目依赖，无需提前执行 npm 安装命令。项目已通过 `.npmrc` 默认使用 npmmirror 境内镜像，一键启动和手动安装均生效。
 
 ### 2. 准备游戏协议文件（必需）
 
