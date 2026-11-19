@@ -412,7 +412,7 @@ try {
   await check('中小货轮兜底设置校验、旧版迁移和奖励顺序持久化', () => {
     const initial = defaultSettings();
     assert.equal(initial.treasure.fallbackEnabled, false);
-    assert.equal(initial.treasure.onlyTenThousand, false);
+    assert.deepEqual(initial.treasure.qualities, ['ORANGE', 'PURPLE', 'BLUE']);
     assert.equal(initial.treasure.fallbackAfter, '21:00');
     assert.equal(initial.treasure.fallbackTargetRewards, 3);
     assert.deepEqual(initial.treasure.fallbackQualities, ['PURPLE', 'BLUE']);
@@ -429,7 +429,7 @@ try {
     assert.deepEqual(loadAutomationSettings('old', { file }).settings.treasure, migrated.treasure);
     assert.deepEqual(fs.readFileSync(file), bytes);
     const custom = defaultSettings();
-    Object.assign(custom.treasure, { onlyTenThousand: false, fallbackEnabled: true, fallbackAfter: '23:15', fallbackTargetRewards: 2,
+    Object.assign(custom.treasure, { qualities: ['BLUE', 'ORANGE'], fallbackEnabled: true, fallbackAfter: '23:15', fallbackTargetRewards: 2,
       fallbackQualities: ['BLUE', 'PURPLE'], fallbackMediumRewardPriority: ['精铁', 'GOLD'], fallbackSmallRewardPriority: ['GOLD', '精铁'] });
     assert.deepEqual(importAutomationSettings(exportAutomationSettings(custom)).treasure, custom.treasure);
     saveAutomationSettings('custom', custom, { file, revision: 0 });
@@ -443,43 +443,61 @@ try {
     assert.throws(() => validateSettings(custom, { catalog: { materials: [{ value: 'GOLD' }] } }), /不存在的选项/);
   });
 
-  await check('中小货轮优先级控件可调整、移除与添加，保留工厂设置', () => {
+  await check('中小货轮奖励支持搜索勾选、调整顺序和清空，保留工厂设置', () => {
     const source = fs.readFileSync(new URL('../src/settings-ui.js', import.meta.url), 'utf8');
     const groups = newStateFunction(source.slice(0, source.indexOf('function configGet(')) + '\nreturn configGroups;')();
     const fields = groups.find(group => group.id === 'treasure').fields;
     const draft = defaultSettings();
     for (const key of ['rewardItems', 'fallbackMediumRewardPriority', 'fallbackSmallRewardPriority']) {
-      assert.equal(fields.find(field => field.key === 'treasure.' + key).catalog, 'treasureRewards');
+      const field = fields.find(field => field.key === 'treasure.' + key);
+      assert.equal(field.catalog, 'treasureRewards');
+      assert.match(field.label, /任一/);
     }
     assert.equal(fields.find(field => field.key === 'treasure.fallbackAfter').kind, 'time');
     assert.equal(fields.find(field => field.key === 'treasure.fallbackAfter').when(draft), false);
     draft.treasure.fallbackEnabled = true;
     assert.equal(fields.find(field => field.key === 'treasure.fallbackAfter').when(draft), true);
-    draft.treasure.fallbackMediumRewardPriority = ['精铁', 'GOLD'];
     draft.factory.speedUpSources = ['cargo'];
-    const el = (tag, className = '', text = '') => ({ tag, className, text, children: [], attrs: {}, append(...nodes) { this.children.push(...nodes); },
+    const el = (tag, className = '', text = '') => ({ tag, className, text, value: '', children: [], attrs: {}, append(...nodes) { this.children.push(...nodes); },
       setAttribute(key, value) { this.attrs[key] = value; }, focus() {} });
     const clear = node => { node.children = []; return node; };
     const button = (text, onclick) => Object.assign(el('button', '', text), { onclick });
-    const editor = source.slice(source.indexOf('function configPriorityEditor('), source.indexOf('function configCropEditor('));
+    const editor = source.slice(source.indexOf('function configMultiselect('), source.indexOf('function configCropEditor('));
     const render = newStateFunction('spec', 'draft', 'catalog', 'el', 'clear', 'configButton', `
       const configEditor = { data: { catalog } };
+      const configPlacePanel = () => {};
       const configGet = key => key.split('.').reduce((value, part) => value[part], draft);
       const configSet = (key, value) => { const [group, field] = key.split('.'); draft[group][field] = value; };
       ${editor}
       return configPriorityEditor(spec, 'test');`);
-    const root = render(fields.find(field => field.key === 'treasure.fallbackMediumRewardPriority'), draft,
-      { treasureRewards: ['精铁', 'GOLD', '木材'].map(value => ({ value, label: value })) }, el, clear, button);
     const descendants = node => [node, ...node.children.flatMap(descendants)];
-    const find = label => descendants(root).find(node => node.attrs['aria-label'] === label);
-    assert.equal(descendants(root).some(node => node.type === 'checkbox'), false);
-    find('精铁下移').onclick();
-    assert.deepEqual(draft.treasure.fallbackMediumRewardPriority, ['GOLD', '精铁']);
-    find('移除GOLD').onclick();
-    assert.deepEqual(draft.treasure.fallbackMediumRewardPriority, ['精铁']);
-    const select = find('添加奖励'); select.value = '木材'; select.onchange();
-    find('添加所选奖励').onclick();
-    assert.deepEqual(draft.treasure.fallbackMediumRewardPriority, ['精铁', '木材']);
+    for (const key of ['fallbackMediumRewardPriority', 'fallbackSmallRewardPriority']) {
+      draft.treasure[key] = ['精铁', 'GOLD'];
+      const root = render(fields.find(field => field.key === 'treasure.' + key), draft,
+        { treasureRewards: ['精铁', 'GOLD', '木材'].map(value => ({ value, label: value })) }, el, clear, button);
+      const nodes = () => descendants(root);
+      const find = label => nodes().find(node => node.attrs['aria-label'] === label);
+      const picker = nodes().find(node => node.tag === 'details');
+      picker.open = true; picker.ontoggle();
+      assert.deepEqual(nodes().filter(node => node.type === 'checkbox').map(node => node.checked), [true, true, false]);
+      find('精铁下移').onclick();
+      assert.deepEqual(draft.treasure[key], ['GOLD', '精铁']);
+      find('移除GOLD').onclick();
+      assert.deepEqual(draft.treasure[key], ['精铁']);
+      const search = nodes().find(node => node.type === 'search');
+      search.value = '木'; search.oninput();
+      const boxes = nodes().filter(node => node.type === 'checkbox');
+      assert.equal(boxes.length, 1);
+      const wood = boxes[0]; wood.checked = true; wood.onchange();
+      assert.deepEqual(draft.treasure[key], ['精铁', '木材']);
+      assert.ok(find('木材上移'));
+      wood.checked = false; wood.onchange();
+      assert.deepEqual(draft.treasure[key], ['精铁']);
+      nodes().find(node => node.text === '清空选择').onclick();
+      assert.deepEqual(draft.treasure[key], []);
+      assert.equal(nodes().find(node => node.tag === 'summary').textContent, '不筛选奖励');
+      assert.equal(nodes().some(node => node.tag === 'li'), false);
+    }
     assert.deepEqual(draft.factory.speedUpSources, ['cargo']);
     const factory = render(groups.find(group => group.id === 'factory').fields.find(field => field.key === 'factory.demandPriority'), draft,
       { demandSources: [{ value: 'cargo', label: '贸易港口' }] }, el, clear, button);
