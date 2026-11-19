@@ -17,18 +17,19 @@ const api=async(route,body,account='speed-a')=>{const r=await fetch(base+'/api/'
 const ok=r=>{assert.equal(r.status,200,JSON.stringify(r.data));return r.data;};
 let client;
 try{
-  let view=ok(await api('settings'));assert.equal(view.settings.fleetSpeed.enabled,false);
+  let view=ok(await api('settings'));assert(!Object.hasOwn(view.settings.fleetSpeed,'enabled'));
   assert(view.settings.fleetSpeed.fleets.every(fleet=>!Object.hasOwn(fleet,'repairMaxDiamonds')&&!Object.hasOwn(fleet,'marchMaxDiamonds')));
   assert.deepEqual(view.catalog.expeditionFleets,[]);assert.equal(view.catalog.fleetAvailability.known,false);
-  const settings=structuredClone(view.settings);settings.fleetSpeed.enabled=true;settings.fleetSpeed.dailyDiamondLimit=100;
+  const settings=structuredClone(view.settings);settings.fleetSpeed.enabled=false;settings.fleetSpeed.dailyDiamondLimit=100;
   settings.cityWar.enabled=true;settings.cityWar.fleetIds=['1远征船','2远征船','3远征船'];
   settings.resources.allowDiamonds=true;Object.assign(settings.fleetSpeed.fleets[1],{march:true,marchDailyDiamonds:90});
   // 兼容旧页面或导入文件的废弃字段，包括旧版不合法值；不继续执行其限制。
   for(const [i,fleet] of settings.fleetSpeed.fleets.entries())Object.assign(fleet,{repairMaxDiamonds:[0,-1,'obsolete'][i],marchMaxDiamonds:[1,'obsolete',-1][i]});
   view=ok(await api('settings',{settings,revision:view.revision,baseRevision:view.baseRevision}));
+  assert(!Object.hasOwn(view.settings.fleetSpeed,'enabled'),'旧页面提交的加速开关被清理');
   assert.equal(Object.hasOwn(view.settings.fleetSpeed,'dailyDiamondLimit'),false,'旧页面提交的合计上限被清理');
   assert.equal(Object.hasOwn(view.rules.numbers,'fleetSpeed.dailyDiamondLimit'),false);
-  delete settings.fleetSpeed.dailyDiamondLimit;
+  delete settings.fleetSpeed.enabled;delete settings.fleetSpeed.dailyDiamondLimit;
   for(const [i,fleet] of view.settings.fleetSpeed.fleets.entries())for(const key of ['repairMaxDiamonds','marchMaxDiamonds']){
     assert.equal(Object.hasOwn(fleet,key),false,'旧单次上限不能继续保存');
     assert.equal(Object.hasOwn(view.rules.numbers,'fleetSpeed.fleets.'+i+'.'+key),false,'旧单次上限不能出现在界面规则');
@@ -36,7 +37,7 @@ try{
   }
   assert.deepEqual(loadAutomationSettings('speed-a').settings.fleetSpeed,settings.fleetSpeed);
   assert.deepEqual(ok(await api('settings/export')).settings.fleetSpeed,settings.fleetSpeed);
-  assert.equal(ok(await api('settings',undefined,'speed-b')).settings.fleetSpeed.enabled,false);
+  assert(ok(await api('settings',undefined,'speed-b')).settings.fleetSpeed.fleets.every(fleet=>!fleet.repair&&!fleet.march));
   assert.equal(app.sessions.get('speed-a').loop.running,false);
   const controls=ok(await api('loop')).controls;assert(!controls.some(c=>c.key==='fleetSpeed.enabled'));
   assert.equal(controls.find(c=>c.key==='cityWar.enabled').configTarget,'cityWar');
@@ -75,9 +76,12 @@ try{
     assert.equal(ok(await api('settings/preview',{settings:limited,category:'fleetSpeed'})).actions.length,0,'每日预算为0仍禁止加速');
   }
   assert.deepEqual(ledger.snapshot(),before);assert.equal(writes.length,0);
-  const disabled=structuredClone(settings);disabled.fleetSpeed.enabled=false;disabled.schedule.guildWelfare=false;
+  settings.schedule.guildWelfare=false;
+  const cityPreview=ok(await api('settings/preview',{settings,category:'cityWar'}));
+  assert.equal(cityPreview.actions.filter(action=>action.kind==='fleetSpeed').length,1);
+  const disabled=structuredClone(settings);disabled.resources.allowDiamonds=false;
   const blocked=ok(await api('settings/preview',{settings:disabled,category:'cityWar'}));
-  assert(blocked.notes.some(note=>note.includes('维修及派遣钻石加速总开关已关闭')),'城战预览不能静默忽略已勾选但未生效的逐队加速');
+  assert(blocked.notes.some(note=>note.includes('全局钻石消费已关闭')),'城战预览应说明阻止逐队加速的全局钻石设置');
   assert.equal(blocked.actions.filter(action=>action.kind==='fleetSpeed').length,0);
   assert.deepEqual(ledger.snapshot(),before);assert.equal(writes.length,0);
   const invalid=structuredClone(settings);invalid.fleetSpeed.fleets[1].marchDailyDiamonds=-1;

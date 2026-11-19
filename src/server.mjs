@@ -2370,9 +2370,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               if (guild.welfareCount > 0) plan.actions.push({ kind: 'guildWelfare', label: `领取联盟福利礼包（${guild.welfareCount}份）`, costs: [] });
               else plan.notes.push('联盟福利：' + (guild.reason || (guild.welfareCount === 0 ? '当前无待领礼包' : '待领数量未确认')));
             }
-            if (settings.fleetSpeed.enabled || settings.fleetSpeed.fleets.some(fleet =>
-              settings.cityWar.fleetIds.includes(fleet.id) && (fleet.repair || fleet.march))) {
-              const speed=planFleetSpeed(fleetSpeedEnabled(settings) ? await readFleetSpeed(client,session.player) : null,config,settings,ledger);
+            if (fleetSpeedEnabled(settings)) {
+              const speed=planFleetSpeed(await readFleetSpeed(client,session.player),config,settings,ledger);
               plan.actions.push(...speed.actions);plan.notes.push(...speed.notes);
             }
             return { ...output(plan, { fleets: state.fleets.length, targets: state.targets.length }, '联盟城战'), onlineReward: online, cityWar: {

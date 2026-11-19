@@ -11,7 +11,7 @@ import { treasureRewardOptions } from './treasure-reward-filter.mjs';
 import { activityAutomationDefaults, activityAutomationFields } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
 import { validateLineupSettings, validateFleetLineupBindings } from './saved-lineups.mjs';
-import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
+import { fleetSpeedDefaults, fleetSpeedEnabled, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
 import { cityWarFleetStrategy, cityWarUsesGlobalStrategy, validateCityWarFleetStrategies } from './city-war-settings.mjs';
 import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyActivitySettings, migrateWeeklyActivitySettings } from './weekly-activity-settings.mjs';
 import { resourceFieldIds, defaultResourceFieldAmounts } from './resource-field-allocation.mjs';
@@ -21,7 +21,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 16;
+export const SETTINGS_SCHEMA_VERSION = 17;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 export const DEMAND_SOURCES = [
@@ -76,7 +76,7 @@ export const DEFAULT_SETTINGS = {
   fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon','resourceFields'] },
   resourceFields: { enabled: false, refillAfterLoss: false, allocationMode: 'ratio', ratios: { ...defaultResourceFieldAmounts }, quotas: { ...defaultResourceFieldAmounts },
     fleetIds: [], minDurabilityPercent: 80, reserveFleetCount: 1, minLevel: 1, checkEverySeconds: 60 },
-  fleetSpeed: { enabled: false, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
+  fleetSpeed: { fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
   worldBoss: { enabled: false, fleetIds: [], fleetPresets: [], minDurabilityPercent: 80 },
   radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
   pirateSweep: { type: '1' },
@@ -288,7 +288,7 @@ export function nativeTaskValues(settings, current) {
 export function hasExtraWork(settings) {
   if (settings?.radar?.runEnabled && (settings.radar.enabled || settings.radar.repairIdle)) return true;
   if (settings?.weeklyActivity?.enabled && ['farm', 'pet', 'antique', 'order', 'forge', 'hero'].some(kind => settings.weeklyActivity[kind + 'Enabled'])) return true;
-  if (settings?.cityWar?.enabled && settings?.fleetSpeed?.enabled || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled || settings?.resourceFields?.enabled) return true;
+  if (fleetSpeedEnabled(settings) || settings?.appointments?.enabled || settings?.alliance?.enabled || settings?.guildShip?.enabled || settings?.heroRaid?.enabled || settings?.silicon?.enabled || settings?.resourceFields?.enabled) return true;
   return !!settings && ((settings.loop.world && (settings.museum.runEnabled !== false && ['enabled', 'upgrade', 'revenue', 'achievements', 'display'].some(key => settings.museum[key]) || settings.events.enabled || settings.pet.enabled || (settings.gather.enabled !== false && settings.gather.diving && settings.gather.keyOpen))) || (settings.loop.heroes && settings.heroes.enabled)
     || (settings.progression?.enabled && (settings.progression.mainline || settings.progression.trials)) || settings.pirateHunt?.enabled);
 }
@@ -315,6 +315,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   // Additive follow preference: keep the existing behavior for older saved files and open pages.
   input = migrateVersion14Settings(migrateVersion13Settings(input));
   if (plain(input?.treasure) && Object.hasOwn(input.treasure, 'onlyTenThousand')) input = migrateVersion15Settings(input);
+  input = migrateVersion16Settings(input);
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
   }
@@ -637,7 +638,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -992,4 +993,10 @@ function migrateVersion15Settings(settings) {
   const { onlyTenThousand, ...treasure } = previous;
   if (!Object.hasOwn(treasure, 'qualities')) treasure.qualities = onlyTenThousand ? ['ORANGE'] : ['ORANGE', 'PURPLE', 'BLUE'];
   return { ...settings, treasure };
+}
+
+function migrateVersion16Settings(settings) {
+  if (!plain(settings?.fleetSpeed) || !Object.hasOwn(settings.fleetSpeed, 'enabled')) return settings;
+  const { enabled, ...fleetSpeed } = settings.fleetSpeed;
+  return { ...settings, fleetSpeed };
 }

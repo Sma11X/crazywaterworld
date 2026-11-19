@@ -25,7 +25,6 @@ function fixture(){
   const now=()=>Math.floor((Date.now()+client.serverClockOffsetMs)/1000);
   const player={worldId:1001001,playerId:900001};
   const settings=defaultSettings();settings.resources.allowDiamonds=true;settings.resources.diamondDailyLimit=1000;
-  settings.fleetSpeed.enabled=true;
   settings.cityWar.enabled=true;settings.cityWar.autoRepair=false;settings.cityWar.fleetIds=['1远征船','2远征船'];
   Object.assign(settings.fleetSpeed.fleets[0],{repair:true,march:true,repairSmartSave:true,marchSmartSave:true,repairDailyDiamonds:300,marchDailyDiamonds:300});
   const config={tables:{WorldParamCfg:{data:[{paramName:'行军加速消耗',paramValue:30}]},SpeedUpRubyCfg:{data:[{minute:0,fleet:10},{minute:60,fleet:11},{minute:80,fleet:20}]}}};
@@ -63,7 +62,7 @@ function fixture(){
 }
 try{
 await test('默认关闭、逐队逐项配置、严格校验和导入迁移',async()=>{
-  const s=defaultSettings();assert.equal(s.fleetSpeed.enabled,false);assert(!Object.hasOwn(s.fleetSpeed,'dailyDiamondLimit'));
+  const s=defaultSettings();assert(!Object.hasOwn(s.fleetSpeed,'enabled'));assert(!Object.hasOwn(s.fleetSpeed,'dailyDiamondLimit'));
   assert(s.fleetSpeed.fleets.every(p=>!p.repair&&!p.march&&p.marchSkipSeconds===60));
   assert(s.fleetSpeed.fleets.every(p=>!Object.hasOwn(p,'repairMaxDiamonds')&&!Object.hasOwn(p,'marchMaxDiamonds')));
   const exported={...exportAutomationSettings(s),version:1};delete exported.settings.fleetSpeed;assert.deepEqual(importAutomationSettings(exported).fleetSpeed,s.fleetSpeed);
@@ -114,17 +113,19 @@ await test('只读预览不改账本，仅允许所选队伍及加速种类',asy
   const f=fixture(),before=f.ledger.snapshot(),plan=await f.plan();assert.equal(plan.actions.length,1);assert.equal(plan.actions[0].buildingId,'1远征船');assert.deepEqual(f.ledger.snapshot(),before);assert.equal(f.writes.length,0);
   f.settings.fleetSpeed.fleets[0].march=false;await f.run();assert.equal(f.writes.length,0);
 });
-await test('逐队开启但总开关关闭时，预览明确说明阻断且不消费钻石',async()=>{
+await test('仅所选城战舰队开启加速时才读取和执行',async()=>{
   for(const mode of ['repair','march']){
     const f=fixture();if(mode==='repair')f.repair();
-    const before=f.ledger.snapshot();f.settings.fleetSpeed.enabled=false;
-    const plan=planFleetSpeed(null,f.config,f.settings,f.ledger);
-    assert.equal(plan.actions.length,0);assert.match(plan.notes.join('；'),/加速总开关已关闭/);
-    await f.run();assert.equal(f.reads,0);assert.equal(f.writes.length,0);assert.deepEqual(f.ledger.snapshot(),before);
-    f.settings.fleetSpeed.enabled=true;await f.run();assert.equal(f.writes.length,1);
-    assert.equal(f.writes[0].name,mode==='repair'?'SpeedUpRepairRequest':'SpeedUpFleetRequest');
+    const before=f.ledger.snapshot(),policy=f.settings.fleetSpeed.fleets[0];
+    Object.assign(policy,{repair:false,march:false});
+    f.settings.fleetSpeed.fleets[2][mode]=true;
+    await f.run();assert.equal(f.reads,0);
+    policy[mode]=true;
     f.settings.cityWar.enabled=false;
     assert.match(planFleetSpeed(null,f.config,f.settings,f.ledger).notes.join('；'),/联盟城战未开启/);
+    await f.run();assert.equal(f.reads,0);assert.equal(f.writes.length,0);assert.deepEqual(f.ledger.snapshot(),before);
+    f.settings.cityWar.enabled=true;await f.run();assert.equal(f.writes.length,1);
+    assert.equal(f.writes[0].name,mode==='repair'?'SpeedUpRepairRequest':'SpeedUpFleetRequest');
   }
 });
 await test('逐次回读、到剩余阈值停止，最少三次缩短300秒至60秒内',async()=>{
@@ -377,7 +378,7 @@ await test('新航程不会误确认旧请求，区服隔离，重复舰队阻�
   const g=fixture();g.state.fleets.push(structuredClone(g.state.fleets[0]));await g.run();assert.equal(g.writes.length,0);
 });
 await test('关闭开关、暂停、切换账号以及末次读回换航程均取消发送',async()=>{
-  for(const mutation of [f=>f.settings={...f.settings,fleetSpeed:{...f.settings.fleetSpeed,enabled:false}},f=>f.settings.resources.allowDiamonds=false,
+  for(const mutation of [f=>f.settings.cityWar.enabled=false,f=>f.settings.resources.allowDiamonds=false,
     f=>f.settings.fleetSpeed.fleets[0].march=false,f=>f.player.playerId=900002,f=>f.state.fleets[0].moveStartTs+=1]){
     const f=fixture();f.beforeRead=(name,count)=>{if(count===5)mutation(f);};await f.run();assert.equal(f.writes.length,0);assert.equal(f.ledger.snapshot().uncertain,0);
   }
