@@ -113,7 +113,6 @@ import { ACCOUNT_BACKUP_MAX_BYTES, exportAccountBackup, previewAccountImport, im
 import { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture, DEFAULT_PROXY_PORT } from './capture.mjs';
 import { createPhoneLogin, loadDeviceProfile, saveDeviceProfile, DEVICE_PROFILE_PATH } from './phone-login.mjs';
 import { createAlipayLogin } from './alipay-login.mjs';
-import { createDouyinLogin } from './douyin-login.mjs';
 import { iconIndex, atlasFile, itemIcon, resourceIcon, materialIcon, heroIcon, heroCard, buildingIcon, workerIcon } from './art.mjs';
 
 const LOG_LIMIT = 400;
@@ -146,7 +145,6 @@ const STATE_TEXT = {
 
 export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recoveryDelayMs, resourceUpdates = false, resourceUpdater = null, protocol: protocolOverride,
   alipayLoginController = null,
-  douyinLoginController = null,
   captureController = { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture } } = {}) {
   const consoleVersion = createConsoleVersion(PAGE);
   const pageRaw = Buffer.from(renderVersionedPage(PAGE, consoleVersion));
@@ -161,10 +159,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   let alipaySaving = false;
   let pendingAlipayLogin = null;
   let cancelledAlipayLoginId = null;
-  const douyinLogin = douyinLoginController ?? createDouyinLogin();
-  let douyinSaving = false;
-  let pendingDouyinLogin = null;
-  let cancelledDouyinLoginId = null;
   const traceLog = createTraceLog(TRACE_PATH, { maxBytes: TRACE_MAX_BYTES });
   const protocolDiagnostics = createProtocolDiagnostics(path.join(DATA_DIR, 'protocol-errors'));
   const globalLog = [];
@@ -286,93 +280,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     clearAlipayRoles();
     return result;
   }
-
-  function clearDouyinRoles() {
-    pendingDouyinLogin?.controller?.abort();
-    clearTimeout(pendingDouyinLogin?.expiryTimer);
-    pendingDouyinLogin = null;
-  }
-
-  function readDouyinRoles(pending) {
-    if (pending.reading) return pending.reading;
-    pending.entry.choices = [];
-    pending.entry.roleError = null;
-    pending.controller = new AbortController();
-    const reading = readPhoneRoles(pending.entry, { signal: pending.controller.signal }).finally(() => {
-      if (pending.reading === reading) pending.reading = null;
-    });
-    pending.reading = reading;
-    return reading;
-  }
-
-  function douyinLoginStatus(id) {
-    const state = douyinLogin.status(id);
-    if (cancelledDouyinLoginId !== state.id) cancelledDouyinLoginId = null;
-    if (state.id && state.id === cancelledDouyinLoginId) {
-      clearDouyinRoles();
-      return { ...state, phase: 'cancelled', qrImage: null };
-    }
-    if (state.phase !== 'captured') {
-      clearDouyinRoles();
-      return state;
-    }
-    if (pendingDouyinLogin?.id !== state.id) {
-      clearDouyinRoles();
-      const credential = douyinLogin.takeCredential(state.id);
-      if (!accountId(credential) || credential.source !== 'douyin') throw new Error('抖音游戏登录凭证无效，请重新扫码');
-      pendingDouyinLogin = {
-        id: state.id, reading: null, controller: null,
-        entry: { credential, userName: '抖音账号', choices: [], roleError: null },
-      };
-      const pending = pendingDouyinLogin;
-      pending.expiryTimer = setTimeout(() => {
-        if (pendingDouyinLogin === pending) clearDouyinRoles();
-      }, Math.max(0, state.expiresAt - Date.now()));
-      pending.expiryTimer.unref?.();
-      void readDouyinRoles(pendingDouyinLogin);
-    }
-    const pending = pendingDouyinLogin;
-    const store = loadStore();
-    const idOfAccount = accountId(pending.entry.credential);
-    const existing = store.accounts.find(account => account.id === idOfAccount);
-    return {
-      ...state,
-      phase: pending.reading ? 'reading-roles' : 'captured',
-      choices: roleChoices(pending.entry, store),
-      roleError: pending.entry.roleError,
-      account: { id: idOfAccount, title: existing ? describeAccount(existing).title : '抖音账号' },
-    };
-  }
-
-  function requireDouyinRoles(id) {
-    if (closing) throw new Error('控制台已关闭');
-    const state = douyinLoginStatus(id);
-    const pending = pendingDouyinLogin;
-    if (!pending || pending.id !== id || !['captured', 'reading-roles'].includes(state.phase)
-      || state.expiresAt <= Date.now()) throw new Error('扫码结果已过期或已保存，请重新扫码');
-    return pending;
-  }
-
-  async function saveDouyinRole(pending, choice) {
-    // 排队期间扫码可能被取消、过期或刷新，落盘前重新检查本次选择。
-    if (requireDouyinRoles(pending.id) !== pending || pending.reading || !pending.entry.choices.includes(choice)) {
-      throw new Error('角色列表已变化，请重新选择角色');
-    }
-    pending.entry.credential = douyinLogin.takeCredential(pending.id);
-    const result = await saveSelectedRole(pending.entry, choice, { sourceLabel: '抖音扫码', stopExisting: true,
-      validateSelection() {
-        if (requireDouyinRoles(pending.id) !== pending || pending.reading || !pending.entry.choices.includes(choice)) {
-          throw new Error('角色列表已变化或扫码已结束，请重新扫码');
-        }
-      },
-    });
-    pending.entry.credential = null;
-    pending.entry.choices = [];
-    cancelledDouyinLoginId = pending.id;
-    clearDouyinRoles();
-    return result;
-  }
-
 
   async function readPhoneWorlds(credential, { signal } = {}) {
     if (closing) throw new Error('控制台已关闭');
@@ -2701,71 +2608,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         return;
       }
 
-      // ---- 抖音扫码登录 ----
-      if (route === 'POST /api/accounts/douyin-login/start') {
-        needConfirm(jsonBody());
-        if (closing) throw new Error('控制台已关闭');
-        if (douyinSaving) throw new Error('正在保存抖音账号，请稍候');
-        const previous = douyinLogin.status();
-        if (previous.id && previous.id === cancelledDouyinLoginId) await douyinLogin.cancel(previous.id);
-        const starting = douyinLogin.start();
-        const currentState = douyinLogin.status();
-        if (pendingDouyinLogin && (pendingDouyinLogin.id !== currentState.id || currentState.phase !== 'captured')) clearDouyinRoles();
-        const state = await starting;
-        json(douyinLoginStatus(state.id));
-        return;
-      }
-      if (route === 'GET /api/accounts/douyin-login/status') {
-        json(douyinLoginStatus(parsed.searchParams.get('id') || undefined));
-        return;
-      }
-      if (route === 'POST /api/accounts/douyin-login/cancel') {
-        const { id } = jsonBody();
-        if (typeof id !== 'string' || !id) throw new Error('请选择要取消的扫码会话');
-        douyinLogin.status(id);
-        cancelledDouyinLoginId = id;
-        clearDouyinRoles();
-        await douyinLogin.cancel(id);
-        json({ ok: true });
-        return;
-      }
-      if (route === 'POST /api/accounts/douyin-login/roles') {
-        const payload = jsonBody();
-        needConfirm(payload);
-        if (typeof payload.id !== 'string' || !payload.id) throw new Error('扫码结果已过期，请重新扫码');
-        if (douyinSaving) throw new Error('正在保存抖音账号，请稍候');
-        const pending = requireDouyinRoles(payload.id);
-        void readDouyinRoles(pending);
-        json(douyinLoginStatus(payload.id));
-        return;
-      }
-      if (route === 'POST /api/accounts/douyin-login/save') {
-        const payload = jsonBody();
-        needConfirm(payload);
-        if (typeof payload.id !== 'string' || !payload.id) throw new Error('扫码结果已过期，请重新扫码');
-        if (douyinSaving) throw new Error('正在保存抖音账号，请稍候');
-        const pending = requireDouyinRoles(payload.id);
-        if (pending.reading) throw new Error('正在读取区服和角色，请稍候');
-        if (pending.entry.roleError) throw new Error('角色列表读取失败，请重试后再保存');
-        const choices = pending.entry.choices;
-        const choice = payload.choiceId ? choices.find(item => item.id === String(payload.choiceId))
-          : choices.length === 1 ? choices[0] : null;
-        if (!choice || payload.worldId !== undefined) throw new Error('请选择列表中的区服和角色后再保存');
-        douyinSaving = true;
-        try {
-          const session = sessions.get(accountId(pending.entry.credential));
-          const save = () => saveDouyinRole(pending, choice);
-          const result = session && !session.paused ? await enqueue(session, save) : await save();
-          // 凭证已落盘，临时浏览器清理失败也应返回已保存的账号。
-          try { await douyinLogin.cancel(payload.id); } catch {}
-          json(result);
-        } finally {
-          douyinSaving = false;
-        }
-        return;
-      }
-
-
       // ---- 手机号登录 ----
       if (route === 'GET /api/accounts/phone-login/status') {
         json(phoneLoginStatus());
@@ -4426,8 +4268,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       if (settingsWatchStarted) fs.unwatchFile(settingsFile(), settingsFileChanged);
       clearAlipayRoles();
       await alipayLogin.close();
-      clearDouyinRoles();
-      await douyinLogin.close();
       for (const client of phonePreviewClients) client.stop();
       phonePreviewClients.clear();
       pendingPhoneLogins.clear();
