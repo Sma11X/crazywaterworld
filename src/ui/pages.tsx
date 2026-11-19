@@ -19,15 +19,38 @@ function Option({id, label, checked = false}: {id: string; label: string; checke
 
 export function giftCodesPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="礼包兑换" help="每个账号独立排队，兑换请求逐个发送。账号登录失败或结果未知只停止该账号；任一账号遇到服务器限频时，同批尚未发送的账号全部停止，之后可重新提交。"><label htmlFor="gift-code-input">礼包码（换行或逗号分隔）</label>
-      <textarea id="gift-code-input" rows={3} maxLength={12000} className="w-full" placeholder="每批最多100个" />
-      <div className="bar"><Button type="button" variant="outline" size="sm" id="gift-load-initial">载入初始码</Button><span id="gift-code-initial-note" className="dim" role="status" /></div>
+    <Panel title="礼包兑换">
       <fieldset className="gift-accounts"><legend>兑换账号</legend>
         <div className="bar"><Button variant="outline" size="sm" id="gift-select-all">全选</Button><Button variant="outline" size="sm" id="gift-select-none">清空</Button><span id="gift-selected-count" className="dim" /></div>
         <div id="gift-account-list" className="gift-account-list" />
-        <p className="dim">未连接的账号会自动登录，可能把正在玩的游戏顶下线，兑换后保持连接。已暂停的账号不能选择。</p>
       </fieldset>
-      <div className="bar"><Button id="gift-code-start">开始兑换</Button><span id="gift-code-state" role="status" /></div></Panel>
+      <div className="bar gift-redeem-actions"><Button id="gift-code-start" disabled>开始兑换</Button><span id="gift-code-state" role="status" aria-live="polite" /></div>
+    </Panel>
+    <Panel title="共享礼包码库">
+      <div className="bar gift-library-toolbar"><Button type="button" variant="outline" size="sm" id="gift-load-initial">载入未兑换码</Button><Button type="button" variant="outline" size="sm" id="gift-batch-add" aria-haspopup="dialog" aria-controls="gift-batch-dialog">批量新增</Button><label><input id="gift-show-processed" type="checkbox" /> 显示已处理</label></div>
+      <p id="gift-code-initial-note" className="dim" role="status" />
+      <div className="gift-library-table"><table><thead><tr><th scope="col">礼包码</th><th scope="col">可用状态</th><th scope="col">到期日期（北京时间）</th></tr></thead><tbody id="gift-code-library-rows" /></table></div>
+    </Panel>
+    <Panel title="兑换记录">
+      <div className="bar gift-record-toolbar">
+        <label htmlFor="gift-record-account">查看账号</label><select id="gift-record-account" />
+        <label htmlFor="gift-record-status">状态</label><select id="gift-record-status" defaultValue="exclude-invalid">
+          <option value="exclude-invalid">排除失效/不可用</option><option value="all">全部状态</option><option value="invalid">失效/不可用</option>
+          <option value="retryable">可手动重试</option><option value="success">兑换成功</option><option value="used">已兑换</option><option value="rejected">服务器拒绝</option>
+          <option value="unknown">待确认</option><option value="skipped">未发送</option><option value="queued">待兑换</option><option value="sending">兑换中</option>
+        </select><Button id="gift-record-export" variant="outline" disabled>导出 CSV</Button>
+      </div>
+      <p id="gift-record-notice" className="dim" role="status" aria-live="polite" />
+      <div className="overflow-auto table-stack"><table><thead><tr>{['礼包码','状态','结果','时间','操作'].map(title=><th scope="col" key={title}>{title}</th>)}</tr></thead><tbody id="gift-code-history" /></table></div>
+      <div className="bar gift-record-pagination"><label htmlFor="gift-page-size">每页</label><select id="gift-page-size" defaultValue="10">{[10,20,50,100].map(size=><option key={size} value={size}>{size} 条</option>)}</select><Button variant="outline" id="gift-prev" disabled>上一页</Button><span id="gift-page" role="status" /><Button variant="outline" id="gift-next" disabled>下一页</Button></div>
+    </Panel>
+    <dialog id="gift-batch-dialog" aria-labelledby="gift-batch-title">
+      <DialogHeader><DialogTitle id="gift-batch-title">批量新增礼包码</DialogTitle></DialogHeader>
+      <div className="gift-batch-fields"><label htmlFor="gift-batch-input">礼包码</label><textarea id="gift-batch-input" rows={8} maxLength={65536} placeholder="每行一个礼包码" />
+        <label htmlFor="gift-batch-expiry">到期日期（选填，北京时间）</label><Input id="gift-batch-expiry" type="date" />
+        <p id="gift-batch-error" role="status" aria-live="polite" /></div>
+      <DialogFooter><Button id="gift-batch-save" type="button">保存</Button><Button id="gift-batch-cancel" type="button" variant="outline">取消</Button></DialogFooter>
+    </dialog>
   </div>)
 }
 

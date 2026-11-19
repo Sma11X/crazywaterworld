@@ -13,8 +13,10 @@ import {activityRankCatalog,readActivityRanking} from './activity-rankings.mjs';
 import {readActivityStatistics} from './activity-statistics.mjs';
 import { merchantActivity, readMerchantStatus, readMerchantJournal, merchantJournalSummary } from './merchant-activity.mjs';
 import { watchMerchant } from './merchant-monitor.mjs';
-import { giftCodeSummary, startGiftCodeBatch } from './gift-codes.mjs';
-import { initialGiftCodeCatalog } from './gift-code-catalog.mjs';
+import { giftCodeStatus, giftCodeSummary, startGiftCodes, startGiftCodeBatch } from './gift-codes.mjs';
+import { publicGiftCodes } from './gift-code-library.mjs';
+import { createGiftCodeAutomation } from './gift-code-automation.mjs';
+import { paginateGiftRecords, giftRecordsCsv, canRetryGiftRecord, canRetryGiftCode } from './gift-code-records.mjs';
 import {runtimeProgress, museumRuntimeStatus} from './runtime-progress.mjs';
 import {watchTreasureTravel} from './treasure-follow.mjs';
 import { watchGuildShipPushes } from './guild-ships.mjs';
@@ -143,7 +145,7 @@ const STATE_TEXT = {
   STOPPED: '已停止',
 };
 
-export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recoveryDelayMs, resourceUpdates = false, resourceUpdater = null, protocol: protocolOverride,
+export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recoveryDelayMs, resourceUpdates = false, resourceUpdater = null, protocol: protocolOverride, giftCodeUpdates = resourceUpdates,
   alipayLoginController = null,
   captureController = { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture } } = {}) {
   const consoleVersion = createConsoleVersion(PAGE);
@@ -586,11 +588,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     });
   }
 
-  function progressionJob(session, account, key, label, action, { read = false } = {}) {
+  function progressionJob(session, account, key, label, action, { read = false, shouldStart } = {}) {
     if (!session.progressionJobs.has(key)) {
       const generation = session.generation;
       const schedule = read ? work => readJob(session, work) : work => enqueue(session, work, label);
       const job = schedule(async () => {
+        if (shouldStart?.() === false) throw new Error('操作已取消，尚未连接游戏');
         if (!read) validateRuntimeSettings(session.preferences, loadConfigSafe());
         const client = await ensureConnected(session, account);
         const enabled = () => session.client === client && client.connected && !session.paused && generation === session.generation;
@@ -2539,6 +2542,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         removed?.pirateAdvance.stop('账号已删除'); removed?.stages.stop('账号已删除'); removed?.mutualAid.stop('账号已删除'); for (const task of removed?.trials.values() ?? []) task.stop('账号已删除');
         if (removed) await closeSessionConnection(removed, { includeWorld: true });
         sessions.delete(account.id);
+        try { publicGiftCodes.removeAccount(account.id); }
+        catch (error) { emit(null, 'warn', '账号已删除，礼包自动兑换设置清理失败：' + error.message); }
         emit(null, 'info', `已删除账号 ${describeAccount(account).title}`);
         json({ ok: true });
         return;
@@ -2856,14 +2861,87 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
 
       // ---- 只读视图 ----
-      if(route==='GET /api/gift-codes/initial'){
-        json(initialGiftCodeCatalog());return;
+      if (parsed.pathname.startsWith('/api/gift-codes')) res.setHeader('cache-control', 'no-store');
+      if (route === 'GET /api/gift-codes/initial' || route === 'POST /api/gift-codes/load') {
+        const payload = req.method === 'POST' ? jsonBody() : null;
+        if (payload) needConfirm(payload);
+        const known = new Map(loadStore().accounts.map(account => [account.id, account]));
+        const selected = payload ? payload.accounts
+          : parsed.searchParams.has('accounts') ? JSON.parse(parsed.searchParams.get('accounts'))
+          : parsed.searchParams.has('account') ? [resolve(parsed).account.id] : [...known.keys()].slice(0, 1);
+        if (!Array.isArray(selected) || selected.some(id => typeof id !== 'string' || !known.has(id))) throw Error('所选账号不存在，请刷新账号列表');
+        if (payload) {
+          try { await publicGiftCodes.refresh({ force: true }); }
+          catch (error) { if (!publicGiftCodes.entries().length) throw error; }
+        }
+        const histories = [...new Set(selected)].map(id => giftCodeStatus(id).rows);
+        for (const rows of histories) publicGiftCodes.reconcile(rows);
+        const available = new Set(histories.flatMap(rows => publicGiftCodes.available(rows)));
+        const displayRows = publicGiftCodes.entries().map(entry => ({
+          code: entry.code, expiresAt: entry.expiresAt ?? null,
+          eligible: !selected.length || available.has(entry.code),
+        }));
+        const tryCodes = displayRows.filter(row => row.eligible).map(row => row.code);
+        json({ ...publicGiftCodes.view(), displayRows, tryCodes, available: tryCodes.length });
+        if (payload) void giftAutomation.check();
+        return;
+      }
+      if (route === 'POST /api/gift-codes/manual') {
+        const payload = jsonBody(); needConfirm(payload);
+        const result = publicGiftCodes.addManualBatch(payload.codes, payload.expiresAt);
+        void giftAutomation.check();
+        json(result);
+        return;
+      }
+      if (route === 'POST /api/gift-codes/auto') {
+        const payload = jsonBody(); needConfirm(payload);
+        const { account } = resolve(parsed);
+        const preference = publicGiftCodes.setAuto(account.id, payload.enabled);
+        let syncError = '';
+        if (preference.enabled) {
+          try { await publicGiftCodes.refresh({ force: true }); } catch (error) { syncError = error.message; }
+          void giftAutomation.check();
+        }
+        json({ enabled: preference.enabled, syncError });
+        return;
+      }
+      if (route === 'GET /api/gift-codes' || route === 'GET /api/gift-codes/export') {
+        const { account } = resolve(parsed);
+        const data = giftCodeStatus(account.id);
+        const status = parsed.searchParams.get('status') || 'exclude-invalid';
+        if (route.endsWith('/export')) {
+          const csv = giftRecordsCsv(data.rows, status);
+          res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="gift-code-records.csv"', 'cache-control': 'no-store' });
+          res.end(csv);
+          return;
+        }
+        const page = paginateGiftRecords(data.rows, {
+          status, page: parsed.searchParams.get('page') || '1', pageSize: parsed.searchParams.get('pageSize') || '10',
+        });
+        json({ ...page, running: data.running, rows: page.rows.map(row => ({ ...row,
+          retryable: canRetryGiftRecord(row) && canRetryGiftCode(data.rows, row.code) && !publicGiftCodes.isExpired(row.code),
+        })) });
+        return;
+      }
+      if (route === 'POST /api/gift-codes/retry') {
+        const payload = jsonBody(); needConfirm(payload);
+        if (typeof payload.code !== 'string' || !payload.code || payload.code.length > 128 || /[\s,，;；]/u.test(payload.code)) throw Error('请选择一条礼包码记录');
+        const { account } = resolve(parsed), target = giftCodeTarget(account);
+        if (target.blocked) throw Error(target.blocked);
+        const job = startGiftCodes(account.id, payload.code, target.dispatch, { stop: '' }, { retry: true });
+        job.done.catch(() => emit(target.session, 'error', '礼包兑换中断，请核对游戏内奖励'));
+        json({ accepted: true });
+        return;
       }
       if(route==='GET /api/gift-codes/accounts'){
         json({accounts:loadStore().accounts.map(account=>{
           const session=sessionFor(account.id);
           const base={id:account.id,title:describeAccount(account).title,paused:session.paused,connected:Boolean(session.client?.connected)};
-          try{return {...base,...giftCodeSummary(account.id)};}
+          try {
+            const { rows } = giftCodeStatus(account.id);
+            publicGiftCodes.reconcile(rows);
+            return { ...base, ...giftCodeSummary(account.id), autoRedeem: publicGiftCodes.auto(account.id).enabled, available: publicGiftCodes.available(rows).length };
+          }
           catch(error){return {...base,running:false,total:0,counts:{},error:error.message};}
         })});return;
       }
@@ -2875,14 +2953,15 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const targets=[...new Set(payload.accounts)].map(id=>{
           const account=known.get(id);
           if(!account)return {id,title:id,blocked:'账号不存在'};
-          const session=sessionFor(id),generation=session.generation;
-          return {id,session,title:describeAccount(account).title,blocked:session.paused?'账号已暂停托管':'',dispatch:action=>{
-            const latest=loadStore().accounts.find(item=>item.id===id);
-            if(!latest||session.generation!==generation||session.paused)throw Error('原账号连接已变化');
-            return progressionJob(session,latest,'gift-code-redeem',null,action);
-          }};
+          const target = giftCodeTarget(account);
+          if (payload.library === true) {
+            const { rows } = giftCodeStatus(id);
+            publicGiftCodes.reconcile(rows);
+            target.codes = publicGiftCodes.available(rows).join('\n');
+          }
+          return target;
         });
-        const results=startGiftCodeBatch(targets,payload.codes).map((result,index)=>({...result,...targets[index]}));
+        const results=startGiftCodeBatch(targets,payload.library===true?null:payload.codes).map((result,index)=>({...result,...targets[index]}));
         const started=results.filter(result=>result.accepted);
         if(!started.length)throw Error(results.map(result=>result.title+'：'+result.error).join('；'));
         for(const {done,session} of started)done.then(()=>emit(session,'info','礼包兑换完成，请查看账号结果汇总'),()=>emit(session,'error','礼包兑换中断，请核对游戏内奖励'));
@@ -4218,6 +4297,18 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     };
   }
 
+  function giftCodeTarget(account) {
+    const id = account.id, session = sessionFor(id), generation = session.generation;
+    return { id, session, title: describeAccount(account).title, blocked: session.paused ? '账号已暂停托管' : '', dispatch: (action, { shouldStart } = {}) => {
+      const latest = loadStore().accounts.find(item => item.id === id);
+      if (!latest || session.generation !== generation || session.paused) throw Error('原账号连接已变化');
+      return progressionJob(session, latest, 'gift-code-redeem', null, action, { shouldStart });
+    } };
+  }
+  const giftAutomation = createGiftCodeAutomation({
+    library: publicGiftCodes, accounts: () => loadStore().accounts, targetFor: giftCodeTarget,
+    refresh: giftCodeUpdates, report: message => emit(null, 'warn', message),
+  });
   const server = http.createServer((req, res) => {
     res.on('error', () => { streams.delete(res); res.destroy(); });
     req.on('error', () => res.destroy());
@@ -4244,6 +4335,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         server.listen(port, host, () => {
           const address = `http://${host}:${server.address().port}`;
           emit(null, 'info', `控制台已启动 ${address}`);
+          giftAutomation.start();
           fs.watchFile(settingsFile(), { interval: 1000, persistent: false }, settingsFileChanged);
           settingsWatchStarted = true;
           for (const account of loadStore().accounts) {
@@ -4264,6 +4356,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       });
     },
     close: async () => {
+      giftAutomation.close();
       closing = true;
       if (settingsWatchStarted) fs.unwatchFile(settingsFile(), settingsFileChanged);
       clearAlipayRoles();
