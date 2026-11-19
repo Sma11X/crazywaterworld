@@ -149,7 +149,6 @@ export function manualPage() {
       <div className="bar"><Button id="production-plan-refresh" variant="outline">计算联合排产</Button><span id="production-plan-status" className="dim" role="status">连接后可计算</span></div>
       <div id="production-plan-result" aria-live="polite" />
     </Panel>
-    <Panel title="资源田"><div id="world-fields" /></Panel>
   </div>)
 }
 

@@ -205,20 +205,25 @@ html:has(.world-map-detail:modal) { overflow:hidden }
 #world-view:empty { display:none }
 
 /* ---- 建筑一览 ---- */
-.factory-table td { vertical-align:top; white-space:normal }
+#world-factories { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:16px 24px }
+#world-factories > section { min-width:0 }
+#world-factories h2,#world-orders h2 { margin:0 0 4px }
+#world-factories:not(:empty) + #world-orders:not(:empty) { margin-top:16px }
+@container main (min-width:720px) {
+  #world-factories:has(.world-farm-section):has(.world-slot-section) { grid-template-columns:minmax(0,3fr) minmax(0,2fr) }
+  .world-factory-section { grid-column:1 / -1 }
+}
 .factory-queue { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:16px }
 .factory-slot { display:grid; align-content:start; gap:2px; min-width:0; font-size:12px }
 .factory-product { font-size:14px; overflow-wrap:anywhere }
-.factory-current { display:grid; justify-items:start; gap:4px }
-.factory-current-product { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px }
+.factory-current,.factory-current-product { display:flex; align-items:center; flex-wrap:wrap; gap:2px 8px; min-width:0 }
+.factory-current-product { align-items:baseline; column-gap:4px }
 #factory-production-dialog { grid-template-rows:auto minmax(0,1fr) auto }
 #factory-production-body { min-height:0; overflow-y:auto }
 .production-time { color:var(--muted-foreground); font-variant-numeric:tabular-nums; overflow-wrap:anywhere }
 .order-state { display:grid; justify-items:start; gap:4px; max-width:40ch; white-space:normal }
 .order-manual-actions { display:flex; flex-wrap:wrap; gap:6px }
 .order-refresh-time { display:block; font-variant-numeric:tabular-nums; font-size:12px; color:var(--muted-foreground) }
-.field-yield-summary { display:flex; flex-wrap:wrap; gap:4px 16px; margin:8px 0 12px }
-.field-yield-summary span { white-space:nowrap }
 .stock-panel>summary { padding-inline:24px }
 .stock-fold-hint { margin-inline-start:12px }
 .stock-panel[open] .stock-fold-hint { display:none }

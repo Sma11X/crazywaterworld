@@ -1496,13 +1496,18 @@ function factoryCurrentProduction(factory) {
   return current;
 }
 
+function buildingSection(title, className, content) {
+  const section = el('section', className);
+  section.append(el('h2', null, title), content);
+  return section;
+}
+
 function renderWorld(data) {
   stateActions.setGameData(current, 'world', data);
   orderClockOffset=Number.isFinite(data.serverNow)?data.serverNow*1000-Date.now():0;
   $('world-view').textContent = '';
   const fbox = clear($('world-factories'));
   if (data.factories?.length) {
-    fbox.appendChild(el('h2', null, '工厂'));
     const factories = [...data.factories].sort((a, b) => a.buildingId.localeCompare(b.buildingId, 'zh-CN', { numeric: true }));
     const factoryTable = table(['建筑', '类型', '等级', '当前产物', '自动生产', '下一产物'], factories.map((b) => {
       const queueKnown = b.queueKnown !== false && Array.isArray(b.jobs);
@@ -1515,9 +1520,8 @@ function renderWorld(data) {
         b.autoEnabled == null ? '未同步' : b.autoEnabled ? '已开启' : '未开启',
         !queueKnown ? '未同步' : next ? next.name || next.productId || '产物未同步' : '—',
       ];
-    }));
-    factoryTable.classList.add('factory-table');
-    fbox.appendChild(factoryTable);
+    }), 'sea-records');
+    fbox.appendChild(buildingSection('工厂', 'world-factory-section', factoryTable));
   }
   const productionDialog = $('factory-production-dialog');
   if (productionDialog.open) {
@@ -1526,9 +1530,8 @@ function renderWorld(data) {
     else closeFactoryProduction();
   }
   if (data.farms?.length) {
-    fbox.appendChild(el('h2', null, '农田'));
     const plots = [...data.farms].sort((a, b) => a.plot.localeCompare(b.plot, 'zh-CN', { numeric: true }));
-    fbox.appendChild(table(['农田', '等级', '当前作物', '状态与计时'], plots.map((plot) => {
+    const farmTable = table(['农田', '等级', '当前作物', '状态与计时'], plots.map((plot) => {
       let status = plot.status || '未同步';
       if (plot.productId && plot.ripeTime > 0) {
         status = worldProductionTimer(plot.ripeTime, '已成熟', '生长中 · 剩余 ');
@@ -1539,37 +1542,34 @@ function renderWorld(data) {
       }
       return [plot.plot, plot.level == null ? '未同步' : 'lv' + plot.level,
         plot.productName || plot.productId || '—', status];
-    })));
+    }), '');
+    fbox.appendChild(buildingSection('农田', 'world-farm-section', farmTable));
   }
   // 空位：没盖的（待建）与正在盖的（施工中）。计划器只会建「待建」那些，
   // 施工中的只能等它盖完由竣工步骤收尾，所以两种状态要分开说，不然看不出差在哪。
   const slots = (data.buildings || []).filter((b) => b.level === 0);
   if (slots.length) {
-    fbox.appendChild(el('h2', null, '空位'));
-    fbox.appendChild(table(['空位', '类型', '状态'], slots.map((b) => [
+    const slotTable = table(['空位', '类型', '状态'], slots.map((b) => [
       { cell: b.icon, text: b.buildingId },
       b.typeName || b.type || '未知类型',
       b.building ? chip('waiting', '施工中') : b.awaitingFinish ? chip('ready', '待竣工') : chip('ready', '待建'),
-    ])));
+    ]));
+    fbox.appendChild(buildingSection('空位', 'world-slot-section', slotTable));
   }
   const obox = clear($('world-orders'));
   if (data.orders.length) {
     obox.appendChild(el('h2', null, '居民订单'));
     obox.appendChild(el('p', 'dim', '可手动提交材料已齐的订单。账号忙时自动排队，交付结果见运行日志。'));
-    obox.appendChild(table(['订单', '居民', '需求', '挂机交付', '手动操作'], data.orders.map((o) => [
+    const ordersTable = table(['订单', '居民', '需求', '挂机交付', '手动操作'], data.orders.map((o) => [
       '#' + o.index,
       { cell: o.workerIcon, text: (o.workerName || '未知居民') + (o.isSpecial ? '（特殊）' : '') },
       o.requirements.length && o.decision?.status !== 'refreshing' ? { cells: o.requirements } : '—',
       orderState(o, data),
       residentOrderActions(o),
-    ])));
+    ]), 'sea-records');
+    obox.appendChild(ordersTable);
   }
   renderInventory(data.stock);
-  const fields=clear($('world-fields'));fields.append(el('p','dim','已占资源田 '+(data.resFields.fields?.length??'?')+'/'+(data.resFields.maxNum??'?')));
-  const yields=el('div','field-yield-summary');yields.setAttribute('aria-label','资源田每小时基础总产量');for(const item of data.resFields.totals??[])yields.append(el('span','',item.name+' '+(item.perHour===null?'未同步':fmt(item.perHour)+'/小时')));fields.append(yields);
-  if(data.resFields.rows?.length)fields.append(table(['建筑','产出','等级'],[...data.resFields.rows].sort(compareResourceFieldsByLevel).map(r=>[r.name+' · '+r.cityName,r.product,r.level??'未同步'])));
-  else fields.append(el('p','dim',data.resFields.fields?.length?'资源田信息未同步，请重新加载服务':'暂无已占资源田'));
-  fields.append(el('p','dim','产出为每小时基础值，不含科技及其他加成。'));
 }
 
 let worldVersion = 0, worldRead = null, displayedWorldAccount;
@@ -1585,7 +1585,7 @@ function refreshManualWorld(force = false) {
     resetInventory();
     worldVersion++;
     worldRead = null;
-    for (const id of ['world-factories', 'world-orders', 'world-stock', 'world-fields']) clear($(id));
+    for (const id of ['world-factories', 'world-orders', 'world-stock']) clear($(id));
     if (!available) $('world-view').textContent = account ? '账号已断开连接' : '请先选择账号';
   }
   if (!available || worldRead?.account === account) return;
@@ -1645,7 +1645,7 @@ function putCell(td, spec) {
 
 ${activitiesScript}
 
-function table(headers, rows) {
+function table(headers, rows, mobileLayout = headers.length >= 4 ? 'table-stack' : '') {
   const box = component('ui-table');
   const head = box.querySelector('thead tr');
   const headCell = head.firstElementChild;
@@ -1661,7 +1661,7 @@ function table(headers, rows) {
   const cellTemplate = rowTemplate.firstElementChild;
   rowTemplate.remove();
   const labels = headers.map(h => typeof h === 'string' ? h : h.label);
-  if (labels.length >= 4) box.classList.add('table-stack');
+  if (mobileLayout) box.classList.add(mobileLayout);
   for (const row of rows) {
     const tr = rowTemplate.cloneNode(false);
     row.forEach((spec, index) => {

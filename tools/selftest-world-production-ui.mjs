@@ -153,7 +153,7 @@ test('海面依次展示工厂、农田、空位，活动工坊并入工厂表�
   });
   const original = JSON.stringify(data);
   env.render(data);
-  const headings = env.node('world-factories').children.filter(node => node.tagName === 'h2');
+  const headings = descendants(env.node('world-factories')).filter(node => node.tagName === 'h2');
   assert.deepEqual(headings.map(node => node.textContent), ['工厂', '农田', '空位']);
   assert.equal(env.tables.length, 3);
   assert.deepEqual(env.tables[0].headers, ['建筑', '类型', '等级', '当前产物', '自动生产', '下一产物']);
