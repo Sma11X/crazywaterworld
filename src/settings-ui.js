@@ -2138,5 +2138,4 @@ document.addEventListener('toggle', event => {
   place();
 }, true);
 window.addEventListener('cw-console-version-stale', configVersionStale);
-window.addEventListener('beforeunload', event => { if (configIsDirty() || configEditor.saving) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('online', () => { if (configIsDirty() && configEditor.saveError && !configEditor.saveError.fields) { configEditor.saveRetries = 0; configScheduleSave(0); } });

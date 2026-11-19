@@ -132,6 +132,7 @@ function createConsoleVersionGuard() {
   });
 }
 
+let stalePageReloadRequested = false;
 function showStalePageDialog() {
   const dialog = $('console-version-warning'), opener = $('console-version-open');
   const download = $('console-version-download'), accountActions = $('console-version-account');
@@ -148,7 +149,8 @@ function showStalePageDialog() {
   $('console-version-dismiss').onclick = () => dialog.close();
   download.onclick = () => configDownloadDraft();
   $('console-version-reload').onclick = () => {
-    if (window.confirm('刷新会丢弃本页未保存的修改。请确认已保留需要的内容，再刷新页面。')) location.reload();
+    stalePageReloadRequested = true;
+    location.reload();
   };
   for (const [id, route, success] of [
     ['console-version-stop', '/api/loop/stop', '当前账号已停止挂机。'],
@@ -2135,6 +2137,16 @@ ${productionPlanningScript}
 ${settingsScript}
 ${appointmentsScript}
 ${giftCodeScript}
+window.addEventListener('beforeunload', event => {
+  if (stalePageReloadRequested) {
+    stalePageReloadRequested = false;
+    return;
+  }
+  if (configIsDirty() || configEditor.saving || [...appointmentsEditors.values()].some(editor => editor.saving || appointmentsDirty(editor))) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+});
 let selectedResource = 'guild';
 consoleStore.subscribe((state, previous) => {
   if (state.view.resource !== previous.view.resource) selectedResource = state.view.resource;
