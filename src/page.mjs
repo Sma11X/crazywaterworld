@@ -232,6 +232,7 @@ async function call(path, options) {
     }
     return data;
   } catch (error) {
+    if (method === 'GET' && opts.signal?.aborted) throw error;
     if (!error.logged) reportError(error, path, account);
     error.logged = true;
     throw error;

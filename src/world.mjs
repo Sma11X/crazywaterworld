@@ -1637,6 +1637,7 @@ function parseMap(raw, file, scenarioId) {
     tileWidth: mapInfo?.tileWidth ?? 0,
     tileHeight: mapInfo?.tileHeight ?? 0,
     cityInfo,
+    pollutionData: data.pollutionData,
     cityAt(gridIdx) { return mapData[gridIdx] === undefined ? 0 : mapData[gridIdx] % 1000; },
     fieldCount: mapData.reduce((n, v) => n + (Math.floor(v / 10000) % 10 ? 1 : 0), 0),
     fieldAt(gridIdx) {

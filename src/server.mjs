@@ -33,6 +33,10 @@ import {readWorldTarget} from './world-target.mjs';
 import {readWorldBoss} from './world-boss.mjs';
 import { readWeekCalendar, claimReportRewards, rewardData } from './missing-rewards.mjs';
 import { readWorldOverview } from './world-overview.mjs';
+import { previewWorldCityDispatch, runWorldCityDispatch } from './world-city-dispatch.mjs';
+import { readCityDeclare, declareCity, readCityCancelDeclare, cancelCityDeclare, reconcileCityCancelDeclare } from './world-city-declare.mjs';
+import { readCityAssemble, assembleCity } from './world-city-assemble.mjs';
+import { readWorldCityDefence, readWorldCityDefenders, runWorldCityRecruit, reconcileWorldCityRecruit } from './world-city-defence.mjs';
 import { readAllianceRadar } from './alliance-radar.mjs';
 import { planRadarPreview, pendingPetrol } from './dispatch-preview.mjs';
 import { inspectHunt } from './pirates.mjs';
@@ -124,6 +128,14 @@ const STREAM_BUFFER_LIMIT = 1024 * 1024;
 const RUN_VERSION = new Date().toISOString();
 const validSpinCount = count => Number.isSafeInteger(count) && count >= 1 && count <= maxCompassSpinCount;
 const merchantTaskKeys = ['merchantTrade', 'merchantRewards', 'tradeTasks'];
+const cityCommands = {
+  declare: { label: '联盟宣战', run: declareCity },
+  cancelDeclare: { label: '取消宣战', run: cancelCityDeclare, confirmCost: true },
+  assemble: { label: '设置集结', run: assembleCity },
+  recruit: { label: '高级募兵', run: runWorldCityRecruit, confirmCost: true },
+  checkCancel: { label: '核对取消宣战', run: reconcileCityCancelDeclare },
+  checkRecruit: { label: '核对募兵', run: reconcileWorldCityRecruit },
+};
 const overviewQueries = ENTRY_QUERIES.filter(({ name }) => [
   'AllResourceRequest', 'AllItemRequest', 'AllHeroRequest', 'MainTaskInfoRequest', 'DailyTaskInfoRequest',
   'AchievementInfoRequest', 'EmailBoxRequest', 'AfkInfoRequest', 'OnWaterRequest', 'MyResFieldsRequest', 'MonthCardRequest',
@@ -670,11 +682,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   // Share identical clicks until this account's queued operation has finished.
   // 页面读取：队列空闲时照常排队；挂机一轮可持续一分钟以上，此时改在它两次请求之间读取，不等整轮结束。
-  function readJob(session, work) {
+  function readJob(session, work, options) {
     if (closing || session.connectionDrain) return Promise.reject(new Error('账号正在结束当前挑战并恢复阵容，请稍后操作'));
     const client = session.client, generation = session.generation;
     if (!session.queueTail || !client?.connected || !client.interleaveRead
-      || session.connecting || session.syncingProduction || session.productionSyncRequired) return enqueue(session, work);
+      || session.connecting || session.syncingProduction || session.productionSyncRequired) return enqueue(session, work, undefined, options);
     return client.interleaveRead(() => {
       if (closing || session.connectionDrain || session.paused || generation !== session.generation) throw new Error('账号已暂停，已取消排队操作');
       return work();
@@ -3594,6 +3606,122 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           session.siliconOverviewRead = job;
         }
         json(await session.siliconOverviewRead); return;
+      }
+      if (route === 'GET /api/world/city-actions' || route === 'GET /api/world/city-defence') {
+        const { session } = scoped_(parsed);
+        const { client, player, generation } = session;
+        if (!client?.connected || !player || session.paused) throw Error('请先连接当前账号，再选择城池');
+        const cityId = Number(parsed.searchParams.get('cityId')), scenarioId = Number(parsed.searchParams.get('scenarioId'));
+        if (!Number.isSafeInteger(cityId) || cityId <= 0 || cityId > 2147483647 || scenarioId !== (player.scenarioId || 1))
+          throw Error('城池或场景已变化，请刷新地图重新选择');
+        const config = loadConfigSafe();
+        if (!config) throw Error('城市配置未同步，请更新游戏资源');
+        const identity = () => [player.worldId, player.playerId, player.guildId].map(exactAutomationId).join('/');
+        const before = identity(), protocol = protocolFor(client), target = { scenarioId, cityId };
+        const sameCitySession = () => session.client === client && client.connected && session.player === player && !session.paused
+          && !session.connectionDrain && !closing && session.generation === generation && identity() === before
+          && (player.scenarioId || 1) === scenarioId && loadConfigSafe() === config;
+        res.setHeader('Cache-Control', 'no-store');
+        if (route === 'GET /api/world/city-defence') {
+          const roster = await readJob(session, async () => {
+            if (res.destroyed) return;
+            if (!sameCitySession()) throw Error('账号或场景已变化，请重新选择城池');
+            return readWorldCityDefenders(client, protocol, config, player, target);
+          }, { recoverFormation: false });
+          if (res.destroyed) return;
+          if (!sameCitySession()) throw Error('账号或场景已变化，请重新选择城池');
+          json(roster); return;
+        }
+        const ledger = usageFor(session), { settings, revision } = settingsView(session);
+        const enabled = () => sameCitySession() && refreshSessionSettings(session).revision === revision;
+        const validate = () => { if (!enabled()) throw Error('账号、场景或配置已变化，请重新选择城池'); };
+        const previews = await readJob(session, async () => {
+          if (res.destroyed) return;
+          validate();
+          // 点同一城只读一次联盟、城市及宣战信息。游戏提示不带请求编号，按顺序读取。
+          const reads = new Map();
+          let tail = Promise.resolve();
+          const request = (name, body = {}, response, timeout) => {
+            const key = JSON.stringify([name, body]);
+            if (!reads.has(key)) {
+              const job = tail.then(() => {
+                if (res.destroyed) throw Error('已离开城池');
+                return client.request(name, body, response, timeout);
+              });
+              tail = job.catch(() => {});
+              reads.set(key, job);
+            }
+            return reads.get(key);
+          };
+          const options = { request, ledger };
+          return Promise.all([
+            previewWorldCityDispatch(client, protocol, config, player, settings, ledger, target, { request }),
+            readCityDeclare(client, protocol, config, player, target, options),
+            readCityCancelDeclare(client, protocol, config, player, target, options),
+            readCityAssemble(client, protocol, config, player, target, options),
+            readWorldCityDefence(client, protocol, config, player, target, { ...options, includeDefenders: parsed.searchParams.get('includeDefenders') !== '0' }),
+          ]);
+        }, { recoverFormation: false });
+        if (res.destroyed) return;
+        const [dispatch, declaration, cancellation, assembly, defence] = previews;
+        validate();
+        const quotes = session.worldCityQuotes ??= new Map();
+        const expiresAt = Date.now() + 120000;
+        const actions = { declare: declaration, cancelDeclare: cancellation, assemble: assembly,
+          recruit: { ...defence.recruit, available: defence.recruit.allowed },
+          checkCancel: { available: cancellation.pending }, checkRecruit: { available: defence.recruit.pending } };
+        const token = dispatch.fleets.length > 0 || Object.values(actions).some(view => view.available) ? randomUUID() : null;
+        if (token) {
+          for (const [key, quote] of quotes) {
+            if ((!quote.job || quote.completed) && (quote.expiresAt <= Date.now() || quotes.size >= 100)) quotes.delete(key);
+          }
+          if (quotes.size >= 100) throw Error('已有城池操作排队，请稍后再试');
+          quotes.set(token, { client, player, config, target, dispatch, actions, expiresAt, validate });
+        }
+        const availability = view => ({ allowed: view.available, visible: view.visible, reason: view.reason });
+        json({ token, expiresAt, dispatch,
+          declare: { ...availability(declaration), count: declaration.count, limit: declaration.limit, owner: declaration.owner },
+          cancelDeclare: { ...availability(cancellation), cost: cancellation.cost, pending: cancellation.pending },
+          assemble: { ...availability(assembly), currentCityId: assembly.currentCityId, currentName: assembly.currentName, role: assembly.role },
+          recruit: { ...availability(actions.recruit), pending: defence.recruit.pending, itemId: defence.recruit.itemId, cost: defence.recruit.cost,
+            gain: defence.recruit.gain, stock: defence.recruit.stock },
+          defence: defence.deferred === undefined ? { synced: defence.synced, reason: defence.reason, defenders: defence.defenders }
+            : defence.deferred ? { deferred: true } : null });
+        return;
+      }
+      if (route === 'POST /api/world/city-actions') {
+        const payload = jsonBody();
+        needConfirm(payload);
+        const { session } = scoped_(parsed), { action, buildingId } = payload;
+        const quote = session.worldCityQuotes?.get(payload.token);
+        if (!quote || quote.target.cityId !== payload.cityId) throw Error('城池确认已失效，请重新选择');
+        const dispatch = action === 'dispatch';
+        const command = typeof action === 'string' && Object.hasOwn(cityCommands, action) ? cityCommands[action] : null;
+        const allowed = dispatch ? quote.dispatch.fleets.some(f => f.buildingId === buildingId)
+          : command && buildingId === undefined && quote.actions[action].available;
+        if (!allowed) throw Error('请选择当前城池可用的操作或空闲舰队');
+        if (command?.confirmCost && payload.confirmedCost !== quote.actions[action].cost) throw Error('请重新核对本次操作的消耗');
+        if (quote.job && (quote.action !== action || quote.buildingId !== buildingId)) throw Error('这次确认已用于其他操作，请重新选择');
+        if (!quote.job) {
+          quote.action = action;
+          quote.buildingId = buildingId;
+          const label = dispatch ? '城池派遣' : command.label;
+          quote.job = enqueue(session, async () => {
+            const validate = () => {
+              quote.validate();
+              if (Date.now() >= quote.expiresAt) throw Error('城池确认已过期，请刷新可用操作');
+            };
+            validate();
+            const { client, config, player, target } = quote, protocol = protocolFor(client), ledger = usageFor(session);
+            const result = dispatch
+              ? await runWorldCityDispatch(client, protocol, config, player, settingsView(session).settings, ledger,
+                { ...target, buildingId, intent: quote.dispatch.intent, role: quote.dispatch.role, cost: quote.dispatch.cost, owner: quote.dispatch.owner }, { validate })
+              : await command.run(client, protocol, config, player, { ...quote.actions[action], ...target }, { validate, ledger });
+            emit(session, result.confirmed || result.status === 'confirmed' ? 'info' : 'warn', label + ' · ' + result.message);
+            return result;
+          }, label).finally(() => { quote.completed = true; });
+        }
+        json(await quote.job); return;
       }
       if (route === 'GET /api/world/overview') {
         const {session}=scoped_(parsed);

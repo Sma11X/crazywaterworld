@@ -753,6 +753,16 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 
 验证使用虚构账号和真实协议编解码的离线夹具，未进行真实账号城战派遣。
 
+### 世界地图点城操作
+
+手动调动使用 `MoveFleetsToCityRequest`，每次只发送玩家选中的一支舰队。可随时免费前往其他本盟城市，进攻使用本盟宣战记录、当前城战时间和距离报价。选舰时同时读取本人舰队和已建成的舰队编队，并排除驻外、已预留和派遣结果待确认的舰队。手动进攻的汽油计入城战用量，次数单独记录。
+
+宣战使用 `DeclareWarRequest { cityId }`。界面从 `GuildInfoResponse.myTitle` 核对盟主或副盟主身份，同时检查本盟已有目标数、相邻领地、黑潮范围、赛季城市等级和干扰器。提交后读取 `WarDeclarationResponse.declarations`，匹配本盟和目标城后显示成功。
+
+本盟城池受宣战或已交战时，手动调动显示为「增援」。高级募兵使用 `CityRecruitDefenceRequest`，资格取自 `VipLevelCfg`，每枚令牌的增兵数取自 `GuildParamCfg`。发出后核对本城守军增长和个人联盟募兵令扣减。
+
+设置联盟集结使用 `SetAssembleCityRequest`，回读 `WarDeclarationResponse.assembleCityId`。可在本盟已宣战或正在受攻的非主城间切换。撤销宣战使用 `CancelDeclareWarRequest`，本盟至少保留一个进攻目标，费用取自 `WorldParamCfg` 的「取消宣战消耗」。原宣战期内目标消失、城池归属相符且个人钻石扣减符合报价后才确认。
+
 ## 16. 藏品养成协议（v76）
 
 - `AllAntiqueResponse`：字段 1 `antiques[]`（`DisplayAntique {id, star}`）、字段 2 `suits[]`（`DisplayAntiqueSuit {id, level, effectiveNum, advEffectValue}`）、字段 3 `masterLv`。

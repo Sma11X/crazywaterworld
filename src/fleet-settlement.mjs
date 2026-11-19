@@ -53,6 +53,13 @@ export function fleetAtHome(fleet) {
   );
 }
 
+export function cityDispatchObserved(fleet, details) {
+  return (fleet.state === 2 && fleet.targetCityId === details.cityId) ||
+    (fleet.cityId === details.cityId && ([3, 5].includes(fleet.state) ||
+      (fleet.state === 1 && fleet.curGridIdx > 0) ||
+      (details.manualCityMove && details.origin > 0 && details.origin !== details.cityId && fleetAtHome(fleet))));
+}
+
 export function treasureSpeedConfirmed(fleet, details) {
   return integer(details.moveStartTs) && details.moveStartTs > 0 &&
     fleet?.treasureLootUid === details.uid && fleet.targetGridIdx === details.targetGridIdx &&
@@ -371,9 +378,7 @@ export function settleFleetSnapshot(
       if (!confirmed) {
         const observed = repairKinds.has(d.kind)
           ? fleetRepairConfirmed(fleet, d, now)
-          : (fleet.state === 2 && fleet.targetCityId === d.cityId) ||
-            (fleet.cityId === d.cityId &&
-              ([3, 5].includes(fleet.state) || (fleet.state === 1 && fleet.curGridIdx > 0)));
+          : cityDispatchObserved(fleet, d);
         if (!observed) continue;
         ledger.resolveKey(key, true);
         confirmed = true;
