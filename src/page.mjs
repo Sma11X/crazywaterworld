@@ -311,8 +311,9 @@ function closeModal() {
   $('modal').close();
   $('m-ok').onclick = null;
 }
-function openConfirm(title, bodyNodes, onOk) {
+function openConfirm(title, bodyNodes, onOk, okLabel = '确认') {
   $('m-title').textContent = title;
+  $('m-ok').textContent = okLabel;
   const body = clear($('m-body'));
   for (const node of bodyNodes) body.appendChild(node);
   $('m-ok').onclick = async () => {

@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import { createDeclaredProtocol } from './fixtures/declared-protocol.mjs';
 import { defaultSettings, validateSettings, createUsageLedger, exportAutomationSettings, importAutomationSettings } from '../src/automation-settings.mjs';
 import { readFleetSpeed,planFleetSpeed,runFleetSpeed,watchFleetSpeed } from '../src/fleet-speed.mjs';
+import { fleetSpeedTarget, previewManualFleetSpeed, runManualFleetSpeed } from '../src/manual-fleet-speed.mjs';
 import { repairDiamondCost } from '../src/fleet-speed-evidence.mjs';
 import { watchFleetRepairPricing } from '../src/fleet-repair-pricing.mjs';
 import { watchSiliconMining } from '../src/silicon-mining.mjs';
@@ -57,10 +58,77 @@ function fixture(){
   };
   f.run=(extra={})=>runFleetSpeed(client,protocol,config,player,{getSettings:()=>f.settings,ledger,enabled:()=>true,onStep:e=>f.entries.push(e),...extra});
   f.plan=async()=>planFleetSpeed(await readFleetSpeed(client,player),config,f.settings,ledger);
+  f.manualQuote=async(fleet)=>previewManualFleetSpeed(client,protocol,config,player,fleetSpeedTarget(fleet,player),{ledger});
+  f.manualRun=async(quote)=>runManualFleetSpeed(client,protocol,config,player,quote,{ledger,validate:()=>{}});
   f.repair=()=>Object.assign(state.fleets[0],{state:4,durability:80,repairing:{startTs:now()-10,endTs:now()+120,endDura:100}});
   return f;
 }
 try{
+await test('手动派遣加速逐次核对同一航程，直至指定舰队抵达',async()=>{
+  const f=fixture(), fleet=f.state.fleets[1];
+  const other=structuredClone(f.state.fleets[0]);
+  const quote=await f.manualQuote(fleet);
+  assert(quote.maxCost>=60);
+  f.beforeRead=name=>{
+    if(name==='MyFleetsRequest' && fleet.moveEndTs<=f.now()){
+      Object.assign(fleet,{state:1,curGridIdx:fleet.targetGridIdx,cityId:fleet.targetCityId});
+    }
+  };
+  assert.equal((await f.manualRun(quote)).status,'completed');
+  assert(f.writes.length>1);
+  assert.deepEqual(f.writes,Array(f.writes.length).fill({name:'SpeedUpFleetRequest',body:{buildingId:fleet.buildingId}}));
+  assert.equal(f.state.diamonds,1000-30*f.writes.length);
+  assert.deepEqual(f.state.fleets[0],other);
+  assert(1000-f.state.diamonds<=quote.maxCost);
+});
+await test('实际行军缩短少于预计时，手动加速在确认的费用上限停止',async()=>{
+  const f=fixture(),fleet=f.state.fleets[0];
+  fleet.moveEndTs=f.now()+32;
+  const quote=await f.manualQuote(fleet);
+  f.client.sendWatch=async(name,body)=>{
+    assert.equal(name,'SpeedUpFleetRequest');
+    assert.equal(body.buildingId,fleet.buildingId);
+    f.writes.push(body);
+    fleet.moveEndTs--;
+    f.state.diamonds-=30;
+  };
+  assert.equal((await f.manualRun(quote)).status,'partial');
+  assert.equal(30*f.writes.length,quote.maxCost);
+  assert.equal(f.state.diamonds,1000-quote.maxCost);
+});
+await test('手动维修一次补到目标耐久，报价期间换任务不能沿用旧确认',async()=>{
+  const f=fixture();f.repair();
+  const fleet=f.state.fleets[0],quote=await f.manualQuote(fleet);
+  fleet.repairing.startTs++;
+  const stale=await f.manualRun(quote).catch(()=>null);
+  assert.notEqual(stale?.status,'completed');
+  assert.equal(f.writes.length,0);
+  const fresh=await f.manualQuote(fleet);
+  assert.equal((await f.manualRun(fresh)).status,'completed');
+  assert.deepEqual(f.writes,[{name:'SpeedUpRepairRequest',body:{buildingId:fleet.buildingId,speedUp:{type:1,useNum:0}}}]);
+  assert.equal(fleet.durability,100);
+  assert.equal(fleetSpeedTarget(fleet,f.player),null);
+});
+await test('结果不明的手动行军加速保留扣费占用，重复点击不会再次消耗',async()=>{
+  const f=fixture(),quote=await f.manualQuote(f.state.fleets[1]);f.mode='unknown';
+  assert.equal((await f.manualRun(quote)).status,'unknown');
+  assert.equal(f.ledger.pendingCounters().diamonds,30);
+  const retry=await f.manualRun(quote).catch(()=>null);
+  assert.notEqual(retry?.status,'completed');
+  assert.equal(f.writes.length,1);
+});
+await test('同队更换了出发时间后，旧航程的加速不会继续发送到新航程',async()=>{
+  const f=fixture(), fleet=f.state.fleets[1];
+  const quote=await f.manualQuote(fleet);
+  f.beforeRead=name=>{
+    if(name==='MyFleetsRequest' && f.writes.length){
+      Object.assign(fleet,{moveStartTs:f.now(),moveEndTs:f.now()+600});
+    }
+  };
+  const result=await f.manualRun(quote).catch(()=>null);
+  assert.notEqual(result?.status,'completed');
+  assert.equal(f.writes.length,1);
+});
 await test('默认关闭、逐队逐项配置、严格校验和导入迁移',async()=>{
   const s=defaultSettings();assert(!Object.hasOwn(s.fleetSpeed,'enabled'));assert(!Object.hasOwn(s.fleetSpeed,'dailyDiamondLimit'));
   assert(s.fleetSpeed.fleets.every(p=>!p.repair&&!p.march&&p.marchSkipSeconds===60));

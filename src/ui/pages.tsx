@@ -55,8 +55,9 @@ export function overviewPage() {
       <p id="overview-task-summary" className="dim" role="status">等待读取运行状态</p>
       <div id="overview-task-groups" />
     </Panel>
-    <Panel title="世界概览" help="点城池可派遣空闲舰队驻防、增援或进攻。募兵、集结和宣战按当前角色与城池条件开放。行军位置按已同步的起终点和时间推算。地图刷新间隔可设为 5–300 秒。" titleAfter={<div className="world-refresh-controls"><Button id="world-map-auto-refresh" size="sm" variant="outline" aria-pressed="true">自动刷新：开</Button><label className="world-refresh-setting">每<input id="world-map-refresh-seconds" aria-label="世界概览刷新秒数" type="number" min="5" max="300" step="1" defaultValue="10" />秒</label></div>}>
+    <Panel title="世界概览" help="点击城池可查看攻守队列、驻防和可用操作。地图刷新间隔可设为 5–300 秒。" titleAfter={<div className="world-refresh-controls"><Button id="world-map-auto-refresh" size="sm" variant="outline" aria-pressed="true">自动刷新：开</Button><label className="world-refresh-setting">每<input id="world-map-refresh-seconds" aria-label="世界概览刷新秒数" type="number" min="5" max="300" step="1" defaultValue="10" />秒</label></div>}>
       <div id="world-map-fleets" className="fleet-summary" aria-label="我的舰队" />
+      <p id="world-fleet-speed-feedback" className="dim" role="status" hidden />
       <details className="world-map-stats"><summary>城战与货轮详情</summary><div id="world-map-wars" /><div id="world-map-treasures" /></details>
       <details className="world-map-stats"><summary>汽油用量</summary><div id="world-map-resources" /></details>
       <div className="bar world-map-toolbar"><Button id="world-map-refresh" variant="outline" size="sm">刷新地图</Button><Button id="world-map-pan" variant="outline" size="sm" aria-pressed="false">移动地图</Button><Button id="world-map-reset" variant="outline" size="sm">全图</Button><Button id="world-map-home" variant="outline" size="sm">定位舰队</Button><label htmlFor="world-map-zoom">缩放</label><input id="world-map-zoom" type="range" min="1" max="8" step="0.25" defaultValue="1" /><span id="world-map-time" role="status">尚未读取</span></div>
@@ -65,10 +66,10 @@ export function overviewPage() {
         <div id="world-map-scroll" className="world-map-scroll"><svg id="world-map" role="group" aria-label="世界地图" /></div>
         <dialog id="world-map-detail" className="world-map-detail" aria-labelledby="world-map-target-name" hidden>
           <div className="world-map-detail-heading"><strong id="world-map-target-name" /><Button id="world-map-detail-close" variant="ghost" size="sm" aria-label="关闭地图详情"><X aria-hidden="true" size={16} /></Button></div>
-          <div id="world-map-city-actions" className="world-city-actions" hidden />
           <div id="world-map-target-facts" />
+          <div id="world-map-city-actions" className="world-city-actions" hidden />
         </dialog>
-      </div><div id="world-map-legend" className="world-map-legend" /><div id="world-map-state-legend" className="world-map-state-legend" /><p className="world-map-help"><span className="for-mouse">拖动平移 · Ctrl+滚轮缩放 · 悬停查看城池操作，点击固定</span><span className="for-touch">点城池操作 · 点「移动地图」后可单指拖动</span></p></div>
+      </div><div id="world-map-legend" className="world-map-legend" /><div id="world-map-state-legend" className="world-map-state-legend" /><p className="world-map-help"><span className="for-mouse">点击城池查看详情 · 拖动平移 · Ctrl+滚轮缩放</span><span className="for-touch">轻点城池查看详情 · 点「移动地图」后可单指拖动</span></p></div>
       <p id="world-map-notes" className="dim" />
     </Panel>
     <Panel title="资源田概览" help="点击卡片查看该类已占田，点「占领」或「换田」查看候选地块。要换田，先在新地块所在行点「替换」，再选择已有地块。" titleAfter={<div className="bar"><a className="inline-link" href="#config-group-resourceFields">资源田配置</a><Button id="resource-fields-refresh" variant="outline" size="sm" disabled>刷新资源田</Button></div>}>

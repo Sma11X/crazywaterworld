@@ -5,8 +5,10 @@ import path from 'node:path';
 import {EventEmitter} from 'node:events';
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'cw-fleet-speed-http-'));
 process.env.CW_DATA_DIR=directory;process.env.CW_CONFIG_PACK=path.join(directory,'config.json');
+process.env.CW_RESOURCE_AUTO_UPDATE='0';
 fs.writeFileSync(process.env.CW_CONFIG_PACK,JSON.stringify([[0,'WorldParamCfg',{data:[{paramName:'行军加速消耗',paramValue:30}]}],
-  [1,'BuildingUnlockCfg',{data:[1,2,3].map(i=>({buildingType:'远征船',buildingId:i+'远征船'}))}]]));
+  [1,'BuildingUnlockCfg',{data:[1,2,3].map(i=>({buildingType:'远征船',buildingId:i+'远征船'}))}],
+  [2,'SpeedUpRubyCfg',{data:[{minute:0,fleet:10}]}]]));
 const {saveStore}=await import('../src/accounts.mjs');
 const {createConsole}=await import('../src/server.mjs');
 const {createUsageLedger,loadAutomationSettings}=await import('../src/automation-settings.mjs');
@@ -87,4 +89,47 @@ try{
   const invalid=structuredClone(settings);invalid.fleetSpeed.fleets[1].marchDailyDiamonds=-1;
   assert.equal((await api('settings',{settings:invalid,revision:view.revision})).status,400);
   console.log('通过：城战加速 HTTP 持久化、账号隔离、真实两舰队目录、部分推送与解锁、旧选择保存、只读预览和非法预算拒绝，零游戏写入');
+
+  const repair = { buildingId:'1远征船', owner:{ playerId:session.player.playerId }, state:4, durability:100, maxDura:2200,
+    repairing:{startTs:time-20,endTs:time+102,endDura:2200} };
+  const idle = { buildingId:'2远征船', state:1, durability:2200, maxDura:2200 };
+  let balance=1000;
+  client.protocol = {MyFleetsRequest:{},MyFleetsResponse:{},AllResourceRequest:{},AllResourceResponse:{},SpeedUpRepairRequest:{}};
+  client.request=async name=>{
+    if(name==='MyFleetsRequest')return {fleets:structuredClone([repair,idle])};
+    if(name==='AllResourceRequest')return {list:[{res:4,amount:balance}]};
+    return {};
+  };
+  client.sendWatch=async (name,body)=>{
+    assert.equal(name,'SpeedUpRepairRequest');
+    assert.deepEqual(body,{buildingId:repair.buildingId,speedUp:{type:1,useNum:0}});
+    writes.push(name);
+    balance-=20;
+    Object.assign(repair,{state:1,durability:2200,repairing:null});
+  };
+  const rows=ok(await api('world/overview')).fleets;
+  const target=rows.find(f=>f.id===repair.buildingId).speedTarget;
+  assert.equal(target.mode,'repair');
+  assert.equal(rows.find(f=>f.id===idle.buildingId).speedTarget,null);
+  const previewRoute='world/fleet-speed/preview',actionRoute='world/fleet-speed/action';
+  const quote=ok(await api(previewRoute,target));
+  assert.equal(quote.maxCost,20);
+  const command={token:quote.token,confirmedCost:quote.maxCost,confirm:true};
+  assert.equal((await api(actionRoute,{...command,confirm:false})).status,400);
+  assert.equal((await api(actionRoute,{...command,confirmedCost:1})).status,400);
+  assert.equal((await api(actionRoute,command,'speed-b')).status,400);
+  assert.deepEqual(writes,[]);
+  repair.repairing.startTs++;
+  assert.equal((await api(previewRoute,target)).status,400,'地图上的旧维修不能给新维修报价');
+  const old=await api(actionRoute,command);
+  assert(old.status===400 || old.data.status!=='completed');
+  assert.deepEqual(writes,[]);
+  const currentTarget=ok(await api('world/overview')).fleets[0].speedTarget;
+  const fresh=ok(await api(previewRoute,currentTarget));
+  const confirmed={confirm:true,token:fresh.token,confirmedCost:fresh.maxCost};
+  const results=await Promise.all([api(actionRoute,confirmed),api(actionRoute,confirmed)]);
+  assert.deepEqual(ok(results[0]),ok(results[1]));
+  assert.deepEqual(writes,['SpeedUpRepairRequest']);
+  assert.equal(ok(await api('world/overview')).fleets[0].speedTarget,null);
+  console.log('通过：总览舰队维修报价、任务变化、账号隔离、费用确认与重复提交');
 }finally{app.server.closeAllConnections();await app.close();fs.rmSync(directory,{recursive:true,force:true});}

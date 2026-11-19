@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import { exactAutomationId } from './automation-policy.mjs';
 import { rewardData } from './missing-rewards.mjs';
 import { recordsInWorld, settleFleetSnapshot } from './fleet-settlement.mjs';
-import { fleetSpeedConfirmed, sameFleetSpeedOperation, repairDiamondCost, fleetCargoId } from './fleet-speed-evidence.mjs';
+import { fleetSpeedConfirmed, sameFleetSpeedOperation, repairDiamondCost, fleetCargoId, fleetSpeedOperationId } from './fleet-speed-evidence.mjs';
 import { watchFleetRepairPricing, conservativeRepairMinutes } from './fleet-repair-pricing.mjs';
 import { fleetSpeedEnabled } from './fleet-speed-settings.mjs';
 
@@ -116,7 +115,7 @@ export function planFleetSpeed(snapshot, config, settings, ledger) {
     row.remaining = remaining;
     if (!valid(skip) || remaining <= skip) { block('剩余时间不超过 '+skip+' 秒，不加速'); continue; }
     const cargo = fleetCargoId(fleet);
-    const operation = createHash('sha256').update(JSON.stringify([mode,start,target,cargo])).digest('hex').slice(0,20);
+    const operation = fleetSpeedOperationId(mode,start,target,cargo);
     const wait = planSpeedWait(plan,keys,snapshot,policy,mode,operation,remaining);
     if (wait) {
       row.waitSeconds=wait;
