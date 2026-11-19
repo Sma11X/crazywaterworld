@@ -49,6 +49,8 @@ npm run sync-art              # 同步素材；缓存缺图可加 -- --fetch
 
 ### 协议与配置
 
+- `src/wechat/` 是仅用于微信扫码的 Node 原生协议模块（二维码、票据、MMTLS、小游戏 code），`wechat-login.mjs` 管理临时会话；禁止引入第三方授权可执行程序/额外服务。参考版本与数据边界见 `docs/wechat-native-login.md`。新增测试进入 `test:wechat-native` 和核心离线分组，真实扫码需用户参与，不能用真实账号自动回归。
+
 仓库不分发 `.proto` 或配置表，运行和部分测试需要本机游戏缓存。
 
 - `proto.mjs` 执行游戏自带 `game.js`，取得 protobufjs 编解码类。`protocol-source.mjs` 按 `CW_PROTO_BUNDLE`、微信缓存最高版本 `_src_chunks_.wxapkg`、`work/extracted/` 查找。

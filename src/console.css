@@ -531,3 +531,8 @@ section h2:first-child { margin-top:0 }
 @media (prefers-reduced-motion:reduce) {
   #page-progress::after { animation:none }
 }
+
+/* 微信扫码沿用现有扫码弹窗布局。 */
+.wechat-qr { display:block; max-width:100%; width:256px; height:auto; margin:12px auto }
+.wechat-qr[hidden] { display:none }
+.wechat-flow { display:grid; gap:12px; min-width:0 }

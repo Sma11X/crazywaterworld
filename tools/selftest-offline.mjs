@@ -104,6 +104,12 @@ const cases = [
   ['selftest-alipay-login.mjs'],
   ['selftest-alipay-login-http.mjs'],
   ['selftest-alipay-login-ui.mjs'],
+  ['selftest-wechat-qr.mjs'],
+  ['selftest-wechat-mmtls.mjs'],
+  ['selftest-wechat-code.mjs'],
+  ['selftest-wechat-login.mjs'],
+  ['selftest-wechat-login-http.mjs'],
+  ['selftest-wechat-login-ui.mjs'],
 ];
 
 try {

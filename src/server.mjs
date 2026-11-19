@@ -115,6 +115,7 @@ import { ACCOUNT_BACKUP_MAX_BYTES, exportAccountBackup, previewAccountImport, im
 import { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture, DEFAULT_PROXY_PORT } from './capture.mjs';
 import { createPhoneLogin, loadDeviceProfile, saveDeviceProfile, DEVICE_PROFILE_PATH } from './phone-login.mjs';
 import { createAlipayLogin } from './alipay-login.mjs';
+import { createWechatLogin } from './wechat-login.mjs';
 import { iconIndex, atlasFile, itemIcon, resourceIcon, materialIcon, heroIcon, heroCard, buildingIcon, workerIcon } from './art.mjs';
 
 const LOG_LIMIT = 400;
@@ -146,7 +147,7 @@ const STATE_TEXT = {
 };
 
 export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recoveryDelayMs, resourceUpdates = false, resourceUpdater = null, protocol: protocolOverride, giftCodeUpdates = resourceUpdates,
-  alipayLoginController = null,
+  alipayLoginController = null, wechatLoginController = null,
   captureController = { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture } } = {}) {
   const consoleVersion = createConsoleVersion(PAGE);
   const pageRaw = Buffer.from(renderVersionedPage(PAGE, consoleVersion));
@@ -161,6 +162,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   let alipaySaving = false;
   let pendingAlipayLogin = null;
   let cancelledAlipayLoginId = null;
+  const wechatLogin = wechatLoginController ?? createWechatLogin();
+  let wechatSaving = false, pendingWechatLogin = null, cancelledWechatLoginId = null;
   const traceLog = createTraceLog(TRACE_PATH, { maxBytes: TRACE_MAX_BYTES });
   const protocolDiagnostics = createProtocolDiagnostics(path.join(DATA_DIR, 'protocol-errors'));
   const globalLog = [];
@@ -283,6 +286,92 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     return result;
   }
 
+  function clearWechatRoles() {
+    pendingWechatLogin?.controller?.abort();
+    clearTimeout(pendingWechatLogin?.expiryTimer);
+    pendingWechatLogin = null;
+  }
+
+  function readWechatRoles(pending) {
+    if (pending.reading) return pending.reading;
+    pending.entry.choices = [];
+    pending.entry.roleError = null;
+    pending.controller = new AbortController();
+    const reading = readPhoneRoles(pending.entry, { signal: pending.controller.signal }).finally(() => {
+      if (pending.reading === reading) pending.reading = null;
+    });
+    pending.reading = reading;
+    return reading;
+  }
+
+  function wechatLoginStatus(id) {
+    const state = wechatLogin.status(id);
+    if (cancelledWechatLoginId !== state.id) cancelledWechatLoginId = null;
+    if (state.id && state.id === cancelledWechatLoginId) {
+      clearWechatRoles();
+      return { ...state, phase: 'cancelled', qrImage: null };
+    }
+    if (state.phase !== 'captured') {
+      clearWechatRoles();
+      return state;
+    }
+    if (pendingWechatLogin?.id !== state.id) {
+      clearWechatRoles();
+      const credential = wechatLogin.takeCredential(state.id);
+      if (!accountId(credential) || credential.source !== 'wechat') throw new Error('微信游戏登录凭证无效，请重新扫码');
+      pendingWechatLogin = {
+        id: state.id, reading: null, controller: null,
+        entry: { credential, userName: '微信账号', choices: [], roleError: null },
+      };
+      const pending = pendingWechatLogin;
+      pending.expiryTimer = setTimeout(() => {
+        if (pendingWechatLogin === pending) clearWechatRoles();
+      }, Math.max(0, state.expiresAt - Date.now()));
+      pending.expiryTimer.unref?.();
+      void readWechatRoles(pendingWechatLogin);
+    }
+    const pending = pendingWechatLogin;
+    const store = loadStore();
+    const idOfAccount = accountId(pending.entry.credential);
+    const existing = store.accounts.find(account => account.id === idOfAccount);
+    return {
+      ...state,
+      phase: pending.reading ? 'reading-roles' : 'captured',
+      choices: roleChoices(pending.entry, store),
+      roleError: pending.entry.roleError,
+      account: { id: idOfAccount, title: existing ? describeAccount(existing).title : '微信账号' },
+    };
+  }
+
+  function requireWechatRoles(id) {
+    if (closing) throw new Error('控制台已关闭');
+    const state = wechatLoginStatus(id);
+    const pending = pendingWechatLogin;
+    if (!pending || pending.id !== id || !['captured', 'reading-roles'].includes(state.phase)
+      || state.expiresAt <= Date.now()) throw new Error('扫码结果已过期或已保存，请重新扫码');
+    return pending;
+  }
+
+  async function saveWechatRole(pending, choice) {
+    // 排队期间扫码可能被取消、过期或刷新，落盘前重新检查本次选择。
+    if (requireWechatRoles(pending.id) !== pending || pending.reading || !pending.entry.choices.includes(choice)) {
+      throw new Error('角色列表已变化，请重新选择角色');
+    }
+    pending.entry.credential = wechatLogin.takeCredential(pending.id);
+    const result = await saveSelectedRole(pending.entry, choice, { sourceLabel: '微信扫码', stopExisting: true,
+      validateSelection() {
+        if (requireWechatRoles(pending.id) !== pending || pending.reading || !pending.entry.choices.includes(choice)) {
+          throw new Error('角色列表已变化或扫码已结束，请重新扫码');
+        }
+      },
+    });
+    pending.entry.credential = null;
+    pending.entry.choices = [];
+    cancelledWechatLoginId = pending.id;
+    clearWechatRoles();
+    return result;
+  }
+
   async function readPhoneWorlds(credential, { signal } = {}) {
     if (closing) throw new Error('控制台已关闭');
     signal?.throwIfAborted();
@@ -389,7 +478,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const store = loadStore();
     const existing = store.accounts.find(account => account.id === idOfAccount);
     const credential = { ...entry.credential, login: { ...entry.credential.login, worldId: choice.worldId } };
-    const fallbackLabel = ['alipay', 'douyin'].includes(entry.credential.source) ? '未命名角色' : entry.userName;
+    const fallbackLabel = ['alipay', 'wechat', 'douyin'].includes(entry.credential.source) ? '未命名角色' : entry.userName;
     const label = existing?.label && existing.label !== existing.lastSeen?.nickname ? existing.label : choice.role.nickname || fallbackLabel;
     const { account, created } = upsertAccount(store, credential, { label });
     account.automation = { ...account.automation, autoStart: autoStartEnabled(account), loginBlocked: false, loginRecovery: null };
@@ -2613,6 +2702,70 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         return;
       }
 
+      // ---- 微信扫码登录 ----
+      if (route === 'POST /api/accounts/wechat-login/start') {
+        needConfirm(jsonBody());
+        if (closing) throw new Error('控制台已关闭');
+        if (wechatSaving) throw new Error('正在保存微信账号，请稍候');
+        const previous = wechatLogin.status();
+        if (previous.id && previous.id === cancelledWechatLoginId) await wechatLogin.cancel(previous.id);
+        const starting = wechatLogin.start();
+        const currentState = wechatLogin.status();
+        if (pendingWechatLogin && (pendingWechatLogin.id !== currentState.id || currentState.phase !== 'captured')) clearWechatRoles();
+        const state = await starting;
+        json(wechatLoginStatus(state.id));
+        return;
+      }
+      if (route === 'GET /api/accounts/wechat-login/status') {
+        json(wechatLoginStatus(parsed.searchParams.get('id') || undefined));
+        return;
+      }
+      if (route === 'POST /api/accounts/wechat-login/cancel') {
+        const { id } = jsonBody();
+        if (typeof id !== 'string' || !id) throw new Error('请选择要取消的扫码会话');
+        wechatLogin.status(id);
+        cancelledWechatLoginId = id;
+        clearWechatRoles();
+        await wechatLogin.cancel(id);
+        json({ ok: true });
+        return;
+      }
+      if (route === 'POST /api/accounts/wechat-login/roles') {
+        const payload = jsonBody();
+        needConfirm(payload);
+        if (typeof payload.id !== 'string' || !payload.id) throw new Error('扫码结果已过期，请重新扫码');
+        if (wechatSaving) throw new Error('正在保存微信账号，请稍候');
+        const pending = requireWechatRoles(payload.id);
+        void readWechatRoles(pending);
+        json(wechatLoginStatus(payload.id));
+        return;
+      }
+      if (route === 'POST /api/accounts/wechat-login/save') {
+        const payload = jsonBody();
+        needConfirm(payload);
+        if (typeof payload.id !== 'string' || !payload.id) throw new Error('扫码结果已过期，请重新扫码');
+        if (wechatSaving) throw new Error('正在保存微信账号，请稍候');
+        const pending = requireWechatRoles(payload.id);
+        if (pending.reading) throw new Error('正在读取区服和角色，请稍候');
+        if (pending.entry.roleError) throw new Error('角色列表读取失败，请重试后再保存');
+        const choices = pending.entry.choices;
+        const choice = payload.choiceId ? choices.find(item => item.id === String(payload.choiceId))
+          : choices.length === 1 ? choices[0] : null;
+        if (!choice || payload.worldId !== undefined) throw new Error('请选择列表中的区服和角色后再保存');
+        wechatSaving = true;
+        try {
+          const session = sessions.get(accountId(pending.entry.credential));
+          const save = () => saveWechatRole(pending, choice);
+          const result = session && !session.paused ? await enqueue(session, save) : await save();
+          // 凭证已落盘，临时授权会话清理失败也应返回已保存的账号。
+          try { await wechatLogin.cancel(payload.id); } catch {}
+          json(result);
+        } finally {
+          wechatSaving = false;
+        }
+        return;
+      }
+
       // ---- 手机号登录 ----
       if (route === 'GET /api/accounts/phone-login/status') {
         json(phoneLoginStatus());
@@ -4361,6 +4514,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       if (settingsWatchStarted) fs.unwatchFile(settingsFile(), settingsFileChanged);
       clearAlipayRoles();
       await alipayLogin.close();
+      clearWechatRoles();
+      await wechatLogin.close();
       for (const client of phonePreviewClients) client.stop();
       phonePreviewClients.clear();
       pendingPhoneLogins.clear();
