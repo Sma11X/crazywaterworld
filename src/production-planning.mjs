@@ -5,7 +5,7 @@ import { activityProductionEnabled } from './activity-automation.mjs';
 import { createProductionEligibility } from './production-eligibility.mjs';
 
 const rows = (config, key) => config?.tables?.[key]?.data ?? [];
-const sourceNames = { resident: '居民订单', merchant: '不差钱商人', cargo: '贸易港', guildRecruit: '联盟招募',
+const sourceNames = { resident: '居民订单', merchant: '不差钱商人', cargo: '贸易港', guildRecruit: '联盟募兵',
   heroRaid: '超凡英雄', refugee: '难民订单', building: '建筑备料', museum: '博物馆', guildShip: '联盟商船',
   petAdvance: '海兽进阶', petFeed: '海兽投喂', factory: '常规备货' };
 const timingNames = { observed: '会话实测', server: '服务器完成时刻', 'effects-estimate': '加成公式估算', 'config-estimate': '配置耗时估算' };
@@ -231,7 +231,7 @@ export function planProduction(snapshot, config, settings, options = {}) {
       ...(refreshUncertain.size ? { lowerBound: null, upperBound: null } : {}) })),
     notes: unique([...model.notes, ...result.reasons,
       ...(model.skippedOrders.size ? ['已跳过 ' + model.skippedOrders.size + ' 项工厂等级不足或禁用的需求，材料可用于其他排产，恢复生产条件后重新计算'] : []),
-      ...(refreshUncertain.size ? ['生产顺序按本次固定需求计算，联盟订单刷新边界之后的实际需求需重新读取确认'] : []),
+      ...(refreshUncertain.size ? ['生产顺序按本次固定需求计算，联盟募兵订单刷新边界之后的实际需求需重新读取确认'] : []),
       ...(estimated ? ['候选方案比较含估算耗时或生产位条件，生产加成与容量变化后需重新读取计算'] : [])]),
     assumptions: [
       '以需求优先级列表为顺序，先优化高级需求及其上游材料，再逐级优化后续需求的齐套时间',
