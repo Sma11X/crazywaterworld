@@ -469,6 +469,9 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 - 人口由客户端计算，`population = GameParamCfg 初始人口 + Σ 已建成民居当前等级的「人口增加」`，
   `maxPopulation = GameParamCfg 初始人口上限(10) + Σ「人口上限」`。协议里没有，计划器只能按同样口径离线复算。
 - `DispFactory{factoryQ:[{idx, productId, finishTime}], finishedProducts[], autoProductId}`。
+- 微信 v76 客户端在已建成工厂升级时仍可打开 `FactoryPop`。普通下单检查当前建筑等级、配方材料、库存和队列空间。首次建造中的 0 级地块尚不能生产。
+- `TipsDescCfg` 的「自动生产」说明和 `MonthCardCfg.effectList` 确认有效普通月卡提供「第二生产位」，两件产品可同时加工。当前高级月卡和 VIP 等级表均未单独提供这一效果。月卡按服务器时间判断，`endTime = -1` 表示永久。
+- 同一工厂按 `factoryQ` 的数组顺序排队，`idx` 标识任务。每个已开工任务采用各自的 `finishTime`。临近月卡到期时，尚未开工的任务仅在预计能于到期前完成时计入第二位。跨到期时的实际开工行为尚无服务端样本。
 - 常量散在几张 param 表里：`制造位上限=6` 在 `BuildingProduceParamCfg`，
   `产品存量初始上限=50`、`初始人口上限=10` 在 `GameParamCfg`，`订单每日上限=40` 在 `OrderParamCfg`。
   按名字查时要跨表查，只查一张表会拿到 0（本轮踩过：制造位上限读成 0，导致所有工厂都被判定为队列已满）。
@@ -494,11 +497,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 `finishedProducts` 立刻清空，`生鱼片 18→19`、`淡水 15→16`、`布匹 12→13`、`救生衣 9→10`，
 响应体是 `{"products":{"asset":[{"type":0,"id":"生鱼片","num":1}]}}`。
 
-实测（排产）：`StartFactoryProduceRequest` 入队时 `finishTime` 就是当前时刻，
-5 秒内该队列项消失并出现在 `finishedProducts` —— 即这条请求一次只产 1 件且**即时完成**，
-`BuildingProduceCfg.produceTime`（90/300 秒）在界面上是倒计时展示，不是这条请求的等待时间。
-所以循环里每轮「收成品 + 排产」是正常的一进一出，不是重复发同一个请求：
-只有当队列里已经有同一个 `productId` 时计划器才会跳过（此时它会去挑别的配方）。
+每条 `StartFactoryProduceRequest` 排入一件产品。早期账号实测中，有任务在入队后 5 秒内就进入了 `finishedProducts`。排产核对同时检查在产队列和待收数量，实际开工的任务以各自的服务端 `finishTime` 为准。需求缺多件时，同一产品可在队列中出现多次。
 
 ### 12.4 资源田：静态数据在客户端地图 bundle 里
 

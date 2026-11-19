@@ -319,6 +319,7 @@ export async function runLoop(client, protocol, {
         const holdForOrders = canFactory('startProduce') || enabled('finishOrder') || checkUpgrade;
         let version = factorySchedule.version();
         const survey = await surveyWorld(client, protocol, { config, player,
+          includeProductionTiming: canFactory('startProduce') && currentSettings?.factory?.produce !== false,
           includeWeekOrder: holdForOrders || needsCargoDemand(currentSettings),
           includeCargo: (enabled('cargo') && holdForOrders) || needsCargoDemand(currentSettings) });
         // 募兵、上船和订单可能已改变需求，不能沿用主轮的备料快照。
@@ -932,6 +933,7 @@ export async function runLoop(client, protocol, {
         const usesOrders = allowWorld('finishOrder') || allowWorld('denyOrder');
         const factoryReadVersion = factorySchedule.version();
         const survey = await surveyWorld(client, protocol, { config, player,
+          includeProductionTiming: allowWorld('startProduce') && settings?.factory?.produce !== false,
           includeCargo: needsCargoDemand(settings) || (!!isEnabled && enabled('cargo') && (allowWorld('startProduce') || usesOrders)),
           includeWeekOrder: needsCargoDemand(settings) || usesOrders || allowWorld('startProduce') || allowWorld('farm') || allowWorld('upgrade') });
         if (settings && ((allowWorld('startProduce') && (settings.factory.demandFirst || settings.alliance?.enabled &&
@@ -1059,7 +1061,7 @@ export async function runLoop(client, protocol, {
       const latest = getSettings();
       if (hasBaseWork(latest)) {
         try {
-          const survey = await surveyWorld(client, protocol, { config, player, includeWeekOrder: false });
+          const survey = await surveyWorld(client, protocol, { config, player, includeWeekOrder: false, includeProductionTiming: false });
           const extra = await surveyBaseAutomation(client, protocol, config, player, latest, survey, { ledger: usageLedger, enabled: () => !stop.aborted && runtimeActive() && client.connected !== false });
           const plan = planBaseAutomation(extra, config, latest, usage(), { diveCompleted });
           observeBaseAutomationPlan(rewards, plan, latest, getEveryMs());
