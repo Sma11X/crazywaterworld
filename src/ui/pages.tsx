@@ -13,10 +13,6 @@ function Panel({title, help, titleAfter, children}: {title: string; help?: strin
   return <Card><CardHeader><CardTitle className="title-with-help">{title}{help && <HelpTip title={title}>{help}</HelpTip>}</CardTitle>{titleAfter && <CardAction className="row-span-1 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-start-2 max-md:justify-self-start">{titleAfter}</CardAction>}</CardHeader><CardContent>{children}</CardContent></Card>
 }
 
-function Option({id, label, checked = false}: {id: string; label: string; checked?: boolean}) {
-  return <div className="bar"><Switch id={id} data-local-switch="" defaultChecked={checked} className="p-0" /><label htmlFor={id}>{label}</label></div>
-}
-
 export function giftCodesPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
     <Panel title="礼包兑换">
@@ -141,17 +137,10 @@ export function activitiesPage() {
 
 export function manualPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="海面" help="收成品 → 竣工 → 交单 → 按订单缺口排产 → 余料升级建筑。本轮是否允许使用加速器、拒单重刷，由下方本次开关决定。">
-    <div className="bar">
-      <Option id="world-speedup" label="本轮允许花加速器" />
-      <Option id="world-reroll" label="本轮拒单重刷" />
-      <Button id="world-plan" variant="outline">刷新数据</Button>
-      <Button id="world-run" variant="default">执行一轮</Button>
-      <span id="world-hint" className="warn"></span>
-    </div>
-    <div id="world-view" role="status" />
-    <div id="world-factories"></div>
-    <div id="world-orders"></div>
+    <Panel title="海面" help="打开建筑一览时会读取工厂、农田和居民订单。点击工厂的「查看排产」可查看各生产格的情况。">
+      <div id="world-view" role="status" />
+      <div id="world-factories"></div>
+      <div id="world-orders"></div>
     </Panel>
     <Panel title="需求联合排产" help="按用户配置的需求优先级逐级优化齐套时间，上游材料继承对应优先级。共享原料和生产位统一安排，独立设施并行生产。结果显示分层工期、投料顺序、时长依据和阻塞原因。">
       <div className="bar"><Button id="production-plan-refresh" variant="outline">计算联合排产</Button><span id="production-plan-status" className="dim" role="status">连接后可计算</span></div>

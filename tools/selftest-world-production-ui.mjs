@@ -100,7 +100,7 @@ function fixture() {
     const chip = (state, label) => el('span', state, label);
     const smallButton = label => el('button', '', label);
     const renderInventory = () => {}, fmt = value => String(value);
-    const resetInventory = () => {}, isChecked = () => false;
+    const resetInventory = () => {};
     const call = () => new Promise(() => {});
     const snapshot = { paused: false }, disconnected = new Set();
     let current = 'account-a';
@@ -267,7 +267,7 @@ test('切换账号、暂停或断开时关闭弹窗并清理旧账号排产', ()
   }
 });
 
-test('刷新后工厂消失会关闭排产弹窗并聚焦刷新数据', () => {
+test('刷新后工厂消失会关闭排产弹窗并聚焦建筑一览', () => {
   const env = fixture();
   const jobs = [{ index: 5, productId: '饼干', name: '饼干', finishTime: null }];
   env.render(worldData(env, { factories: [factory(jobs)] }));
@@ -275,7 +275,7 @@ test('刷新后工厂消失会关闭排产弹窗并聚焦刷新数据', () => {
   env.render(worldData(env));
   assert.equal(env.node('factory-production-dialog').open, false);
   assert.equal(env.node('factory-production-body').textContent, '');
-  assert.equal(env.node('world-plan').focused, true);
+  assert.equal(env.node('tab-manual').focused, true);
 });
 
 test('当前产物区分等待开工、已完成和空闲，缺少队列显示未同步', () => {

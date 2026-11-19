@@ -59,7 +59,7 @@ ${chrome()}
     ${settingsPage()}
   </section>
 
-  <section id="tab-manual" class="hidden">
+  <section id="tab-manual" class="hidden" tabindex="-1" aria-label="建筑一览">
     ${manualPage()}
   </section>
 
@@ -328,12 +328,6 @@ function openConfirm(title, bodyNodes, onOk) {
 }
 $('m-cancel').onclick = closeModal;
 $('modal').oncancel = event => { event.preventDefault(); closeModal(); };
-function isChecked(control) {
-  return control.getAttribute('aria-checked') === 'true';
-}
-for (const control of document.querySelectorAll('[data-local-switch]')) {
-  control.onclick = () => setTaskSwitch(control, !isChecked(control));
-}
 
 function accountDialog(title, message, value) {
   const dialog = $('account-dialog'), input = $('account-label-input');
@@ -347,17 +341,6 @@ function accountDialog(title, message, value) {
   return new Promise(resolve => {
     dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok' ? input.value : null), { once: true });
   });
-}
-
-function bindGameAction(id, action) {
-  const button = $(id);
-  button.onclick = async () => {
-    if (!current || button.disabled) return;
-    button.disabled = true;
-    try { await action(); }
-    catch (error) { reportError(error); }
-    finally { button.disabled = false; }
-  };
 }
 
 // ---- 运行记录 --------------------------------------------------------------
@@ -1476,7 +1459,7 @@ $('factory-production-dialog').onclose = () => {
   clear($('factory-production-body'));
   const trigger = [...document.querySelectorAll('[data-factory-production]')]
     .find(button => button.dataset.factoryProduction === factoryId);
-  (trigger || $('world-plan')).focus();
+  (trigger || $('tab-manual')).focus();
 };
 
 function factoryCurrentProduction(factory) {
@@ -1599,44 +1582,26 @@ function refreshManualWorld(force = false) {
     resetInventory();
     worldVersion++;
     worldRead = null;
-    for (const id of ['world-factories', 'world-orders', 'world-stock', 'world-fields', 'world-hint']) clear($(id));
-    $('world-view').textContent = !account ? '请先选择账号' : !available ? '账号已断开连接' : '正在读取海面数据…';
+    for (const id of ['world-factories', 'world-orders', 'world-stock', 'world-fields']) clear($(id));
+    if (!available) $('world-view').textContent = account ? '账号已断开连接' : '请先选择账号';
   }
   if (!available || worldRead?.account === account) return;
   const version = ++worldVersion;
   worldRead = { account, version };
-  $('world-hint').textContent = '正在读取…';
-  call('/api/world?speedUp=' + isChecked($('world-speedup'))).then(data => {
+  $('world-view').textContent = '正在读取海面数据…';
+  call('/api/world').then(data => {
     if (version === worldVersion && current === account) renderWorld(data);
   }).catch(error => {
     if (version === worldVersion && current === account) {
       $('inventory-status').textContent='库存读取失败，请重试';
-      $('world-view').textContent = '海面数据读取失败，可点「刷新数据」重试。';
+      $('world-view').textContent = '海面数据读取失败，请重新打开「建筑一览」重试。';
       reportError(error);
     }
   }).finally(() => {
     if (worldRead?.version === version) worldRead = null;
-    if (version === worldVersion) $('world-hint').textContent = '';
   });
 }
 $('inventory-refresh').onclick=()=>refreshManualWorld(true);
-$('world-plan').onclick = () => refreshManualWorld();
-$('world-speedup').onclick = () => { setTaskSwitch($('world-speedup'), !isChecked($('world-speedup'))); refreshManualWorld(true); };
-bindGameAction('world-run', async () => {
-  const account = current;
-  $('world-hint').textContent = '执行中 ...';
-  try {
-    const body = { confirm: true, speedUp: isChecked($('world-speedup')), reroll: isChecked($('world-reroll')) };
-    const data = await call('/api/world/run', { method: 'POST', body: JSON.stringify(body) });
-    if (account !== current || disconnected.has(account)) return;
-    worldVersion++;
-    $('world-hint').textContent = '执行 ' + data.results.length + ' 个动作，失败 ' + data.results.filter((r) => r.ok === false).length;
-    if (!data.refreshError) renderWorld(data);
-  } catch (error) {
-    $('world-hint').textContent = '';
-    reportError(error);
-  }
-});
 
 // ---- 表格 ------------------------------------------------------------------
 // 单元格可以是字符串、{num}、{chip}、{cell: 图标项}、{cells: [图标项]}
