@@ -164,13 +164,27 @@ const configGroups = [
     configField('guildFort.reserve','捐赠后库存保留','number'),configField('guildFort.dailyLimit','每日捐赠上限','number',{help:'0 表示不额外限制，仍遵守游戏日上限。'}),
   ]},
   {id:'resourceFields',title:'资源田',category:'world',fields:[
-    configField('resourceFields.enabled','自动补满资源田空位','switch',{help:'仅派遣到本盟城市内自己尚未占领的资源田，每次检查最多派一队。已满额时等待，不自动放弃已有资源田。'}),
-    configField('resourceFields.preferredResource','优先资源','choice',{options:[['汽油','汽油'],['种子','种子'],['公会科技点','科技点']],help:'优先选择该类资源，同类按基础小时产出从高到低选择。没有符合条件的优先资源时可选择其他类型。'}),
+    configField('resourceFields.enabled','自动占领资源田','switch'),
+    configField('resourceFields.refillAfterLoss','失地后自动补齐','switch',{help:'已占田从本人列表消失，或因城池失守而停产时，开启此项会按当前比例或配额重新占田。关闭时保留失地造成的缺口，仍可首次占田或使用新增名额。'}),
+    configField('resourceFields.allocationMode','名额分配','radio',{
+      options:[['ratio','按比例'],['quota','按配额']],
+      help:'按比例时，三种资源按权重分配总名额，取整后剩余名额优先分给权重较高的资源。按配额时，分别设置每种资源要占的块数。',
+    }),
+    ...[['fuel','汽油'],['seeds','种子'],['tech','科技点']].flatMap(([key, label]) => [
+      configField('resourceFields.ratios.' + key, label + '比例', 'number', {
+        when: draft => draft.resourceFields.allocationMode === 'ratio',
+        help:'填写相对权重。设为 0 时，此资源的名额由其他有权重的资源分配。',
+      }),
+      configField('resourceFields.quotas.' + key, label + '配额', 'number', {
+        when: draft => draft.resourceFields.allocationMode === 'quota', unit:'块',
+        help:'填写此资源的目标块数。设为 0 时不再派遣舰队占领此类田地。',
+      }),
+    ]),
     configField('resourceFields.fleetIds','参与舰队','multi',{catalog:'expeditionFleets',empty:'请选择参与占领的舰队，空选不派遣',help:'只使用已编队、空闲且没有待确认任务的舰队，遵守舰队调度顺序与城战预留。'}),
     configField('resourceFields.minDurabilityPercent','最低耐久','number',{unit:'%',help:'占领需要战斗；舰队需达到耐久门槛及田地推荐战力。出征返航后仍未确认占领时，当日暂停自动占田。'}),
     configField('resourceFields.reserveFleetCount','保留空闲舰队','number',{unit:'队',help:'派遣后至少保留此数量的可用空闲舰队给其他任务。设为 0 可使用所有符合条件的舰队。'}),
-    configField('resourceFields.minLevel','最低资源田等级','number',{help:'只选择达到此等级且基础产出已同步的资源田。'}),
-    configField('resourceFields.checkEverySeconds','检查间隔','number',{unit:'秒',help:'挂机运行时按此间隔检查；总览手动刷新不会触发自动派遣。'}),
+    configField('resourceFields.minLevel','最低资源田等级','number',{help:'从最高等级开始选田，高级田不足时逐级向下选择，直到此等级。'}),
+    configField('resourceFields.checkEverySeconds','检查间隔','number',{unit:'秒',help:'每次检查都会查找可占的高级田。需要更换时，先放弃旧田，再派舰队占领新田。'}),
   ]},
   {id:'silicon',title:'硅矿',category:'world',fields:[
     configField('silicon.enabled','硅矿自动化总开关','switch',{help:'按真实赛季与功能解锁条件运行。奖励由服务器自动结算；一般每10分钟检查，追击或追杀每2分钟，相关推送提前唤醒。'}),

@@ -14,13 +14,14 @@ import { validateLineupSettings, validateFleetLineupBindings } from './saved-lin
 import { fleetSpeedDefaults, FLEET_SPEED_NUMBERS, validateFleetSpeeds } from './fleet-speed-settings.mjs';
 import { cityWarFleetStrategy, cityWarUsesGlobalStrategy, validateCityWarFleetStrategies } from './city-war-settings.mjs';
 import { WEEKLY_ACTIVITY_DEFAULTS, WEEKLY_ACTIVITY_CONSTRAINTS, validateWeeklyActivitySettings, migrateWeeklyActivitySettings } from './weekly-activity-settings.mjs';
+import { resourceFieldIds, defaultResourceFieldAmounts } from './resource-field-allocation.mjs';
 
 // 设置与登录凭据分开保存。导出只包含设置，不包含账号、凭据或用量账本。
 export const settingsFile = () => path.join(dataDirectory(), 'automation-settings.json');
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 14;
+export const SETTINGS_SCHEMA_VERSION = 15;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 export const DEMAND_SOURCES = [
   ['cargo', '贸易港口 / 货船'], ['guildRecruit', '联盟募兵'], ['museum', '博物馆探宝'],
@@ -72,7 +73,8 @@ export const DEFAULT_SETTINGS = {
   lineups: { presets: [], mainlinePresetId: '', trialPresets: [] },
   trials: { paid: false, ads: false, raidIds: ['1','2','3'], paidPerRaidLimit: 1, dailyDiamondBudget: 450, maxSingleCost: 50 },
   fleetDispatch: { priority: ['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon','resourceFields'] },
-  resourceFields: { enabled: false, preferredResource: '汽油', fleetIds: [], minDurabilityPercent: 80, reserveFleetCount: 1, minLevel: 1, checkEverySeconds: 300 },
+  resourceFields: { enabled: false, refillAfterLoss: false, allocationMode: 'ratio', ratios: { ...defaultResourceFieldAmounts }, quotas: { ...defaultResourceFieldAmounts },
+    fleetIds: [], minDurabilityPercent: 80, reserveFleetCount: 1, minLevel: 1, checkEverySeconds: 60 },
   fleetSpeed: { enabled: false, fleets: [1,2,3].map(id => fleetSpeedDefaults(id + '远征船')) },
   worldBoss: { enabled: false, fleetIds: [], fleetPresets: [], minDurabilityPercent: 80 },
   radar: { runEnabled:false, enabled:false, repairIdle:false, fleetIds:[], types:['pirate','collect','refugee','spy','fixed'], allowMaterials:false, minDurabilityPercent:80, checkEverySeconds:30 },
@@ -120,7 +122,9 @@ const constraints = {
   'merchant.upgradeMinReturnPercent': int(10000, 100), 'merchant.upgradeMaxLevel': int(5, 1), 'merchant.upgradeDailyDiamondLimit': int(100000),
   'ads.waitSeconds':int(120,5),
   'fleetDispatch.priority': {...strings(8),values:['cityWar','pirateHunt','worldBoss','follow','treasure','radar','silicon','resourceFields']},
-  'resourceFields.preferredResource': { kind: 'choice', values: ['汽油', '种子', '公会科技点'] },
+  'resourceFields.allocationMode': { kind: 'choice', values: ['ratio', 'quota'] },
+  'resourceFields.ratios': { kind: 'resourceAmounts' }, 'resourceFields.quotas': { kind: 'resourceAmounts' },
+  ...Object.fromEntries(['ratios', 'quotas'].flatMap(group => Object.keys(resourceFieldIds).map(key => [`resourceFields.${group}.${key}`, int(1_000_000)]))),
   'resourceFields.fleetIds': strings(10), 'resourceFields.minDurabilityPercent': int(100, 1),
   'resourceFields.reserveFleetCount': int(3), 'resourceFields.minLevel': int(100, 1), 'resourceFields.checkEverySeconds': int(3600, 30),
   'worldBoss.fleetIds': strings(10), 'worldBoss.minDurabilityPercent': int(100),
@@ -307,7 +311,10 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   // Ignore only these known fields; every other setting remains strict.
   input = migrateVersion10Settings(migrateVersion9Settings(migrateVersion8Settings(migrateVersion7Settings(migrateVersion6Settings(migrateVersion5Settings(migrateVersion4Settings(migrateVersion3Settings(migrateVersion2Settings(input)))))))));
   // Additive follow preference: keep the existing behavior for older saved files and open pages.
-  input = migrateVersion13Settings(input);
+  input = migrateVersion14Settings(migrateVersion13Settings(input));
+  if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
+    input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
+  }
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.
@@ -341,6 +348,16 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
       } else if (rule?.kind === 'choice') {
         if (!rule.values.includes(value)) errors[name] = '请选择有效选项';
         else output[group][key] = value;
+      } else if (rule?.kind === 'resourceAmounts') {
+        if (!plain(value)) { errors[name] = '请输入三种资源的数量'; continue; }
+        for (const field of Object.keys(value)) {
+          if (!Object.hasOwn(resourceFieldIds, field)) errors[name + '.' + field] = '不支持的资源类型';
+        }
+        for (const field of Object.keys(resourceFieldIds)) {
+          const path = name + '.' + field, { min, max } = constraints[path];
+          if (!Number.isSafeInteger(value[field]) || value[field] < min || value[field] > max) errors[path] = `请输入 ${min}–${max} 之间的整数`;
+          else output[group][key][field] = value[field];
+        }
       } else if (rule?.kind === 'time') {
         if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) errors[name] = '请输入有效时间（HH:mm）';
         else output[group][key] = value;
@@ -616,7 +633,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -948,4 +965,13 @@ function migrateVersion12Settings(settings) {
 function migrateVersion13Settings(settings) {
   if (!plain(settings) || !plain(settings.treasure) || Object.hasOwn(settings.treasure, 'followMode')) return settings;
   return { ...settings, treasure: { ...settings.treasure, followMode: 'trigger' } };
+}
+
+// 旧配置优先一种资源，同时允许占领其他资源，因此为三类资源保留正权重。
+function migrateVersion14Settings(settings) {
+  if (!plain(settings?.resourceFields) || !Object.hasOwn(settings.resourceFields, 'preferredResource')) return settings;
+  const { preferredResource, ...fields } = settings.resourceFields;
+  if (!Object.values(resourceFieldIds).includes(preferredResource)) throw new SettingsError({ 'resourceFields.preferredResource': '请选择有效资源' });
+  const ratios = Object.fromEntries(Object.entries(resourceFieldIds).map(([key, id]) => [key, id === preferredResource ? 3 : 1]));
+  return { ...settings, resourceFields: { allocationMode: 'ratio', ratios, quotas: { ...defaultResourceFieldAmounts }, ...fields } };
 }
