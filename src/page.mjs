@@ -1566,7 +1566,7 @@ function renderWorld(data) {
   renderInventory(data.stock);
   const fields=clear($('world-fields'));fields.append(el('p','dim','已占资源田 '+(data.resFields.fields?.length??'?')+'/'+(data.resFields.maxNum??'?')));
   const yields=el('div','field-yield-summary');yields.setAttribute('aria-label','资源田每小时基础总产量');for(const item of data.resFields.totals??[])yields.append(el('span','',item.name+' '+(item.perHour===null?'未同步':fmt(item.perHour)+'/小时')));fields.append(yields);
-  if(data.resFields.rows?.length)fields.append(table(['建筑','产出','等级'],data.resFields.rows.map(r=>[r.name+' · '+r.cityName,r.product,r.level??'未同步'])));
+  if(data.resFields.rows?.length)fields.append(table(['建筑','产出','等级'],[...data.resFields.rows].sort(compareResourceFieldsByLevel).map(r=>[r.name+' · '+r.cityName,r.product,r.level??'未同步'])));
   else fields.append(el('p','dim',data.resFields.fields?.length?'资源田信息未同步，请重新加载服务':'暂无已占资源田'));
   fields.append(el('p','dim','产出为每小时基础值，不含科技及其他加成。'));
 }
