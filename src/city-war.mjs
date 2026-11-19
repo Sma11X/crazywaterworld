@@ -251,7 +251,7 @@ export async function refreshCityWarReservations(client, protocol, config, playe
   reserveDispatch(client, 'cityWar', ids, Date.now() + Math.max(60000, (p.checkEverySeconds ?? 15) * 2000));
 }
 
-export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys = {}, pendingPetrol = 0 } = {}) {
+export function planCityWar(snapshot, settings, { keys = {}, pendingPetrol = 0 } = {}) {
   keys=recordsInWorld(keys,snapshot.worldId);
   const p = settings?.cityWar;
   const plan = { actions: [], notes: [], reservedFleetIds: [], fleets: [], targets: snapshot.targets, nativeLimit: snapshot.nativeLimit,
@@ -313,8 +313,7 @@ export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys
   };
   if (![...fleetChoices.values()].some(choice => choice.candidates.length)) { plan.notes.push('没有符合所选舰队攻守职责的本联盟有效宣战目标'); return plan; }
   if (!integer(snapshot.fuel) || !integer(pendingPetrol)) { plan.notes.push('无法确认汽油及待确认消费'); return plan; }
-  let fuel = snapshot.fuel - pendingPetrol, dispatches = usage.counters.cityWarDispatches ?? 0;
-  if (!integer(dispatches)) { plan.notes.push('城战当日用量记录异常'); return plan; }
+  let fuel = snapshot.fuel - pendingPetrol;
   for (const view of plan.fleets) {
     const id = view.buildingId, fleet = snapshot.fleets.find(row => row.buildingId === id);
     let reason = view.reason;
@@ -324,7 +323,6 @@ export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys
     if (!reason && Object.entries(keys).some(([key, record]) => key.startsWith('treasure:' + snapshot.worldId + ':') && key.endsWith(':' + fleetNo(id)) && !record.confirmed && !record.expired)) reason = '巨轮派遣结果待确认，暂不接续出战或维修';
     if (!reason && keys['treasureRepair:' + snapshot.worldId + ':' + fleetNo(id)]?.confirmed === false) reason = '巨轮维修结果待确认，暂不接续出战或维修';
     if (!reason) reason = fleetRecordReason(keys,id);
-    if (!reason && dispatches >= p.dailyDispatchLimit) reason = '已达今日工具接续出征上限';
     if (reason) { view.reason = reason; plan.notes.push(view.name + '：' + reason); continue; }
     const { candidates: choices, preferences } = fleetChoices.get(id);
     choices.sort((a, b) => order(a, b, choices, preferences));
@@ -345,7 +343,8 @@ export function planCityWar(snapshot, settings, { usage = { counters: {} }, keys
     plan.actions.push({ kind, request, body, buildingId: id, cityId: target.id, role: view.role, cost,
       uniqueKey: keyOf(snapshot.worldId, id), beforeDurability: fleet.durability,
       label: view.name + (kind === 'cityRepair' ? '维修后继续' + roleName(view.role) : '接续' + roleName(view.role) + target.name), costs: cost ? [{ id: '汽油', num: cost }] : [] });
-    fuel -= cost; if (kind === 'cityDispatch') { dispatches++; assigned.set(target.id, assigned.get(target.id) + 1); }
+    fuel -= cost;
+    if (kind === 'cityDispatch') assigned.set(target.id, assigned.get(target.id) + 1);
   }
   return plan;
 }
@@ -382,7 +381,7 @@ export async function runCityWar(client, protocol, config, player, { getSettings
     snapshot.attackDura = rows(config, 'WorldParamCfg').find(row => row.paramName === '攻城战消耗耐久')?.paramValue;
     const pending = () => { const p = ledger.pendingCounters(); return (p.cityWarPetrol ?? 0) + (p.treasurePetrol ?? 0) + (p.piratePetrol ?? 0) + (p.radarPetrol ?? 0) + (p.worldBossPetrol ?? 0) + (p.siliconPetrol ?? 0) + (p.resourceFieldPetrol ?? 0); };
     const settings = getSettings();
-    let plan = planCityWar(snapshot, settings, { usage: ledger.snapshot(), keys: ledger.keyRecords(), pendingPetrol: pending() });
+    let plan = planCityWar(snapshot, settings, { keys: ledger.keyRecords(), pendingPetrol: pending() });
     if (plan.nativeOffFleetIds.length) {
       const ids = [...plan.nativeOffFleetIds], signature = JSON.stringify([settings.cityWar.nativeCommissionLimit, ids]);
       const failure = nativeRejected.get(client);
@@ -404,7 +403,7 @@ export async function runCityWar(client, protocol, config, player, { getSettings
         const closedNote = '已关闭原生委任：' + ids.map(nameOf).join('、');
         snapshot = await read();
         snapshot.attackDura = rows(config, 'WorldParamCfg').find(row => row.paramName === '攻城战消耗耐久')?.paramValue;
-        plan = planCityWar(snapshot, settings, { usage: ledger.snapshot(), keys: ledger.keyRecords(), pendingPetrol: pending() });
+        plan = planCityWar(snapshot, settings, { keys: ledger.keyRecords(), pendingPetrol: pending() });
         plan.notes.unshift(closedNote);
         if (plan.nativeOffFleetIds.length) {
           plan.notes.push('原生委任关闭结果待确认：' + plan.nativeOffFleetIds.map(nameOf).join('、'));
@@ -425,7 +424,7 @@ export async function runCityWar(client, protocol, config, player, { getSettings
       if (!enabled() || !cityWarEnabled(getSettings()) || !client.connected) break;
       const fresh = await read(); fresh.attackDura = snapshot.attackDura;
       fresh.fuel = Math.min(fresh.fuel, remainingFuel);
-      const reviewed = planCityWar(fresh, settings, { usage: ledger.snapshot(), keys: ledger.keyRecords(), pendingPetrol: pending() });
+      const reviewed = planCityWar(fresh, settings, { keys: ledger.keyRecords(), pendingPetrol: pending() });
       if (reviewed.nativeOffFleetIds.length) { plan.notes.push('原生委任状态变化，暂停本轮接续'); break; }
       const step = reviewed.actions.find(row => row.uniqueKey === proposed.uniqueKey && row.kind === proposed.kind && row.cityId === proposed.cityId && row.role === proposed.role && row.cost === proposed.cost);
       if (!step || !canUseFleet(step.buildingId) || legacyFleetReservationReason(client,step.buildingId) || settings !== getSettings() || !enabled() || exactAutomationId(player.guildId) !== fresh.guildId) continue;
@@ -439,7 +438,7 @@ export async function runCityWar(client, protocol, config, player, { getSettings
       if (failure && failure.until > Date.now() && failure.signature === JSON.stringify(step.body)) continue;
       const details = { kind: step.kind, buildingId: step.buildingId, cityId: step.cityId, role: step.role, beforeDurability: step.beforeDurability, sentAt: fresh.now };
       const ticket = ledger.reserve({ cityWarPetrol: step.cost, cityWarDispatches: step.kind === 'cityDispatch' ? 1 : 0, cityWarRepairs: step.kind === 'cityRepair' ? 1 : 0 },
-        { cityWarDispatches: settings.cityWar.dailyDispatchLimit }, {}, { uniqueKey: step.uniqueKey, details });
+        {}, {}, { uniqueKey: step.uniqueKey, details });
       if (!enabled() || settings !== getSettings() || !client.connected || legacyFleetReservationReason(client,step.buildingId)) { ledger.cancel(ticket); break; }
       let entry;
       try {

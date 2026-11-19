@@ -332,7 +332,7 @@ test('巨轮跟随后续方式仅在跟随与反复攻占同时开启时展示�
 test('设置页不再出现汽油保留量或消费上限，其他资源约束仍存在', () => {
   const f=fixture();f.renderPage();
   for(const key of ['worldBoss.petrolReserve','radar.petrolReserve','radar.dailyPetrolLimit','pirateHunt.petrolReserve','pirateHunt.fuelBudget','treasure.petrolReserve','treasure.maxRepairCost','treasure.dailyRepairPetrolLimit','cityWar.petrolReserve','cityWar.maxRepairCost','cityWar.dailyPetrolLimit','silicon.petrolReserve','silicon.dailyPetrolLimit','silicon.fleets.0.maxRepairCost'])assert.equal(f.widget(key),undefined,key);
-  assert(f.widget('resources.diamondDailyLimit'));assert(f.widget('cityWar.dailyDispatchLimit'));
+  assert(f.widget('resources.diamondDailyLimit'));
 });
 
 test('海兽、博物馆和情报只展示统一配置，探宝单开关直接展开参数', () => {
@@ -406,6 +406,8 @@ test('舰队职责隶属参与舰队，逐队加速合并且维修与派遣省�
   global.open=true;global.ontoggle();
   assert(visible(f.widget('cityWar.targetMode').node),'展开后显示全局策略');
   const city=f.env.node('config-group-cityWar');
+  assert.equal(f.widget('cityWar.dailyDispatchLimit'), undefined);
+  assert(f.widget('cityWar.nativeCommissionLimit'));
   assert.equal(f.widget('fleetSpeed.enabled'),undefined);
   assert.equal(f.widget('fleetSpeed.dailyDiamondLimit'),undefined,'城战加速不再有中间合计上限');
   assert(f.widget('resources.diamondDailyLimit'));

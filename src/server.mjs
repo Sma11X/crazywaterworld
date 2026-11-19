@@ -2357,7 +2357,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           if (category === 'cityWar') {
             const state = await readCityWar(client, protocolFor(client), config, session.player, settings.cityWar);
             const ledger = usageFor(session), pending = ledger.pendingCounters();
-            const plan = planCityWar(state, settings, { usage, keys: ledger.keyRecords(), pendingPetrol: (pending.cityWarPetrol ?? 0) + (pending.treasurePetrol ?? 0) + (pending.piratePetrol ?? 0) + (pending.radarPetrol ?? 0) + (pending.worldBossPetrol ?? 0) + (pending.siliconPetrol ?? 0) + (pending.resourceFieldPetrol ?? 0) });
+            const plan = planCityWar(state, settings, { keys: ledger.keyRecords(), pendingPetrol: (pending.cityWarPetrol ?? 0) + (pending.treasurePetrol ?? 0) + (pending.piratePetrol ?? 0) + (pending.radarPetrol ?? 0) + (pending.worldBossPetrol ?? 0) + (pending.siliconPetrol ?? 0) + (pending.resourceFieldPetrol ?? 0) });
             const online = await readWorldOnlineReward(client, config, session.player);
             if (!settings.schedule.worldOnlineRewards) plan.notes.push('城战在线奖励自动领取未开启');
             else if (online.ready && worldOnlineRewardKey(session.player, online)) {
@@ -2401,7 +2401,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             if (cityWarEnabled(settings)) {
               const war = await readCityWar(client, protocolFor(client), config, session.player, settings.cityWar);
               reservedFleetIds = war.reason && settings.cityWar.reserveDuringWar ? [...settings.cityWar.fleetIds]
-                : planCityWar(war, settings, { usage, keys: ledger.keyRecords(), pendingPetrol: pendingFuel }).reservedFleetIds;
+                : planCityWar(war, settings, { keys: ledger.keyRecords(), pendingPetrol: pendingFuel }).reservedFleetIds;
             }
             const task = settings.treasure.follow ? 'follow' : 'treasure';
             const unavailableFleets = Object.fromEntries(settings.treasure.fleetIds.map(id => [id,

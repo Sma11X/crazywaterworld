@@ -135,10 +135,10 @@ try {
     }
   });
 
-  test('汽油限制从旧文件、导入和旧页面保存中移除，保留其他资源与玩法设置', () => {
+  test('汽油限制和城战接续次数上限从旧文件、导入和旧页面保存中移除', () => {
     const expected = defaultSettings();
     Object.assign(expected.resources, { allowDiamonds: true, diamondDailyLimit: 1234, diamondThreshold: 50 });
-    Object.assign(expected.cityWar, { enabled: true, fleetIds: ['1远征船'], autoRepair: true, dailyDispatchLimit: 7, repairBelowPercent: 65 });
+    Object.assign(expected.cityWar, { enabled: true, fleetIds: ['1远征船'], autoRepair: true, nativeCommissionLimit: 2, repairBelowPercent: 65 });
     Object.assign(expected.treasure, { autoRepair: true, dailyDispatchLimit: 12, dailyDiamondLimit: 321 });
     Object.assign(expected.pirateHunt, { enabled: true, fleetIds: ['1远征船'], maxFailures: 4 });
     Object.assign(expected.silicon, { dailyRewardLimit: 5, dailyDiamondLimit: 200 });
@@ -149,13 +149,13 @@ try {
       radar: { petrolReserve: 1000, dailyPetrolLimit: 1 },
       pirateHunt: { petrolReserve: 1234, fuelBudget: 1 },
       treasure: { petrolReserve: 99999, maxRepairCost: 1, dailyRepairPetrolLimit: 1 },
-      cityWar: { petrolReserve: 99999, maxRepairCost: 1, dailyPetrolLimit: 1 },
+      cityWar: { petrolReserve: 99999, maxRepairCost: 1, dailyPetrolLimit: 1, dailyDispatchLimit: 7 },
       silicon: { petrolReserve: 99999, dailyPetrolLimit: 1 },
     };
     for (const [group, values] of Object.entries(retired)) Object.assign(legacy[group], values);
     legacy.silicon.fleets.forEach((fleet, index) => { fleet.maxRepairCost = index + 1; });
     const before = structuredClone(legacy);
-    for (const version of [1, 2, 3, SETTINGS_SCHEMA_VERSION]) {
+    for (const version of [1, 2, 3, 17, SETTINGS_SCHEMA_VERSION]) {
       fs.writeFileSync(file, JSON.stringify({ version, accounts: {
         fuel: { settingsVersion: version, revision: 8, settings: legacy },
         other: { settingsVersion: version, revision: 3, settings: legacy },
@@ -164,7 +164,7 @@ try {
       const loaded = loadAutomationSettings('fuel', { file });
       assert.deepEqual(loaded.settings, expected);
       assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version, settings: legacy }), expected);
-      assert.deepEqual(validateSettings(legacy), expected, '旧页面仍可保存，其汽油限制不再进入当前配置');
+      assert.deepEqual(validateSettings(legacy), expected, '旧页面仍可保存，已移除的限制不再进入当前配置');
       assert.deepEqual(fs.readFileSync(file), bytes, '读取不会隐式写盘');
       assert.deepEqual(legacy, before, '迁移不修改传入对象');
       const saved = saveAutomationSettings('fuel', legacy, { file, revision: loaded.revision });
@@ -449,7 +449,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 17);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 18);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
