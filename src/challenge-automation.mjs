@@ -11,7 +11,7 @@ export async function runChallengeRound(client, config, { player, getSettings, s
   const current = () => enabled() && !signal?.aborted && client.connected !== false;
   const prefs = getSettings()?.progression;
   const battle = async (key, label, progress, allowed, busy, run) => {
-    if (!current() || !allowed()) return;
+    if (!allowed() || !current()) return;
     const finish = entry => report({ key, label, ...entry });
     if (!progress.halted && (progress.failures ?? 0) >= getSettings().progression.maxFailures) {
       progress.halted = true; progress.reason = '已达到当前失败停止次数，本次挂机停止该挑战；重新开始挂机可重试';
@@ -73,7 +73,7 @@ export async function runChallengeRound(client, config, { player, getSettings, s
         () => isTrialBusy(raidId), options => runTrialStages(client, player, config, raidId, { ...options, signal, wait, maxFailures: 1, maxWins: 1 }));
     }
   }
-  if (mode !== 'progression' && current() && getSettings()?.pirateHunt?.enabled) {
+  if (mode !== 'progression' && getSettings()?.pirateHunt?.enabled && current()) {
     if (isPirateBusy()) { report({ key: 'pirateAuto', label: '海盗讨伐', skipped: true, reason: '手动首杀推进中，本轮跳过' }); return; }
     try {
       const spentBefore = state.pirate.state?.spent ?? 0, winsBefore = state.pirate.state?.wins ?? 0;

@@ -146,12 +146,21 @@ export async function runLoop(client, protocol, {
   let lastTreasureNotes = '';
   let siliconAt = 0, siliconPreference = null, extendedAt = 0, extendedPreference = null;
   let resourceFieldsAt = 0, resourceFieldsPreference = null;
-  const resourceFieldsNext = () => getSettings()?.resourceFields?.enabled ?
-    (resourceFieldsPreference === getSettings().resourceFields ? resourceFieldsAt : 0) : Infinity;
-  const siliconNext = () => getSettings()?.silicon?.enabled ?
-    (siliconPreference === getSettings().silicon ? siliconAt : 0) : Infinity;
-  const extendedEnabled = () => getSettings()?.alliance?.enabled || getSettings()?.guildShip?.enabled || getSettings()?.heroRaid?.enabled;
-  const extendedNext = () => extendedEnabled() ? (extendedPreference === getSettings() ? extendedAt : 0) : Infinity;
+  const resourceFieldsNext = () => {
+    const preference = getSettings()?.resourceFields;
+    if (!preference?.enabled) return Infinity;
+    return resourceFieldsPreference === preference ? resourceFieldsAt : 0;
+  };
+  const siliconNext = () => {
+    const preference = getSettings()?.silicon;
+    if (!preference?.enabled) return Infinity;
+    return siliconPreference === preference ? siliconAt : 0;
+  };
+  const extendedNext = () => {
+    const settings = getSettings();
+    if (!settings?.alliance?.enabled && !settings?.guildShip?.enabled && !settings?.heroRaid?.enabled) return Infinity;
+    return extendedPreference === settings ? extendedAt : 0;
+  };
   let appointmentAt = 0, appointmentPreference = null;
   const appointmentSettings = () => JSON.stringify(getSettings()?.appointments);
   const appointmentNext = () => getSettings()?.appointments?.enabled
@@ -163,13 +172,14 @@ export async function runLoop(client, protocol, {
   const travel=watchTreasureTravel(client);
   const merchantMonitor = watchMerchant(client);
   const merchantIdentity = JSON.stringify([player?.playerId, player?.worldId, player?.guildId]);
-  const merchantActive = () => Boolean(isEnabled && !stop.aborted && runtimeActive() && client.connected !== false
+  const merchantSelected = () => Boolean(isEnabled && !stop.aborted && client.connected !== false
     && JSON.stringify([player?.playerId, player?.worldId, player?.guildId]) === merchantIdentity
     && isActivityTaskAvailable('merchantTrade', client) && nativePreferenceEnabled(getSettings(), 'merchantTrade')
     && isEnabled('merchantTrade'));
+  const merchantActive = () => merchantSelected() && runtimeActive();
   const serverNowSeconds = () => Math.floor((Date.now() + (client.serverClockOffsetMs || 0)) / 1000);
   let merchantRunAfter = 0;
-  const merchantNext = () => merchantActive()
+  const merchantNext = () => merchantSelected()
     ? Math.max(merchantRunAfter, merchantMonitor.nextCheckAt * 1000 - (client.serverClockOffsetMs || 0)) : Infinity;
   const scheduler = createLoopScheduler({ client, stop, sleep,
     schedule: work => schedule(async () => {
@@ -257,14 +267,15 @@ export async function runLoop(client, protocol, {
   });
   const factorySchedule = createFactorySchedule(client, {
     getSettings, getConfig: () => config,
-    isEnabled: key => !stop.aborted && runtimeActive() && client.connected !== false && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || isEnabled(key)),
+    isEnabled: key => !stop.aborted && client.connected !== false && nativePreferenceEnabled(getSettings(), key)
+      && (!isEnabled || isEnabled(key)),
     onWake: scheduler.wake,
   });
   scheduler.addCleanup(() => factorySchedule.dispose());
   let maintenanceAt=0,maintenanceVersion=0;
   let fleetSpeedAt=0;
   scheduler.addCleanup(watchFleetSpeed(client).subscribe(()=>{
-    if(!stop.aborted&&runtimeActive()&&fleetSpeedEnabled(getSettings())){fleetSpeedAt=0;scheduler.wake();}
+    if (!stop.aborted && fleetSpeedEnabled(getSettings()) && runtimeActive()) { fleetSpeedAt = 0; scheduler.wake(); }
   }));
   let siliconVersion = 0, dispatchSettingsPending = false;
   scheduler.addCleanup(watchSiliconMining(client).subscribe(() => {
@@ -303,7 +314,7 @@ export async function runLoop(client, protocol, {
     maintenanceAt=0;maintenanceVersion++;scheduler.wake();
   }));
   scheduler.addCleanup(merchantMonitor.subscribe(() => {
-    if (!merchantActive()) return;
+    if (!merchantSelected()) return;
     scheduler.wake();
   }));
   scheduler.addCleanup(() => watchFleetMaintenance(client).hold([]));
@@ -327,7 +338,10 @@ export async function runLoop(client, protocol, {
     const empty = () => ({ planned: 0, results: [] });
     const summary = { round, startedAt: Math.floor(Date.now() / 1000), tasks: empty(), dailies: empty(), world: empty() };
     const settings = getSettings();
-    const enabled = key => !stop.aborted && runtimeActive() && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || (isEnabled(key) && rewards.due(key)));
+    // 查询关闭或尚未到期的任务无需扫描磁盘。允许执行时仍使用最新资源复核。
+    const selected = key => !stop.aborted && isActivityTaskAvailable(key, client)
+      && nativePreferenceEnabled(getSettings(), key) && (!isEnabled || isEnabled(key));
+    const enabled = key => selected(key) && (!rewards || rewards.due(key)) && runtimeActive();
     const guard = runtimeGuard(createActionGuard(client, getSettings, usageLedger, { player, enabled: () => !stop.aborted && client.connected }));
     const usage = () => usageLedger?.snapshot() ?? { counters: {} };
     let extraDemand = [];
@@ -368,7 +382,7 @@ export async function runLoop(client, protocol, {
     };
     const allowDaily = (id, action) => !(getSettings() && action.request === 'ClickGoldRequest' && !action.body.free) && enabled(dailyTaskKey(id, action));
     const allowWorld = kind => enabled(worldTaskKey(kind));
-    const active = key => !stop.aborted && runtimeActive() && isActivityTaskAvailable(key, client) && nativePreferenceEnabled(getSettings(), key) && Boolean(isEnabled?.(key));
+    const active = key => !!isEnabled && selected(key) && runtimeActive();
     const aliases = { vipDailyGift:['vipDaily'], worldOnlineRewards:['worldOnline'],
       festivalActiveRewards:['festivalActive'], battleReportRewards:['campaignReports'],
       weekSupplyFree:['weekChipFree','weekUniqueFree'],
@@ -387,7 +401,7 @@ export async function runLoop(client, protocol, {
     const legacyActive = key => active(key) && !takeoverReason(key);
     const legacyEnabled = key => enabled(key) && !takeoverReason(key);
     const attemptedOrders = new Set();
-    const harvestOptions = { config, player, attemptedOrders, cargoEnabled: () => runtimeActive() && ((!!isEnabled && enabled('cargo')) || needsCargoDemand(getSettings())),
+    const harvestOptions = { config, player, attemptedOrders, cargoEnabled: () => (!!isEnabled && enabled('cargo')) || (needsCargoDemand(getSettings()) && runtimeActive()),
       finishEnabled: () => allowWorld('finishOrder'), getSettings, getUsage: usage,
       beforeStep: guard.before, afterStep: guard.after, cancelStep: guard.cancel };
     function phaseFailure(phase, title, error, taskKey) {
@@ -418,6 +432,7 @@ export async function runLoop(client, protocol, {
       if (stop.aborted || client.connected === false || checkpoint && !factorySchedule.hasChecked()) return;
       const factoryDue = factorySchedule.due();
       if (!factoryDue && !checkUpgrade) return;
+      assertRuntime();
       try {
         const currentSettings = getSettings();
         const current = () => !stop.aborted && runtimeActive() && client.connected !== false && currentSettings === getSettings();
@@ -467,7 +482,7 @@ export async function runLoop(client, protocol, {
       }
     }
     async function checkMerchant() {
-      if (!merchantActive() || !merchantMonitor.due() || Date.now() < merchantRunAfter) return;
+      if (!merchantMonitor.due() || Date.now() < merchantRunAfter || !merchantActive()) return;
       // 先推进下次检查，读取失败也不能在同一毫秒不断重新排队。
       merchantMonitor.defer(serverNowSeconds() + merchantMonitorSeconds(getSettings()));
       const label = automationTasks.find(task => task.key === 'merchantTrade').label;
@@ -1185,7 +1200,7 @@ export async function runLoop(client, protocol, {
           summary.world.planned += result.followupCount;
           summary.world.results.push(...result.results);
         }
-        if (factorySchedule.active() || isEnabled && enabled('upgrade')) {
+        if ((factorySchedule.active() && runtimeActive()) || (isEnabled && enabled('upgrade'))) {
           try {
             const factoryVersion = factorySchedule.version();
             const after = normalize(await client.request('OnWaterRequest', {}));
