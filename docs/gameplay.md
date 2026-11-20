@@ -657,6 +657,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 - **海商王走商（2026-11-12 核对 v76）：** `TradeGuildRadarResponse.radar` 提供可航行港口，未共享紧缺货仍可选港；不能用场景全部城市替代商港列表。客户端 `TradeUtil.openCiytTrade` 只查询当前港，未确认异地 `TradeCity` 可读，因此远端收益统一标为风险折扣估算，到港重读实价。`TradePlayerGoods` 的 `pid/goodsId/num/buyPrice/cityId` 是独立采购批次；禁止在来源港出售。`DispTradeGoods.stock` 为已购量，可购库存是 `TradeGoodsCfg.maxCount-stock`，且联盟共享，发送前须复查。`ActivityTradeCfg` 提供贸易时段、航程、加速时长和报价库存刷新；`TipsDescCfg[海商王]` 说明紧缺每天首个贸易时刻更新，不等于每次价格刷新。亏损不享受利润加成、不增加累计利润；只有明确配置清仓亏损上限才允许亏损出售。
 - **海商王指针与升级：** 加速使用 `TradeSpeedRequest.useNum` 和已有道具 `海商王加速`，回包 `TradeSpeedResponse.moveEndTime` 必须配合同一航程提前的状态及完整库存回读确认；原航程自然到港不能证明未知加速成功。指针默认关闭，周转模式需本期至少两笔已核实出售和有效观测窗口，否则退回截止补救策略。`TradeShipCfg.upMoney` 是累计利润解锁门槛，`upCost` 才是钻石费用；船舶升级默认关闭，启用时还需全局钻石开关、保留量、日预算、相邻船级及完整资源回读共同满足。新策略已完成离线真实协议、HTTP、监控调度回归，并已在真实账号上完成只读状态和窗口外单步门控验证；完整两小时航程的成交结果仍以实际到港回读为准。
 - **赛季任务：** `GotSeasonTaskRequest` 没有字段，一次领取所有已达标档位。
+- **海商王抢货时机（v76）：** `TradeInfoResponse.worldCargo` 和 `SCTradeCargoMove.cargo` 提供可见玩家、联盟编号、船级和航程。计算采购顺位只计同盟、同港、同轮补货的在途船。周转模式在航行中比较顺位，刷新模式在设置的刷新窗口内比较。用本期同港同一历史刷新周期的两份实价和库存，分别按早到、晚到时能买到的组合估算差额，次优货也参与配货。自然领先或缺少可比记录时保留抢货用针。对手的货舱、停港等待者和目标商品不可见，成交以本船到港时的报价为准。
 - **红点：** `SCRedPoint` 带 `num` 表示有待处理事项，不带表示已清除。33 跨服排行、41 世界宝藏、42 收到互助、43 新求助、53 海商王任务、64 联盟职级、65 博物馆。
 - **联盟互助：** 每轮只响应一次，下一轮读到库存已扣减后才继续。
 - **世界宝藏：** 需要 `GuildTitleCfg.treasureLoot` 为 1，每日奖励次数读 `TreasureLootParamCfg`，每队消耗 `进攻宝藏消耗汽油`。旧 `schedule.treasureLoot` 派遣入口已停用，自动参与统一由“世界 → 万吨巨轮”的 `treasure.enabled` 及其舰队、跟随、筛选和争夺权限设置控制。

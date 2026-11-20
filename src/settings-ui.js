@@ -78,7 +78,7 @@ const merchantActivityFields = [
     configField('merchant.liquidationMinutes','活动结束前清仓窗口','number',{unit:'分钟',help:'默认120分钟，0关闭提前清仓。窗口内优先处理持货；无论此值多少，都不采购无法在交易截止前卖出的货物。'}),
     configField('merchant.maxLossPercent','清仓最大亏损率','number',{unit:'%',help:'默认0，不自动亏损卖出。大于0时，清仓可按各批次买价接受此比例以内的亏损，仍须符合来源港出售限制。'}),
     configField('merchant.autoSpeedUp','允许使用商会指针','switch',{help:'默认关闭。遵守每日用量、保留数量和每程上限。购买指针必须另开购买开关及钻石预算。'}),
-    configField('merchant.speedUpMode','跑船与加速策略','choice',{options:[['deadline','稳定模式：免费跑船，临近截止才补救'],['refresh','刷新窗口加速：不卡点到港'],['arrival','刷新窗口加速：每刷新最多一程'],['profit','原有策略：周转增益及截止补救']],help:'新策略仍按本港实时报价和目的港保守估值决策。卡点模式用持久航程记录限制同一刷新周期的出航次数。'}),
+    configField('merchant.speedUpMode','跑船与加速策略','choice',{options:[['deadline','稳定模式：免费跑船，临近截止才补救'],['refresh','刷新窗口加速'],['arrival','刷新窗口加速：每刷新最多一程'],['profit','周转增益及截止补救']],help:'周转模式和刷新窗口模式会比较同盟船到港顺序与历史库存。能提前买到更赚钱的组合时才为抢货用针，到港重新核价。每刷新最多一程模式还会限制出航次数。'}),
     configField('merchant.refreshWindowMinutes','刷新后加速窗口','number',{ parent: 'merchant.speedUpMode',unit:'分钟',when:d=>['refresh','arrival'].includes(d.merchant.speedUpMode),help:'仅在真实配置刷新时刻之后的此窗口内加速，窗口外等待；交易截止前仍可补救。'}),
     configField('merchant.dailyPointerLimit','每日指针使用上限','number',{ parent: 'merchant.autoSpeedUp',unit:'根',when:d=>d.merchant.autoSpeedUp,help:'默认28，0 禁止使用；跨重启保留已用和未确认用量。'}),
     configField('merchant.autoBuyPointers','自动购买缺少的商会指针','switch',{ parent: 'merchant.autoSpeedUp',when:d=>d.merchant.autoSpeedUp,help:'仅补足当前有效加速方案所缺数量，受游戏日购买上限、全局钻石及本项预算限制。'}),
