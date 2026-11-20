@@ -454,7 +454,19 @@ try {
     for (const key of ['rewardItems', 'fallbackMediumRewardPriority', 'fallbackSmallRewardPriority']) {
       const field = fields.find(field => field.key === 'treasure.' + key);
       assert.equal(field.catalog, 'treasureRewards');
-      assert.match(field.label, /任一/);
+    }
+    for (const prefix of ['reward', 'fallbackMediumReward', 'fallbackSmallReward']) {
+      const mode = prefix + 'MatchMode', min = prefix + 'MinHits';
+      const modeField = fields.find(field => field.key === 'treasure.' + mode);
+      const minField = fields.find(field => field.key === 'treasure.' + min);
+      assert.deepEqual(modeField.options.map(option => option[1]), ['全部命中', '任一命中', '命中多个']);
+      assert.equal(modeField.kind, 'radio');
+      assert.equal(minField.when(draft), false);
+      draft.treasure[mode] = 'multiple';
+      draft.treasure.fallbackEnabled = true;
+      assert.equal(minField.when(draft), true);
+      draft.treasure.fallbackEnabled = false;
+      assert.equal(minField.when(draft), prefix === 'reward');
     }
     assert.equal(fields.find(field => field.key === 'treasure.fallbackAfter').kind, 'time');
     assert.equal(fields.find(field => field.key === 'treasure.fallbackAfter').when(draft), false);

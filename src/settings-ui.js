@@ -20,6 +20,10 @@ const configDisclosureSeen = new Set();
 const configCollapsedSections = new Set();
 const configField = (key, label, kind = 'switch', options = {}) => ({ key, label, kind, ...options });
 const museumFactorOptions = [[1, '1倍'], [2, '2倍'], [3, '3倍']];
+const treasureMatchOptions = [['all', '全部命中'], ['any', '任一命中'], ['multiple', '命中多个']];
+const treasureMinHitsHelp = '按同一艘货轮命中的勾选项计数，每项最多计一次。勾选项少于门槛时，没有货轮能通过；留空表示不筛选奖励。';
+const mediumFallbackVisible = d => d.treasure.fallbackEnabled && d.treasure.fallbackQualities.includes('PURPLE');
+const smallFallbackVisible = d => d.treasure.fallbackEnabled && d.treasure.fallbackQualities.includes('BLUE');
 function configPlacePanel(root, panel) {
   if (!root.open || !panel || !root.isConnected) return;
   const summary = root.querySelector('summary');
@@ -351,13 +355,19 @@ const configGroups = [
     configField('treasure.fleetIds', '参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与舰队，空选不派遣', help: '只使用已建成、有英雄编队且实际空闲的舰队；行军、战斗、维修和驻外等占用会跳过。游戏自动作战开关开启不等于正在作战。' }),
     configField('treasure.followPlayerIds', '跟随名单', 'players', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '从当前账号的盟友名单搜索多选，按选择顺序优先跟随。使用完整角色 ID 区分同名玩家；也可补充未列出的角色 ID。未列出的已选 ID 仍保留，需要时手动移除。' }),
     configField('treasure.followNames', '补充跟随昵称（可选）', 'names', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '保留原有手填名单。每行一个完整昵称，角色 ID 名单优先；同名无法确认身份时跳过。', placeholder: '每行输入一位其他玩家的完整昵称' }),
-    configField('treasure.rewardItems', '目标奖励（任一匹配）', 'multi', { catalog: 'treasureRewards', empty: '不筛选奖励', help: '自动参加和跟随时，货轮含任一勾选奖励即符合奖励条件。留空接受所有奖励。可搜索完整物品名称。“垃圾袋（任意品质）”匹配各品质垃圾袋，选择具体品质则只匹配该品质。' }),
+    configField('treasure.rewardItems', '目标奖励', 'multi', { catalog: 'treasureRewards', empty: '不筛选奖励', help: '常规自动参加和跟随共用这份列表。可搜索物品名称，留空接受所有奖励。“垃圾袋（任意品质）”匹配各品质垃圾袋，选择具体品质则只匹配该品质。' }),
+    configField('treasure.rewardMatchMode', '奖励筛选方式', 'radio', { options: treasureMatchOptions }),
+    configField('treasure.rewardMinHits', '至少命中', 'number', { when: d => d.treasure.rewardMatchMode === 'multiple', unit: '项', help: treasureMinHitsHelp }),
     configField('treasure.fallbackEnabled', '中小货轮兜底', 'switch', { help: '到达兜底开始时间后，若今日领奖未达目标且舰队没有符合常规规则的货轮，按下方设置的货轮类型和奖励优先级派遣。即使常规类型留空或跟随名单未命中也可兜底，仍遵守避战、外盟权限、进度、耐久、汽油库存和出征上限。' }),
     configField('treasure.fallbackAfter', '兜底开始时间', 'time', { parent: 'treasure.fallbackEnabled', when: d => d.treasure.fallbackEnabled, help: '按北京时间每天从此时刻检查至当天结束。请按所在区服最后一轮万吨时间设置，默认 21:00。' }),
     configField('treasure.fallbackTargetRewards', '兜底领奖目标', 'number', { parent: 'treasure.fallbackEnabled', when: d => d.treasure.fallbackEnabled, unit: '次 / 天', help: '以服务器今日已领奖次数为准，最多补至游戏每日领奖上限。达到目标后停止中小货轮兜底，“每次参与”模式也遵守此目标。' }),
     configField('treasure.fallbackQualities', '兜底货轮优先级', 'priority', { parent: 'treasure.fallbackEnabled', when: d => d.treasure.fallbackEnabled, options: [['PURPLE', '中型货轮'], ['BLUE', '小型货轮']], itemLabel: '货轮类型', empty: '请选择至少一种兜底货轮。', help: '按列表从上到下选择类型，可移除不参加的类型。每种类型内再按对应奖励优先级匹配。' }),
-    configField('treasure.fallbackMediumRewardPriority', '中型货轮奖励优先级（任一匹配）', 'priority', { parent: 'treasure.fallbackQualities', when: d => d.treasure.fallbackEnabled && d.treasure.fallbackQualities.includes('PURPLE'), catalog: 'treasureRewards', checkboxes: true, empty: '不筛选奖励', help: '中型货轮含任一勾选奖励即符合兜底奖励条件。多艘符合时，优先选择含排名靠前奖励的货轮。留空接受所有奖励。' }),
-    configField('treasure.fallbackSmallRewardPriority', '小型货轮奖励优先级（任一匹配）', 'priority', { parent: 'treasure.fallbackQualities', when: d => d.treasure.fallbackEnabled && d.treasure.fallbackQualities.includes('BLUE'), catalog: 'treasureRewards', checkboxes: true, empty: '不筛选奖励', help: '小型货轮含任一勾选奖励即符合兜底奖励条件。多艘符合时，优先选择含排名靠前奖励的货轮。留空接受所有奖励。' }),
+    configField('treasure.fallbackMediumRewardPriority', '中型货轮奖励优先级', 'priority', { parent: 'treasure.fallbackQualities', when: mediumFallbackVisible, catalog: 'treasureRewards', checkboxes: true, empty: '不筛选奖励', help: '多艘中型货轮通过兜底筛选时，优先选择含排名靠前奖励的货轮。留空接受所有奖励。' }),
+    configField('treasure.fallbackMediumRewardMatchMode', '中型兜底奖励筛选方式', 'radio', { parent: 'treasure.fallbackQualities', when: mediumFallbackVisible, options: treasureMatchOptions }),
+    configField('treasure.fallbackMediumRewardMinHits', '中型兜底至少命中', 'number', { parent: 'treasure.fallbackQualities', when: d => mediumFallbackVisible(d) && d.treasure.fallbackMediumRewardMatchMode === 'multiple', unit: '项', help: treasureMinHitsHelp }),
+    configField('treasure.fallbackSmallRewardPriority', '小型货轮奖励优先级', 'priority', { parent: 'treasure.fallbackQualities', when: smallFallbackVisible, catalog: 'treasureRewards', checkboxes: true, empty: '不筛选奖励', help: '多艘小型货轮通过兜底筛选时，优先选择含排名靠前奖励的货轮。留空接受所有奖励。' }),
+    configField('treasure.fallbackSmallRewardMatchMode', '小型兜底奖励筛选方式', 'radio', { parent: 'treasure.fallbackQualities', when: smallFallbackVisible, options: treasureMatchOptions }),
+    configField('treasure.fallbackSmallRewardMinHits', '小型兜底至少命中', 'number', { parent: 'treasure.fallbackQualities', when: d => smallFallbackVisible(d) && d.treasure.fallbackSmallRewardMatchMode === 'multiple', unit: '项', help: treasureMinHitsHelp }),
     configField('treasure.avoidNames', '避战玩家名称', 'names', { help: '每行填写一位玩家的完整昵称，按名称完全匹配，同名玩家都会避开。只判断货轮当前守军和战斗者；历史排名中已离开的玩家不会单独触发。避战优先于跟随。', placeholder: '每行输入一位玩家的完整昵称' }),
     configField('treasure.avoidPlayerIds', '已有避战角色 ID', 'names', { when: d => d.treasure.avoidPlayerIds.length > 0, help: '保留此前保存的精确角色 ID，每行一个。可删除不再需要的条目；新玩家请在上方填写名称。', placeholder: '每行一个已有的完整角色 ID' }),
     configField('treasure.allowHostile', '允许争夺其他联盟货轮', 'switch', { help: '默认关闭，只参与无人占领或本联盟货轮。开启后可能与其他联盟交战，跟随名单也受此开关约束。' }),

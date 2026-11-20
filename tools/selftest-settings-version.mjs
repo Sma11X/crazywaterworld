@@ -449,7 +449,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 20);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 21);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
@@ -478,6 +478,32 @@ try {
     const saved = saveAutomationSettings('test', old, { file, revision: 7 });
     assert.deepEqual(JSON.parse(fs.readFileSync(file)).accounts.test.settings, expected);
     assert.deepEqual(exportAutomationSettings(saved.settings).settings, expected);
+  });
+  test('旧货轮奖励列表沿用任一命中，三组方式和门槛独立保存', () => {
+    const old = defaultSettings();
+    old.treasure.rewardItems = ['精铁', 'GOLD'];
+    const prefixes = ['reward', 'fallbackMediumReward', 'fallbackSmallReward'];
+    for (const prefix of prefixes) {
+      delete old.treasure[prefix + 'MatchMode'];
+      delete old.treasure[prefix + 'MinHits'];
+    }
+    fs.writeFileSync(file, JSON.stringify({ version: 20, accounts: { test: { settingsVersion: 20, revision: 1, settings: old } } }));
+    const loaded = loadAutomationSettings('test', { file }).settings;
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 20, settings: old }), loaded);
+    assert.deepEqual(loaded.treasure.rewardItems, old.treasure.rewardItems);
+    for (const prefix of prefixes) {
+      assert.equal(loaded.treasure[prefix + 'MatchMode'], 'any');
+      assert.equal(loaded.treasure[prefix + 'MinHits'], 2);
+      for (const [key, value] of [['MatchMode', 'invalid'], ['MinHits', 0], ['MinHits', 1.5], ['MinHits', 101]]) {
+        const invalid = structuredClone(loaded);
+        invalid.treasure[prefix + key] = value;
+        assert.throws(() => validateSettings(invalid), e => !!e.fields?.['treasure.' + prefix + key]);
+      }
+    }
+    Object.assign(loaded.treasure, { rewardMatchMode: 'multiple', rewardMinHits: 3, fallbackMediumRewardMatchMode: 'all' });
+    saveAutomationSettings('test', loaded, { file, revision: 1 });
+    assert.deepEqual(loadAutomationSettings('test', { file }).settings, loaded);
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(loaded)), loaded);
   });
   test('旧硅矿等级按舰队迁移为多选，空选可以保存和导入', () => {
     const old = defaultSettings(), levels = ['PURPLE', 'BLUE', 'ORANGE'];
