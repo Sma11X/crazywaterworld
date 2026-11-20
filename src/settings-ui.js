@@ -112,7 +112,9 @@ const guildShipActivityFields = [
     configField('guildShip.rewardFilter','按奖励物品筛选'),
     configField('guildShip.rewardItems','期望奖励物品','multi',{ parent: 'guildShip.rewardFilter',catalog:'materials',when:d=>d.guildShip.rewardFilter}),
     configField('guildShip.disabledMaterials','禁止消耗物料','multi',{catalog:'materials'}),
-    configField('guildShip.produceMissing','红船缺料自动备料','switch',{help:'与工厂开关联动；只为符合当前策略的红船备料，不购买材料。'}),
+    configField('guildShip.allowDiamonds','允许钻石补齐货物','switch',{help:'按上船策略优先选船型。同船型先选库存能装满的舱位，其次选整舱补货总价最低的。同价按船号、舱号从小到大选。需同时开启全局自动钻石消耗。'}),
+    configField('guildShip.diamondDailyLimit','商船补货每日钻石上限','number',{parent:'guildShip.allowDiamonds',when:d=>d.guildShip.allowDiamonds,unit:'钻石',help:'按账号在北京时间零点重置。0 表示只用库存，同时受全局每日钻石预算和钻石保留量限制。'}),
+    configField('guildShip.produceMissing','红船缺料自动备料','switch',{help:'由工厂为符合当前策略的红船生产缺料。'}),
     configField('guildShip.redStartEnabled','指定红船申请船长时间'),
     configField('guildShip.redStartTime','红船申请船长时间','time',{ parent: 'guildShip.redStartEnabled',when:d=>d.guildShip.redStartEnabled,help:'北京时间。只控制申请船长的最早时间，满员或准备结束后由游戏服务器开船。'}),
 ];

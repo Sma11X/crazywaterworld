@@ -743,7 +743,7 @@ function renderGuildShipSettings(box) {
   renderActivitySettingsFields(box, { data: guildShipSettingsData, fields: guildShipActivityFields,
     saving: savingGuildShipSettings.has(account), statusText: guildShipSettingsStatus,
     prefix: 'guild-ship', dataset: 'guildShipSetting', save: saveGuildShipSetting, title: '联盟商船',
-    note: '红船缺料备料需开启工厂生产，不购买材料。' });
+    note: '钻石补货需开启全局自动钻石消耗，并设置商船每日上限。' });
 }
 
 function renderActivitySettingsFields(box, { data, fields, saving, statusText, prefix, dataset, save, title, note }) {

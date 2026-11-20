@@ -1407,7 +1407,7 @@ await test('联盟商船在活动页独立配置，离线及暂停可编辑且�
     assert.equal(f.node('activity-kind').textContent, '限时');
     assert.doesNotMatch(f.node('activities-list').textContent, /联盟自动化总开关|前往开启联盟自动化/);
     assert.doesNotMatch(f.node('activities-list').textContent, /当前活动暂未接入/);
-    assert.match(f.node('activities-list').textContent, /红船缺料备料需开启工厂生产/);
+    assert.doesNotMatch(f.node('activities-list').textContent, /红船缺料备料需开启工厂生产/);
     await f.shipInput('guildShip.crew').onclick();
     await f.api.saveShip('guildShip.enabled', true);
     await f.api.saveShip('guildShip.enabled', false);
@@ -1424,6 +1424,13 @@ await test('商船策略、条件参数和材料多选沿用原字段，未知�
   await f.api.refresh(); f.api.selectShip();
   const mode = f.shipInput('guildShip.mode');
   mode.value = 'full'; await mode.onchange();
+  await f.shipInput('guildShip.allowDiamonds').onclick();
+  const budget = f.shipInput('guildShip.diamondDailyLimit');
+  budget.value = '150'; await budget.onchange();
+  assert.equal(f.shipSaved.get('merchant-a').settings.guildShip.diamondDailyLimit, 150);
+  await f.shipInput('guildShip.allowDiamonds').onclick();
+  assert.equal(f.shipSaved.get('merchant-a').settings.guildShip.allowDiamonds, false);
+  assert.equal(f.shipSaved.get('merchant-b').settings.guildShip.diamondDailyLimit, 0);
   await f.shipInput('guildShip.rewardFilter').onclick();
   await f.shipInput('guildShip.redStartEnabled').onclick();
   assert(f.shipInput('guildShip.rewardItems'));

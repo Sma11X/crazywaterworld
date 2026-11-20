@@ -4,6 +4,7 @@ import { displayMaterial } from './config.mjs';
 import { normalize } from './worlds.mjs';
 import { claimCollection, newbieView } from './collections.mjs';
 import { toNumber } from './client.mjs';
+import { goodsRubyPrice, readGoodsPurchaseBalances } from './goods-purchase.mjs';
 import { claimOpenRanks, openRankState, openRanks } from './pirate-board.mjs';
 import { claimReportRewards } from './missing-rewards.mjs';
 import { beginOrderMaterialSpend, cancelOrderMaterialSpend, confirmOrderMaterialSpends, confirmOrderMaterialOperation, readOrderMaterialState, settleOrderMaterialState } from './order-reservations.mjs';
@@ -413,8 +414,7 @@ async function activityDetails(client, config, week, activities, {
       const owned = stock.get(id) ?? 0;
       const crop = config?.tables.FarmlandPlantCfg?.data.find(r => r.id === id);
       const seed = crop ? { name: displayMaterial(config, crop.material[0]), count: stock.get(crop.material[0]) ?? 0 } : null;
-      const price = config?.tables.ItemPriceCfg?.data.find(row => row.itemId === id)?.rubyPrice;
-      return { id, seed, price: Number.isSafeInteger(price) && price > 0 ? price : null,
+      return { id, seed, price: goodsRubyPrice(config, id),
         sources: config?.materialSources?.(id) ?? [], name: displayMaterial(config, id), required, owned,
         missing: Math.max(0, required - owned) };
     });
@@ -561,27 +561,6 @@ export async function readWeekOrderStock(client,player,enabled=()=>true) {
   return stock;
 }
 
-async function readWeekPurchaseBalances(client,check) {
-  check();
-  const bag=await client.request('AllItemRequest',{},'AllItemResponse');
-  check();
-  const resources=await client.request('AllResourceRequest',{},'AllResourceResponse');
-  check();
-  if(!Array.isArray(bag?.items)||!Array.isArray(resources?.list))throw Error('购买后完整库存或资源尚未确认');
-  const items=new Set(),ids=new Set();
-  for(const row of bag.items){
-    const count=row?.num==null?NaN:toNumber(row.num);
-    if(typeof row.itemId!=='string'||!row.itemId||items.has(row.itemId)||!Number.isSafeInteger(count)||count<0)throw Error('购买后完整库存尚未确认');
-    items.add(row.itemId);
-  }
-  for(const row of resources.list){
-    const count=row?.amount==null?NaN:toNumber(row.amount);
-    if(!Number.isSafeInteger(row.res)||ids.has(row.res)||!Number.isSafeInteger(count)||count<0)throw Error('购买后完整资源尚未确认');
-    ids.add(row.res);
-  }
-  if(!ids.has(4))throw Error('购买后钻石余额尚未确认');
-}
-
 async function reconcileWeekOrderOperations(client,ledger,player,check,action,requestedKey) {
   const actor=weekOrderActor(player);
   for(const [savedKey,record] of Object.entries(ledger.keyRecords())){
@@ -589,7 +568,7 @@ async function reconcileWeekOrderOperations(client,ledger,player,check,action,re
     if(record.confirmed||!['weekOrderBuy','weekOrderSubmit'].includes(details?.kind)||details.playerId!==actor.playerId||details.worldId!==actor.worldId)continue;
     if(details.kind==='weekOrderBuy'){
       if(!details.acknowledged){if(action==='buy'||action==='auto')throw Error('上次商人订单购买结果待确认，暂不重复购买');continue;}
-      await readWeekPurchaseBalances(client,check);
+      await readGoodsPurchaseBalances(client,check);
     }else{
       if(!details.acknowledged&&!await verifyWeekOrderOperation(client,details.evidence)){
         if(action==='submit'||action==='auto')throw Error('该操作已提交，结果待确认，请核对订单记录');
@@ -666,7 +645,7 @@ export async function runWeekOrder(client,config,settings,ledger,enabled,action,
     if(buy){
       if(!Array.isArray(result?.reward?.asset)||!result.reward.asset.some(row=>row.id===item.id&&toNumber(row.num)===item.missing))throw Error('购买奖励回执尚未确认，保留预算和防重记录');
       ledger.updateKeyDetails(key,{...ledger.keyRecords()[key].details,acknowledged:true});
-      await readWeekPurchaseBalances(client,check);
+      await readGoodsPurchaseBalances(client,check);
     }else{
       if(!Number.isSafeInteger(result?.randomRwdId)||result.randomRwdId<=0||view.evidence.rewards.includes(result.randomRwdId))throw Error('提交奖励回执未确认');
       ledger.updateKeyDetails(key,{...ledger.keyRecords()[key].details,acknowledged:true,rewardId:result.randomRwdId});
