@@ -177,6 +177,21 @@ await test('海兽消费备料遵守世界循环、模块、动作和来源开�
   }
 });
 
+await test('海兽投喂满后，排产快照不再为旧进阶材料备货', () => {
+  const { raw, settings } = fixture();
+  settings.factory.demandPriority = ['petAdvance'];
+  settings.pet.enabled = settings.pet.advance = true;
+  const uid = { low: 1, high: 2097152 };
+  raw.water.building[2].petServe = { petUid: uid, upgradeRequirements: [{ id: '面包', num: 1 }] };
+  const attrFeed = [{ times: 0 }];
+  raw.pets = { pets: [{ uid, grade: 0, profFeed: [{ attrFeed }] }] };
+  const cfg = { tables: { ...config.tables, PetAdvancedCfg: table([{ grade: 1 }]), PetFeedAttrCfg: table([{ level: 0, attrCounts: [1] }]) } };
+  const demand = () => buildProductionSnapshot(raw, cfg, settings).orders.filter(row => row.source === 'petAdvance');
+  assert.equal(demand().length, 1);
+  attrFeed[0].times = 1;
+  assert.equal(demand().length, 0);
+});
+
 await test('博物馆消费备料遵守世界循环、运行、探宝、升级和来源开关', () => {
   const museumConfig = { tables: { ...config.tables,
     MuseumExpeditionStageCfg: table([{ stageId: 1, areaLevelReq: [] }]),

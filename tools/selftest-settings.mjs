@@ -690,15 +690,31 @@ try {
     const reads = [], writes = [];
     const client = new EventEmitter(); client.connected = true;
     client.request = async name => { reads.push(name); assert.ok(responses.has(name), '不应读取 ' + name); return structuredClone(responses.get(name)); };
-    client.sendWatch = async (name, body) => { writes.push({ name, body }); responses.set('AllItemRequest', { items: [{ itemId: '加速器', num: 2 }] }); return {}; };
+    client.sendWatch = async (name, body) => {
+      writes.push({ name, body });
+      factory.factory.factoryQ[0].finishTime -= body.speedUp.useNum * 60;
+      responses.set('AllItemRequest', { items: [{ itemId: '加速器', num: 2 }] });
+      return {};
+    };
     const options = { config, player: { playerId: '9102000000000001', worldId: 1001001, level: 36 }, rounds: 1, allowMutate: true,
       isEnabled: key => flags[key] === true, getSettings: () => settings };
     const result = await runLoop(client, protocol, options);
     assert.ok(reads.includes('CargoShipsRequest'), '关闭自动贸易和新增排产时仍须读取来源需求');
     assert.deepEqual(writes, [{ name: 'SpeedUpFactoryProduceRequest', body: { buildingId: '1食品厂', index: 0, speedUp: { type: 2, useNum: 3 } } }]);
     assert.equal(result.history[0].world.results[0].ok, true);
+    const now = Math.floor(Date.now() / 1000);
+    settings.factory.demandPriority = settings.factory.speedUpSources = ['merchant'];
+    settings.weekOrder.enabled = true;
+    flags = nativeTaskValues(settings, {});
+    responses.set('WeekInfoRequest', { activityTime: [{ type: 5, period: 1, startTime: now - 60, endTime: now + 3600 }] });
+    responses.set('WeekOrderInfoRequest', { order: [{ id: '产品甲', num: 1 }] });
+    responses.set('AllItemRequest', { items: [{ itemId: '加速器', num: 5 }] });
+    reads.length = 0; writes.length = 0;
+    await runLoop(client, protocol, options);
+    assert.ok(reads.includes('WeekOrderInfoRequest'), '只开商人来源加速也读取商人订单');
+    assert.deepEqual(writes.map(row => row.name), ['SpeedUpFactoryProduceRequest']);
     settings = applyNativeTask(settings, 'speedUp', false);
-    assert.deepEqual(settings.factory.demandPriority, ['cargo']);
+    assert.deepEqual(settings.factory.demandPriority, ['merchant']);
     assert.deepEqual(settings.factory.speedUpSources, []);
     assert.equal(settings.building.speedUp, false); assert.equal(settings.factory.speedUp, false); assert.equal(settings.farm.speedUp, false);
     flags = nativeTaskValues(settings, {}); assert.equal(flags.speedUp, false);

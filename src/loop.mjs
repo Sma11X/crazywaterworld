@@ -937,7 +937,8 @@ export async function runLoop(client, protocol, {
         const survey = await surveyWorld(client, protocol, { config, player,
           includeProductionTiming: allowWorld('startProduce') && settings?.factory?.produce !== false,
           includeCargo: needsCargoDemand(settings) || (!!isEnabled && enabled('cargo') && (allowWorld('startProduce') || usesOrders)),
-          includeWeekOrder: needsCargoDemand(settings) || usesOrders || allowWorld('startProduce') || allowWorld('farm') || allowWorld('upgrade') });
+          includeWeekOrder: needsCargoDemand(settings) || (allowWorld('speedUpProduce') && settings?.factory.speedUpSources.includes('merchant'))
+            || usesOrders || allowWorld('startProduce') || allowWorld('farm') || allowWorld('upgrade') });
         if (settings && ((allowWorld('startProduce') && (settings.factory.demandFirst || settings.alliance?.enabled &&
           settings.alliance.recruit && settings.alliance.recruitProduction || settings.guildShip?.enabled && settings.guildShip.produceMissing)) || settings.factory.speedUpSources.length > 0)) {
           const extra = await surveyBaseAutomation(client, protocol, config, player, settings, survey, { ledger: usageLedger, enabled: () => !stop.aborted && runtimeActive() && client.connected !== false });

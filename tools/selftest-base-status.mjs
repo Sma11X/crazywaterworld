@@ -80,6 +80,22 @@ function advanceFixture() {
 }
 
 try {
+  await test('挂机备料只统计已开启的海兽动作和有海兽值守的建筑', () => {
+    const { config, settings, snapshot } = advanceFixture();
+    const sources = () => planBaseAutomation(snapshot, config, settings).demands.map(row => row.source).filter(id => id.startsWith('pet')).sort();
+    assert.deepEqual(sources(), ['petAdvance', 'petFeed']);
+    settings.pet.advance = false;
+    assert.deepEqual(sources(), ['petFeed']);
+    settings.pet.feed = false;
+    settings.pet.advance = true;
+    assert.deepEqual(sources(), ['petAdvance']);
+    settings.pet.enabled = false;
+    assert.deepEqual(sources(), []);
+    settings.pet.enabled = true;
+    snapshot.world.buildings.at(-1).petServe.petUid = null;
+    assert.deepEqual(sources(), []);
+  });
+
   await test('同一批库存按海兽进阶、培育投喂和博物馆优先级使用，能反转也能关闭', () => {
     const { config, settings, snapshot } = advanceFixture();
     const plan = () => planBaseAutomation(snapshot, config, settings);

@@ -74,7 +74,8 @@ export function buildProductionSnapshot(raw, config, settings = {}) {
     level: amount(building?.level), upgradingUntil: timestamp(building?.buildFinishTime),
     buildStartTime: amount(building?.buildStartTime) ?? 0, buildFinishTime: amount(building?.buildFinishTime) ?? 0,
     farm: building?.farm ?? null, factory: building?.factory ?? null,
-    petBreed: building?.petBreed ?? null, petServe: building?.petServe ?? null,
+    petBreed: building?.petBreed ?? null, petServe: building?.petServe
+      ? { ...building.petServe, petUid: exactAutomationId(building.petServe.petUid) } : null,
   }));
   const factories = [], farms = [];
   for (const building of buildings) {
@@ -207,13 +208,12 @@ export function buildProductionSnapshot(raw, config, settings = {}) {
   }
   if (settings.museum && settings.pet && settings.factory) {
     const world = { buildings, factories: buildings.filter(b => b.factory), stockCap, have: id => stockMap.get(id) ?? 0 };
-    const extra = baseDemands({ now: serverNow, player: raw.player, world, museum: raw.museum, radar: raw.radar,
+    const pets = list(raw.pets?.pets).map(pet => ({ ...pet, uid: exactAutomationId(pet.uid) }));
+    const extra = baseDemands({ now: serverNow, player: raw.player, world, pets, museum: raw.museum, radar: raw.radar,
       guildRecruitDemand: [], guildShipDemand: [], heroRaidDemand: [] }, config, settings);
     for (const [index, demand] of extra.entries()) {
       if (!priority.has(demand.source) || ['guildRecruit', 'guildShip', 'heroRaid', 'refugee'].includes(demand.source)) continue;
       if (demand.source !== 'factory' && !settings.loop?.world) continue;
-      if (demand.source === 'petAdvance' && (!settings.pet.enabled || !settings.pet.advance)) continue;
-      if (demand.source === 'petFeed' && (!settings.pet.enabled || !settings.pet.feed)) continue;
       addOrder(demand.source, digest([index, demand.requirements]), demand.requirements, null, {}, demand.source === 'factory' ? 'stockTarget' : 'consumption');
     }
   }
@@ -311,8 +311,8 @@ async function readSnapshotOnce(client, protocol, config, player, settings, opti
   const reads = [], cache = new Map(), raw = { player, reads };
   const allowed = new Set(['OnWaterRequest', 'AllItemRequest', 'AllResourceRequest', 'GameEffectRequest', 'WeekInfoRequest',
     'WeekOrderInfoRequest', 'CargoShipsRequest', 'GuildOrderRequest', 'GuildShipRequest', 'GuildInfoRequest', 'AllHeroRequest',
-    'RadarInfoRequest', 'MuseumInfoRequest', 'MonthCardRequest']);
-  const optional = new Set(['MonthCardRequest', 'AllHeroRequest', 'MuseumInfoRequest', 'GuildInfoRequest', 'GuildShipRequest']);
+    'RadarInfoRequest', 'MuseumInfoRequest', 'MonthCardRequest', 'AllPetRequest']);
+  const optional = new Set(['MonthCardRequest', 'AllHeroRequest', 'MuseumInfoRequest', 'GuildInfoRequest', 'GuildShipRequest', 'AllPetRequest']);
   const request = async (name, body = {}, response = name.replace(/Request$/, 'Response')) => {
     check();
     if (!allowed.has(name)) throw new Error('生产快照不允许此请求 ' + name);
@@ -409,6 +409,8 @@ async function readSnapshotOnce(client, protocol, config, player, settings, opti
     }
     else reads.push({ request: 'GuildOrderRequest', status: 'missing', reason: '当前联盟身份未完整确认' });
     const sources = new Set(settings.factory?.demandPriority ?? []);
+    if (sources.has('petAdvance') && activityProductionEnabled(settings, 'petAdvance')
+      && list(raw.water?.building).some(b => b.petServe?.upgradeRequirements?.length && exactAutomationId(b.petServe.petUid))) await get('pets', 'AllPetRequest');
     if (sources.has('museum') && settings.museum?.runEnabled !== false && (settings.museum?.enabled || settings.museum?.upgrade)) await get('museum', 'MuseumInfoRequest');
     if (heroState) raw.heroRaids = { observed: heroState.observed, invalid: heroState.invalid, raids: [...heroState.raids.values()].map(raid => ({ ...raid, order: raid.order && { ...raid.order } })) };
     raw.festivals = Array.isArray(client.festivals) ? client.festivals : null;
