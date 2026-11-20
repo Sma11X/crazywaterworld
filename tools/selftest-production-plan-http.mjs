@@ -353,16 +353,37 @@ try {
       assert.equal(result.orders.length, 8);
     } finally { await f.close(); }
   });
-  await test('读取中的库存推送阻止混合快照，下次稳定读取恢复', async () => {
+  await test('建筑更新后自动重读，从新队列生成同一次请求的计划', async () => {
     const f = await fixture();
     try {
       await f.api('connect', {});
+      f.state.requests.length = f.state.sends.length = 0;
+      const finishTime = f.state.now + 120;
+      f.state.onRequest = (name, client) => {
+        if (name !== 'AllItemRequest') return;
+        f.state.onRequest = null;
+        const building = f.state.responses.OnWaterRequest.building[0];
+        building.factory.factoryQ.push({ idx: 1, productId: '面包', finishTime });
+        client.emit('message', { name: 'SCUpdateWaterBuilding', body: { building: [building] } });
+      };
+      const result = await f.api('world/production-plan');
+      assert(result.timeline.some(job => job.kind === 'existing' && job.itemId === '面包' && job.finishAt === finishTime));
+      assert.equal(f.state.requests.filter(name => name === 'OnWaterRequest').length, 2);
+      assert.deepEqual(f.state.sends, []);
+    } finally { await f.close(); }
+  });
+  await test('持续收到库存推送时限制重读次数，下次稳定读取恢复', async () => {
+    const f = await fixture();
+    try {
+      await f.api('connect', {});
+      f.state.requests.length = 0;
       f.state.onRequest = (name, client) => {
         if (name === 'AllItemRequest') client.emit('message', { name: 'SCUpdateItem', body: { items: [{ itemId: '面包', num: 20 }] } });
       };
       const rejected = await f.response('world/production-plan');
       assert.equal(rejected.status, 400);
-      assert.match(rejected.data.error, /游戏状态已变化/);
+      assert.match(rejected.data.error, /游戏数据仍在更新/);
+      assert.equal(f.state.requests.filter(name => name === 'OnWaterRequest').length, 3);
       f.state.onRequest = null;
       const recovered = await f.api('world/production-plan');
       assert.equal(recovered.orders.length, 8);

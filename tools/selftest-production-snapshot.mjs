@@ -568,7 +568,25 @@ await test('跨请求期间发生游戏写入或相关推送时拒绝混合快�
     assert(!client.calls.includes('AllResourceRequest'));
     assert.equal(client.listenerCount('frame'), before.frame);
     assert.equal(client.listenerCount('message'), before.message);
+    assert.equal(client.calls.filter(name => name === 'OnWaterRequest').length, event[0] === 'frame' ? 1 : 3);
   }
+});
+
+await test('重读间隔内连接变化即停止，不跨连接继续旧计划', async () => {
+  const { raw, settings } = fixture();
+  const { client, protocol } = fakeClient(raw);
+  const original = client.request;
+  client.request = async function(name) {
+    const result = await original.call(this, name);
+    if (name === 'AllItemRequest') {
+      this.emit('message', { name: 'SCUpdateWaterBuilding', body: {} });
+      setImmediate(() => { this.connectionEpoch++; });
+    }
+    return result;
+  };
+  await assert.rejects(readProductionSnapshot(client, protocol, config, raw.player, settings),
+    error => error.code === 'PRODUCTION_SNAPSHOT_CHANGED' && !error.updatePush);
+  assert.deepEqual(client.calls, ['OnWaterRequest', 'AllItemRequest']);
 });
 
 await test('心跳、ACK和只读响应允许完成快照且成功后移除监听', async () => {

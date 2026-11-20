@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { RESOURCE } from './config.mjs';
 import { toNumber } from './client.mjs';
 import { exactAutomationId, resourceReserve, worldPreferenceEnabled } from './automation-policy.mjs';
@@ -283,15 +284,30 @@ export function buildProductionSnapshot(raw, config, settings = {}) {
 export async function readProductionSnapshot(client, protocol, config, player, settings = {}, options = {}) {
   if (!exactAutomationId(player?.playerId ?? player?.id) || !exactAutomationId(player?.worldId)) throw new Error('无法确认生产快照的角色或区服身份');
   const initialActor = actor(player), initialSocket = client.socket, initialEpoch = client.connectionEpoch;
-  let changedDuringRead = null;
-  const check = () => {
-    if (changedDuringRead) throw Object.assign(new Error('读取生产快照期间游戏状态已变化（' + changedDuringRead + '），请重新读取'), { code: 'PRODUCTION_SNAPSHOT_CHANGED' });
+  const checkContext = () => {
     if (client.connected === false || client.socket !== initialSocket || client.connectionEpoch !== initialEpoch
       || actor(player) !== initialActor || options.enabled?.() === false) {
-      throw Object.assign(new Error('读取生产快照期间账号或连接已变化'), { code: 'PRODUCTION_SNAPSHOT_CHANGED' });
+      throw Object.assign(new Error('账号、连接或排产设置已变化，请重新生成计划'), { code: 'PRODUCTION_SNAPSHOT_CHANGED' });
     }
   };
-  check();
+  for (let attempt = 1; ; attempt++) {
+    checkContext();
+    try {
+      return await readSnapshotOnce(client, protocol, config, player, settings, options, checkContext);
+    } catch (error) {
+      if (error.code !== 'PRODUCTION_SNAPSHOT_CHANGED' || !error.updatePush || attempt >= 3) throw error;
+      await delay(200 * attempt);
+    }
+  }
+}
+
+async function readSnapshotOnce(client, protocol, config, player, settings, options, checkContext) {
+  let updatePush = null, otherRequest = false;
+  const check = () => {
+    checkContext();
+    if (otherRequest) throw Object.assign(new Error('读取期间有其他游戏操作，请稍后重新生成计划'), { code: 'PRODUCTION_SNAPSHOT_CHANGED' });
+    if (updatePush) throw Object.assign(new Error('游戏数据仍在更新，请稍后重新生成计划'), { code: 'PRODUCTION_SNAPSHOT_CHANGED', updatePush });
+  };
   const reads = [], cache = new Map(), raw = { player, reads };
   const allowed = new Set(['OnWaterRequest', 'AllItemRequest', 'AllResourceRequest', 'GameEffectRequest', 'WeekInfoRequest',
     'WeekOrderInfoRequest', 'CargoShipsRequest', 'GuildOrderRequest', 'GuildShipRequest', 'GuildInfoRequest', 'AllHeroRequest',
@@ -328,10 +344,10 @@ export async function readProductionSnapshot(client, protocol, config, player, s
     'SCAllActivity', 'SCGameEffectUpdate', 'SCUpdateHero', 'SCVipUpdate', 'SCPlayerExpUpdate', 'SCPlayerLevelGrade',
     'SCJoinGuild', 'SCLeaveGuild', 'SCGuildChanged', 'SCRadarEventState', 'SCRadarUpdate']);
   const observeFrame = ({ dir, name } = {}) => {
-    if (dir === 'out' && !allowed.has(name) && !transport.has(name)) changedDuringRead ??= name || '其他请求';
+    if (dir === 'out' && !allowed.has(name) && !transport.has(name)) otherRequest = true;
   };
   const observeMessage = ({ name } = {}) => {
-    if (changingPushes.has(name) || /^SC(?:HeroRaid|GuildShip)/.test(name ?? '')) changedDuringRead ??= name;
+    if (changingPushes.has(name) || /^SC(?:HeroRaid|GuildShip)/.test(name ?? '')) updatePush ??= name;
   };
   client.on?.('frame', observeFrame);
   client.on?.('message', observeMessage);
