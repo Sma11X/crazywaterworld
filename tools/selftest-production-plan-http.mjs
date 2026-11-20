@@ -10,7 +10,7 @@ process.env.CW_DATA_DIR = directory;
 process.env.CW_CONFIG_PACK = path.join(directory, 'config.json');
 process.env.CW_PROTO_BUNDLE = path.join(directory, 'intentionally-missing-protocol.js');
 const config = {
-  BuildingCfg: [{ buildingType: '食品厂' }, { buildingType: '农田' }, { buildingType: '民居' }],
+  BuildingCfg: [{ buildingType: '食品厂' }, { buildingType: '农田' }, { buildingType: '民居' }, { buildingType: '宠物培育室' }],
   BuildingUpgradeCfg: [{ buildingType: '民居', level: 1, effect: [] },
     { buildingType: '民居', level: 2, playerLevel: 1, curPeople: 1, condition: [['食品厂', 1]], consume: [['面包', 4]] }],
   BuildingProduceCfg: [{ itemId: '面包', buildType: '食品厂', unlockLevel: 1, produceTime: 60, costItem: [['小麦', 5]] }],
@@ -28,6 +28,8 @@ const { saveStore, loadStore } = await import('../src/accounts.mjs');
 const { createConsole } = await import('../src/server.mjs');
 const { defaultSettings, saveAutomationSettings } = await import('../src/automation-settings.mjs');
 const { watchHeroRaidPushes } = await import('../src/hero-raid-automation.mjs');
+const { captureSpendOperation } = await import('../src/spend-evidence.mjs');
+const { beginOrderMaterialSpend, pendingOrderMaterialSpends } = await import('../src/order-reservations.mjs');
 const requests = ['OnWater', 'AllItem', 'AllResource', 'GameEffect', 'MonthCard', 'AllHero', 'WeekInfo', 'WeekOrderInfo', 'CargoShips', 'GuildOrder', 'RadarInfo'];
 const protocol = createDeclaredProtocol(requests.flatMap(name => [name + 'Request', name + 'Response']));
 const states = new Map(), live = new Set(), apps = new Set();
@@ -174,6 +176,34 @@ try {
       assert.deepEqual(f.state.sends, []);
       assert(f.state.requests.every(name => requests.some(prefix => name === prefix + 'Request')));
       assert.equal(f.state.logins, 1);
+    } finally { await f.close(); }
+  });
+  await test('重新生成排产时核对投喂结果，提前成熟且库存完整才解除阻塞', async () => {
+    const f = await fixture();
+    try {
+      await f.api('connect', {});
+      const { player, client } = f.session(), water = f.state.responses.OnWaterRequest;
+      f.state.sends.length = 0;
+      client.latencyMs = 25;
+      const room = { buildingId: '1宠物培育室', level: 1, petBreed: { maturePets: [], breedQ: [
+        { idx: 1, petId: '海兽', star: 2, startTime: f.state.now - 60, finishTime: f.state.now + 3600 },
+      ] } };
+      water.building.push(room);
+      const operation = await captureSpendOperation(client, { request: 'PetFeedRequest', body: { jobIdx: 1 } }, { waterSnapshot: water });
+      beginOrderMaterialSpend(player, [{ id: '面包', have: 21, need: 1 }], '喂养培育队列 1', { operation });
+      const blocked = await f.api('world/production-plan');
+      assert(blocked.missingReads.some(reason => reason.includes('喂养培育队列 1')));
+      room.petBreed = { breedQ: [], maturePets: [{ petId: '海兽', star: 2 }] };
+      const items = f.state.responses.AllItemRequest;
+      f.state.responses.AllItemRequest = {};
+      await f.api('world/production-plan');
+      assert.equal(pendingOrderMaterialSpends(player).length, 1);
+      f.state.responses.AllItemRequest = items;
+      const plan = await f.api('world/production-plan');
+      assert.equal(pendingOrderMaterialSpends(player).length, 0);
+      assert.deepEqual(plan.missingReads, []);
+      assert.equal(plan.upperBound, 0);
+      assert.deepEqual(f.state.sends, []);
     } finally { await f.close(); }
   });
   await test('活动HTTP总开关逐项控制联合排产需求，恢复后沿用细项并保持零游戏写入', async () => {

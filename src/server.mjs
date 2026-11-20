@@ -114,7 +114,7 @@ import { reconcileManualProduction } from './manual-production-sync.mjs';
 import { configuredMaterialRecipes, readProductionSnapshot } from './production-snapshot.mjs';
 import { materialTreeRecipes, planProduction } from './production-planning.mjs';
 import { createProductionTiming, watchProductionTimings } from './production-timing.mjs';
-import { captureManualProductionMaterialState } from './order-reservations.mjs';
+import { captureManualProductionMaterialState, refreshOrderMaterialSpends } from './order-reservations.mjs';
 import { createStageTask } from './stages.mjs';
 import { createChallengeRun } from './challenge-automation.mjs';
 import { runAction } from './actions.mjs';
@@ -3935,6 +3935,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             if (!enabled()) throw new Error('账号或排产设置已变化，请重新计算');
             const config = loadConfigSafe();
             const timing = watchProductionTimings(client, loadConfigSafe);
+            await refreshOrderMaterialSpends(client, player, { enabled, request: 'PetFeedRequest' });
             const snapshot = await readProductionSnapshot(client, protocolFor(client), config, player, view.settings,
               { enabled, observedDurations: timing.snapshot() });
             if (!enabled()) throw new Error('账号或排产设置已变化，请重新计算');

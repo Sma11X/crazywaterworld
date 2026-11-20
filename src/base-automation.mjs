@@ -661,7 +661,7 @@ export async function runBaseAutomation(client, protocol, config, plan, { player
           if (!rooms.length || rooms.some(room => !petQueue(room, config))) throw new Error('无法完整确认真实培育室队列，等待下次检查');
           const mature = rooms.reduce((sum, b) => sum + (b.petBreed.maturePets?.length ?? 0), 0);
           const confirmed = step.kind === 'petClaim' ? mature < step.verify.matureBefore
-            : confirmPetSpend(petBefore, petSpendSnapshot(rooms), step.request, step.body);
+            : confirmPetSpend(petBefore, petSpendSnapshot(rooms), step.request, step.body, client);
           if (!confirmed) throw new Error('服务器尚未确认海兽操作结果');
           entry = { step, ok: true, body: { confirmed: true } };
         } else if (step.kind === 'petAdvance' || step.kind === 'petAdvanceFeed') {
