@@ -53,7 +53,8 @@ import { runMuseumDisplay } from './museum-display.mjs';
 import { validateRuntimeSettings, guardRuntimeActions } from './settings-runtime.mjs';
 import { assertResourcesReady } from './resource-store.mjs';
 import { treasureAutomationEnabled, runTreasureLoot } from './treasure-loot.mjs';
-import {watchTreasureTravel,matchesFollowDeparture} from './treasure-follow.mjs';
+import {watchTreasureTravel,matchesFollowDeparture,matchesChaseDeparture,treasureChaseActive} from './treasure-follow.mjs';
+import { nextDailyWindowStart } from './daily-time-windows.mjs';
 import {watchFleetMaintenance,fleetMaintenanceEnabled,fleetMaintenanceInterval,runFleetMaintenance} from './fleet-maintenance.mjs';
 import {watchFleetSpeed,fleetSpeedEnabled,runFleetSpeed} from './fleet-speed.mjs';
 import { cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations, reserveCityWarFleets, runCityWar } from './city-war.mjs';
@@ -210,19 +211,24 @@ export async function runLoop(client, protocol, {
   }
   const heldForEvent = id => inRecallWindow('treasure', id) || inRecallWindow('cityWar', id);
   const recallRuntime = () => !stop.aborted && runtimeActive() && client.connected !== false;
+  const nextChaseStart = () => {
+    const p = getSettings()?.treasure;
+    return p?.chase ? nextDailyWindowStart(p.chaseWindows, serverNowSeconds()) : null;
+  };
   const treasureScan = scheduler.scanTask({
     enabled: () => treasureAutomationEnabled(getSettings()),
     intervalMs: () => (getSettings()?.treasure?.checkEverySeconds ?? 15) * 1000,
     hourlyFallback: true,
     async observe(current) {
       if (!runtimeActive()) return;
+      const chaseStart = nextChaseStart();
       const [list, stats] = await Promise.allSettled([
         client.request('TreasureLootListRequest', {}, 'TreasureLootListResponse', 8000),
         client.request('TreasureLootStatsRequest', {}, 'TreasureLootStatsResponse', 8000),
       ]);
       if (current()) {
         if (Array.isArray(list.value?.treasure)) rewards?.observe('万吨巨轮', '已扫描海面货轮 ' + list.value.treasure.length + ' 艘，派遣时复核目标与舰队');
-        return [stats.value?.nextRefreshTime, recallWindowStart('treasure', stats.value?.nextRefreshTime)];
+        return [stats.value?.nextRefreshTime, recallWindowStart('treasure', stats.value?.nextRefreshTime), chaseStart];
       }
     },
   });
@@ -249,6 +255,11 @@ export async function runLoop(client, protocol, {
   scheduler.listen(client, 'message', ({ name, body }) => {
     if (name === 'SCAllActivity' || name === 'SCServerTimeChanged') wakeActivities();
     if (name === 'SCTreasureLootRefresh') { recallStarts.treasure = null; treasureScan.invalidate(); }
+    if (name === 'SCTreasureLootUpdate') {
+      const p = getSettings()?.treasure;
+      if (treasureChaseActive(p, serverNowSeconds()) && body?.treasure?.some(target => [target.battlePoint?.leftFighter, target.battlePoint?.rightFighter]
+        .some(member => member && !member.isNpc && p.chaseNames.includes(member.name)))) treasureScan.invalidate();
+    }
     if (name === 'SCWarDeclaration' || name === 'SCCityWarTime') { recallStarts.cityWar = null; cityWarScan.invalidate(); }
     const now = serverNowSeconds();
     const inWar = cityWarState?.startTime <= now && now < cityWarState?.endTime;
@@ -305,8 +316,10 @@ export async function runLoop(client, protocol, {
   watchGuildShipPushes(client, rewards);
   scheduler.addCleanup(travel.subscribe(fleet=>{
     const preferences=getSettings()?.treasure;
-    if(stop.aborted||!client.connected||!treasureAutomationEnabled(getSettings())||!matchesFollowDeparture(fleet,preferences,exactAutomationId(player?.playerId),travel.current()))return;
-    treasureScan.invalidate();
+    if(stop.aborted||!client.connected||!treasureAutomationEnabled(getSettings()))return;
+    const ownId = exactAutomationId(player?.playerId), others = travel.current();
+    if (matchesFollowDeparture(fleet, preferences, ownId, others) ||
+        (treasureChaseActive(preferences, serverNowSeconds()) && matchesChaseDeparture(fleet, preferences, ownId, others))) treasureScan.invalidate();
   }));
   scheduler.addCleanup(watchFleetMaintenance(client).subscribe(()=>{
     if(stop.aborted||!client.connected||!fleetMaintenanceEnabled(getSettings()))return;
@@ -696,6 +709,7 @@ export async function runLoop(client, protocol, {
       return [Math.min(eventAt, nextRewardAt ?? Infinity, serverNowSeconds() + settings[source].checkEverySeconds)];
     }
     async function scanTreasure() {
+      const chaseStart = nextChaseStart();
       if(getSettings()?.cityWar.reserveDuringWar)await checkCityWar();
       try {
         const result = await runTreasureLoot(client, protocol, config, player, { getSettings, ledger: usageLedger,
@@ -716,7 +730,7 @@ export async function runLoop(client, protocol, {
           },
         });
         const recallTimes = await prepareSiliconRecall('treasure', result.canPrepare ? result.nextRefreshTime : null, result.miningFleetIds);
-        return [result.nextRefreshTime, ...recallTimes];
+        return [result.nextRefreshTime, chaseStart, ...recallTimes];
       } catch (error) { recallStarts.treasure = null; phaseFailure('world', '万吨巨轮检查', error); }
       finally { cityFuelCeiling = null; }
     }

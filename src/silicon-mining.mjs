@@ -6,6 +6,7 @@ import { isMiningSilicon,  dispatchReservationReason, fleetRecordReason, reserve
 import { registerFleetReservations, isFleetReserved } from './fleet-reservations.mjs';
 import { pendingPetrol } from './dispatch-preview.mjs';
 import { recordsInWorld } from './fleet-settlement.mjs';
+import { inDailyWindows as siliconInWindow } from './daily-time-windows.mjs';
 
 // 硅矿奖励由服务器自动发放；ChipMineRewardRequest 只是读取共享周期次数。
 const integer = (n, min = 0) => Number.isSafeInteger(n) && n >= min;
@@ -45,17 +46,7 @@ function openingReason(config, player, time) {
   return '';
 }
 export { openingReason as siliconOpeningReason };
-export function siliconInWindow(windows, time) {
-  if (!windows?.length) return true;
-  const minute = Math.floor(((time + 28800) % 86400) / 60);
-  return windows.some(window => {
-    const m = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(window);
-    if (!m) return false;
-    const start = Number(m[1]) * 60 + Number(m[2]), end = Number(m[3]) * 60 + Number(m[4]);
-    if (Number(m[1]) > 23 || Number(m[3]) > 23 || Number(m[2]) > 59 || Number(m[4]) > 59) return false;
-    return start === end || (start < end ? minute >= start && minute < end : minute >= start || minute < end);
-  });
-}
+export { siliconInWindow };
 const pursuitEnabled = fleet => !fleet.huntEnabled && fleet.pursuit && !fleet.emptyOnly && fleet.tiers.some(tier => tier !== 'BLUE');
 export const siliconInterval = settings => settings?.silicon?.fleets?.some(fleet => fleet.enabled && (fleet.huntEnabled || pursuitEnabled(fleet))) ? 120000 : 600000;
 export function watchSiliconMining(client) {

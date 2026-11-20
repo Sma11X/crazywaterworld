@@ -383,6 +383,12 @@ const configGroups = [
     configField('treasure.fleetIds', '参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与舰队，空选不派遣', help: '只使用已建成、有英雄编队且实际空闲的舰队；行军、战斗、维修和驻外等占用会跳过。游戏自动作战开关开启不等于正在作战。' }),
     configField('treasure.followPlayerIds', '跟随名单', 'players', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '从当前账号的盟友名单搜索多选，按选择顺序优先跟随。使用完整角色 ID 区分同名玩家；也可补充未列出的角色 ID。未列出的已选 ID 仍保留，需要时手动移除。' }),
     configField('treasure.followNames', '补充跟随昵称（可选）', 'names', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '保留原有手填名单。每行一个完整昵称，角色 ID 名单优先；同名无法确认身份时跳过。', placeholder: '每行输入一位其他玩家的完整昵称' }),
+    configField('treasure.chase', '是否开启追杀', 'switch', { help: '名单对手正在前往、驻守或交战的货轮优先出征。追杀跳过货轮类型、奖励、进度、避战、外盟、反复攻占、每日出征上限和最低耐久比例。只用所选可用舰队，服从其他挂机项目的占用和预留。' }),
+    configField('treasure.chaseNames', '追杀名单', 'names', { parent: 'treasure.chase', when: d => d.treasure.chase, placeholder: '每行一位对手的完整昵称', help: '按填写顺序优先追击。每次派遣前重新核对对手位置。对手离开后停止追击，单独开启追杀时会等待下次出现。' }),
+    configField('treasure.chaseWindows', '追杀时间范围', 'names', { parent: 'treasure.chase', when: d => d.treasure.chase, placeholder: '08:00-12:00\n22:00-02:00', help: '按北京时间每天生效，每行一个 HH:mm-HH:mm 时段，可跨午夜。留空或起止相同表示全天。到结束时间就停止追加追杀派舰和追杀去程加速。' }),
+    configField('treasure.chaseSpeedUp', '追杀去程钻石加速', 'switch', { parent: 'treasure.chase', when: d => d.treasure.chase, help: '仅加速已确认的追杀去程。对手离开后停止花钻。回城可单独使用下方的回城加速。' }),
+    configField('treasure.chaseTargetSeconds', '追杀去程剩余目标', 'number', { parent: 'treasure.chaseSpeedUp', when: d => d.treasure.chase && d.treasure.chaseSpeedUp, unit: '秒', help: '剩余时间超过此值时才加速。' }),
+    configField('treasure.chaseDailyDiamondLimit', '追杀每日钻石预算', 'number', { parent: 'treasure.chaseSpeedUp', when: d => d.treasure.chase && d.treasure.chaseSpeedUp, unit: '钻石', help: '0 禁止花钻。同时遵守全局钻石开关、每日预算和钻石保留量。' }),
     configField('treasure.rewardItems', '目标奖励', 'multi', { catalog: 'treasureRewards', empty: '不筛选奖励', help: '常规自动参加和跟随共用这份列表。可搜索物品名称，留空接受所有奖励。“垃圾袋（任意品质）”匹配各品质垃圾袋，选择具体品质则只匹配该品质。' }),
     configField('treasure.rewardMatchMode', '奖励筛选方式', 'radio', { options: treasureMatchOptions }),
     configField('treasure.rewardMinHits', '至少命中', 'number', { when: d => d.treasure.rewardMatchMode === 'multiple', unit: '项', help: treasureMinHitsHelp }),
@@ -2083,10 +2089,10 @@ async function configPreview() {
     if (data.treasure) {
       const state = data.treasure;
       root.append(el('p', 'config-help', `读到 ${data.counts?.treasures ?? 0} 艘候选货轮、${data.counts?.fleets ?? 0} 支舰队，汽油 ${state.fuel ?? '未确认'}，每队费用 ${state.fuelPerFleet ?? '未确认'}，今日领奖 ${state.todayRewardTimes ?? '未确认'} / ${state.rewardLimit ?? '未确认'}。`));
-      const mode = el('p', 'config-help title-with-help', '参与模式：' + (state.participationMode === 'always' ? '每次参与' : '打满就停'));
-      mode.append(makeHelpTip('当前参与模式', state.participationMode === 'always' ? '领奖已满仍可参加，其他限制照常生效；不会增加游戏奖励次数。' : '领奖已满后不再派遣或维修。')); root.append(mode);
+      const mode = el('p', 'config-help title-with-help', '常规参与模式：' + (state.participationMode === 'always' ? '每次参与' : '打满就停'));
+      mode.append(makeHelpTip('常规参与模式', state.participationMode === 'always' ? '领奖已满仍可常规参加。' : '领奖已满后停止常规派遣和备战维修。追杀按对手名单执行。')); root.append(mode);
       if (state.targets?.length) root.append(table(['货轮', '本人实际进度 / 上限', '参与条件'], state.targets.map(target => [target.label,
-        (target.personalProgress == null ? '未确认' : target.personalProgress + '%') + ' / ' + (target.personalProgressLimit ?? '?') + '%', target.reason || '满足目标条件'])));
+        (target.personalProgress == null ? '未确认' : target.personalProgress + '%') + ' / ' + (target.personalProgressLimit ?? '?') + '%', target.chaseName ? '追杀 ' + target.chaseName : target.reason || '满足目标条件'])));
       if (state.fleets?.length) root.append(table(['舰队', '实际状态 / 耐久', '游戏自动作战', '舰队条件'], state.fleets.map(fleet => [
         fleet.name, fleet.state + (fleet.durability != null ? ' · ' + fleet.durability + '/' + (fleet.maxDura ?? '?') : ''),
         fleet.autoFight == null ? '未取得' : fleet.autoFight ? '开启' : '关闭', fleet.reason || '满足',

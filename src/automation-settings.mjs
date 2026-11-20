@@ -8,6 +8,7 @@ export { beijingDay, createUsageLedger, usageFile } from './usage-ledger.mjs';
 import { taskSettings, retiredAutomationTasks, migratedAutomationTasks } from './automation.mjs';
 import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, siliconTierLabels, validateSiliconFleets } from './extended-settings.mjs';
 import { treasureRewardOptions } from './treasure-reward-filter.mjs';
+import { dailyWindowPattern } from './daily-time-windows.mjs';
 import { activityAutomationDefaults, activityAutomationFields } from './activity-automation.mjs';
 import { APPOINTMENT_PRIORITIES, DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
 import { validateLineupSettings, validateFleetLineupBindings } from './saved-lineups.mjs';
@@ -21,9 +22,12 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 32;
+export const SETTINGS_SCHEMA_VERSION = 34;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
+const treasureChaseDefaults = {
+  chase: false, chaseNames: [], chaseWindows: [], chaseSpeedUp: false, chaseTargetSeconds: 60, chaseDailyDiamondLimit: 0,
+};
 const treasureRewardFilterDefaults = {
   rewardMatchMode: 'any', rewardMinHits: 2,
   fallbackMediumRewardMatchMode: 'any', fallbackMediumRewardMinHits: 2,
@@ -91,7 +95,7 @@ export const DEFAULT_SETTINGS = {
   pirateSweep: { type: '1' },
   pirateHunt: { enabled: false, maxFailures: 3, fleetIds: [], types: [], maxLevel: 0, minDurabilityPercent: 80, checkEverySeconds: 15 },
   treasure: { enabled: false, autoJoin: false, qualities: Object.keys(treasureQualityLabels), follow: false, followMode: 'trigger', fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
-    rewardItems: [], ...treasureRewardFilterDefaults, avoidNames: [], allowHostile: false, minDurabilityPercent: 80,
+    rewardItems: [], ...treasureRewardFilterDefaults, ...treasureChaseDefaults, avoidNames: [], allowHostile: false, minDurabilityPercent: 80,
     maxProgress: 90, personalProgressLimit: 20, dailyDispatchLimit: 0, checkEverySeconds: 15, participationMode: 'untilFull', repeatAttack: false,
     autoRepair: false, recallSilicon: false, recallLeadMinutes: 5,
     marchSpeedUp: false, outboundSpeedUp: true, marchTargetSeconds: 60,
@@ -169,6 +173,8 @@ const constraints = {
   'pirateHunt.fleetIds': strings(10), 'pirateHunt.types': strings(20), 'pirateHunt.maxLevel': int(1000),
   'pirateHunt.minDurabilityPercent': int(100), 'pirateHunt.checkEverySeconds': int(60, 5),
   'treasure.fleetIds': strings(10), 'treasure.followNames': strings(30), 'treasure.followPlayerIds': strings(30),
+  'treasure.chaseNames': strings(30), 'treasure.chaseTargetSeconds': int(3600), 'treasure.chaseDailyDiamondLimit': int(100000000),
+  'treasure.chaseWindows': strings(10),
   'treasure.qualities': { ...strings(3), values: Object.keys(treasureQualityLabels) },
   'treasure.rewardItems': strings(100), 'treasure.avoidNames': strings(30),
   'treasure.rewardMatchMode': rewardMatchMode, 'treasure.rewardMinHits': int(100, 1),
@@ -434,7 +440,9 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   for(const key of ['worldBoss','follow','silicon','resourceFields'])if(!output.fleetDispatch.priority.includes(key))output.fleetDispatch.priority.push(key);
   if (output.resourceFields.enabled && !output.resourceFields.fleetIds.length) errors['resourceFields.fleetIds'] = '请选择自动占领资源田的舰队';
   if (output.resourceFields.fleetIds.some(value => !/^[1-9]\d*远征船$/.test(value))) errors['resourceFields.fleetIds'] = '请选择有效的远征舰队';
-  if (output.silicon.windows.some(value => !/^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(value))) errors['silicon.windows'] = '时段格式为 HH:mm-HH:mm，每行一个；支持跨午夜';
+  for (const [field, windows] of [['silicon.windows', output.silicon.windows], ['treasure.chaseWindows', output.treasure.chaseWindows]]) {
+    if (windows.some(value => !dailyWindowPattern.test(value))) errors[field] = '时段格式为 HH:mm-HH:mm，每行一个，支持跨午夜';
+  }
   if (output.pirateHunt.fleetIds.some(value=>! /^[1-9]\d*远征船$/.test(value))) errors['pirateHunt.fleetIds']='请选择有效的海盗首杀舰队';
   if (output.pirateHunt.types.some(value=>! /^[1-9]\d*$/.test(value))) errors['pirateHunt.types']='请选择有效的海盗类型';
   if (![1,5,10,50].includes(output.eventActions.compassDrawCount)) errors['eventActions.compassDrawCount']='请选择1、5、10或50次';
@@ -443,11 +451,12 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   if (output.farm.customPlant && !output.farm.crops.length) errors['farm.crops'] = '启用自定义种植前，请至少添加一种作物';
   // An empty species selection pauses breeding, including migrated accounts
   // which must choose their spending targets in the unified configuration.
-  if (output.treasure.enabled && !output.treasure.autoJoin && !output.treasure.follow) errors['treasure.autoJoin'] = '请至少开启自动参加或跟随指定玩家';
+  if (output.treasure.enabled && !output.treasure.autoJoin && !output.treasure.follow && !output.treasure.chase) errors['treasure.autoJoin'] = '请至少开启自动参加、跟随指定玩家或追杀';
   if (output.treasure.enabled && !output.treasure.fleetIds.length) errors['treasure.fleetIds'] = '请明确选择参与巨轮的舰队，空名单不会派遣';
   if (output.treasure.fallbackEnabled && !output.treasure.fallbackQualities.length) errors['treasure.fallbackQualities'] = '开启兜底前，请至少选择一种货轮';
   if (output.treasure.follow && !output.treasure.followNames.length && !output.treasure.followPlayerIds.length && !errors['treasure.followNames'] && !errors['treasure.followPlayerIds']) errors['treasure.followNames'] = '开启跟随前，请添加玩家完整昵称或角色ID';
-  for (const field of ['followNames', 'avoidNames']) if (output.treasure[field].some(value => value !== value.trim() || value.length > 40 || /[\r\n\u0000-\u001f]/.test(value))) errors['treasure.' + field] = '请输入不重复的完整昵称，每项不超过40字符，不含首尾空格或换行';
+  if (output.treasure.chase && !output.treasure.chaseNames.length && !errors['treasure.chaseNames']) errors['treasure.chaseNames'] = '开启追杀前，请填写对手的完整昵称';
+  for (const field of ['followNames', 'avoidNames', 'chaseNames']) if (output.treasure[field].some(value => value !== value.trim() || value.length > 40 || /[\r\n\u0000-\u001f]/.test(value))) errors['treasure.' + field] = '请输入不重复的完整昵称，每项不超过40字符，不含首尾空格或换行';
   for (const field of ['followPlayerIds', 'avoidPlayerIds']) if (output.treasure[field].some(value => !/^[1-9]\d{0,18}$/.test(value) || BigInt(value) > (1n << 63n) - 1n)) errors['treasure.' + field] = '角色ID必须为完整的正整数文本，不能使用科学计数法';
   if (output.treasure.fleetIds.some(value => !/^[1-9]\d*远征船$/.test(value))) errors['treasure.fleetIds'] = '请选择有效的远征舰队';
   if (output.cityWar.enabled && !output.cityWar.fleetIds.length) errors['cityWar.fleetIds'] = '请明确选择参与城战接续的舰队';
@@ -668,7 +677,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings], [28, migrateVersion28Settings], [29, migrateVersion29Settings], [30, migrateVersion30Settings], [31, migrateVersion31Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings], [28, migrateVersion28Settings], [29, migrateVersion29Settings], [30, migrateVersion30Settings], [31, migrateVersion31Settings], [32, migrateVersion32Settings], [33, migrateVersion33Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1081,6 +1090,16 @@ function migrateVersion22Settings(settings) {
     if (plain(next[group])) next[group] = { maxPowerRatio: 0, ...next[group] };
   }
   return next;
+}
+
+function migrateVersion33Settings(settings) {
+  if (!plain(settings?.treasure)) return settings;
+  return { ...settings, treasure: { chaseWindows: [], ...settings.treasure } };
+}
+
+function migrateVersion32Settings(settings) {
+  if (!plain(settings?.treasure)) return settings;
+  return { ...settings, treasure: { ...treasureChaseDefaults, ...settings.treasure } };
 }
 
 function migrateVersion31Settings(settings) {

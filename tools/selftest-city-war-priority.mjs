@@ -38,7 +38,7 @@ fs.writeFileSync(mapFile, JSON.stringify([null, null, null, null, null, [[null, 
   mapData: Array(100).fill(0),
 }]]]));
 
-// 首杀与城战在同一假连接、同一完整 runLoop 中竞争一队。所有新增
+// 首杀、城战和巨轮追杀在同一假连接、同一完整 runLoop 中竞争一队。所有新增
 // 请求/响应也经过实际 protobuf 编解码，不能用未声明写操作掩盖失败。
 async function dispatchRound({ beforeWar = false, unknownCounts = false, openingRead = 0, reserve = true } = {}) {
   let clock = realNow();
@@ -50,6 +50,8 @@ async function dispatchRound({ beforeWar = false, unknownCounts = false, opening
     f.state.war.endTime = start + 3600;
     if (unknownCounts) multilateral(f);
     settings.forge.enabled = false;
+    settings.pirate.enabled = true;
+    Object.assign(settings.treasure, { enabled: true, chase: true, chaseNames: ['同行者甲'], fleetIds: ['1远征船'] });
     Object.assign(settings.cityWar, { fleetIds: ['1远征船'], autoRepair: false, reserveDuringWar: reserve });
     Object.assign(settings.pirateHunt, {
       enabled: true, fleetIds: ['1远征船'], types: ['1'], maxLevel: 3,
@@ -438,6 +440,7 @@ try {
     const result = await dispatchRound();
     assert.equal(result.settings.fleetDispatch.priority[0], 'cityWar');
     assert(result.writes.some(row => row.name === 'MoveFleetsToCityRequest'));
+    assert(!result.writes.some(row => row.name === 'TreasureLootSendFleetsRequest'));
     assert(!result.writes.some(row => row.name === 'ChallengePirateRequest'));
     assert.equal(result.usage.counters.piratePetrol ?? 0, 0);
   });

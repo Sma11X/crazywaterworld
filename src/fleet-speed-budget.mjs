@@ -2,7 +2,8 @@
 // 某项预算调低后，其已经花掉的钻石不占用其他项的独立额度。
 export function fleetSpeedBudgetLimits(settings, module, counter, used) {
   const budgets = module === 'treasure'
-    ? { treasureOutboundDiamonds: settings.treasure.dailyDiamondLimit, treasureReturnDiamonds: settings.treasure.returnDailyDiamondLimit }
+    ? { treasureOutboundDiamonds: settings.treasure.dailyDiamondLimit, treasureReturnDiamonds: settings.treasure.returnDailyDiamondLimit,
+      treasureChaseDiamonds: settings.treasure.chaseDailyDiamondLimit ?? 0 }
     : Object.fromEntries(settings.silicon.fleets.flatMap(fleet => ['march', 'return'].map(mode =>
       [siliconSpeedCounter(fleet.id, mode), fleet[mode + 'DailyDiamonds']])));
   // 旧版已单列的维修花费已包含在 siliconDiamonds 中，不能再从行军额度扣一次。

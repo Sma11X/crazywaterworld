@@ -544,8 +544,32 @@ try {
       assert.deepEqual(importAutomationSettings(exportAutomationSettings(settings)), settings);
     }
   });
+  test('版本32的巨轮配置默认关闭追杀及其加速，并能单独启用追杀', () => {
+    const expected = defaultSettings(), old = structuredClone(expected);
+    for (const key of ['chase', 'chaseNames', 'chaseSpeedUp', 'chaseTargetSeconds', 'chaseDailyDiamondLimit']) delete old.treasure[key];
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 32, settings: old }), expected);
+    assert.equal(expected.treasure.chase, false);
+    assert.equal(expected.treasure.chaseSpeedUp, false);
+    Object.assign(expected.treasure, { enabled: true, chase: true, fleetIds: ['1远征船'] });
+    assert.throws(() => exportAutomationSettings(expected), /完整昵称/);
+    Object.assign(expected.treasure, { chaseNames: ['对手甲'], chaseSpeedUp: true, chaseDailyDiamondLimit: 75 });
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(expected)), expected);
+  });
+  test('版本33的追杀默认全天，多时段导出再导入保留并校验时间', () => {
+    const old = defaultSettings();
+    Object.assign(old.treasure, { enabled: true, chase: true, chaseNames: ['对手甲'], fleetIds: ['1远征船'] });
+    delete old.treasure.chaseWindows;
+    const settings = importAutomationSettings({ format: SETTINGS_FORMAT, version: 33, settings: old });
+    assert.deepEqual(settings.treasure, { ...old.treasure, chaseWindows: [] });
+    settings.treasure.chaseWindows = ['22:00-02:00', '08:00-09:00'];
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(settings)), settings);
+    for (const bad of ['24:00-02:00', '08:00-08:60', '8:00', '08:00-']) {
+      settings.treasure.chaseWindows = [bad];
+      assert.throws(() => exportAutomationSettings(settings), error => !!error.fields['treasure.chaseWindows']);
+    }
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 32);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 34);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

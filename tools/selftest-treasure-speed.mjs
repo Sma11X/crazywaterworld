@@ -93,6 +93,59 @@ const check = async (name, work) => {
 };
 
 try {
+  await check('追杀去程独立花钻并绑定原对手，普通去程开关与额度不能代付', async () => {
+    const { f, s } = fixture(), usage = ledger();
+    Object.assign(s.treasure, { chase: true, chaseNames: ['对手甲', '对手乙'], chaseSpeedUp: true, chaseTargetSeconds: 0,
+      chaseDailyDiamondLimit: 60, autoJoin: false, marchSpeedUp: false, dailyDiamondLimit: 0, qualities: [] });
+    Object.assign(f.state.targets[0], { ownerGuildIdx: 8, ownerFleetNum: 1 });
+    f.state.defenders[72] = [{ guildIdx: 8, name: '对手甲' }];
+    f.state.stats.todayRewardTimes = 3;
+    const result = await run(f, s, usage);
+    assert.deepEqual(result.results.map(row => row.step.kind), ['treasureDispatch', 'treasureSpeed']);
+    assert.equal(usage.snapshot().counters.treasureChaseDiamonds, 30);
+    f.state.defenders[72][0].name = '对手乙';
+    assert.deepEqual((await preview(f, s, usage)).actions, []);
+    f.state.defenders[72][0].name = '对手甲';
+    s.resources.diamondThreshold = 970;
+    assert.deepEqual((await preview(f, s, usage)).actions, []);
+    s.resources.diamondThreshold = 0;
+    s.treasure.chaseSpeedUp = false;
+    Object.assign(s.treasure, { marchSpeedUp: true, dailyDiamondLimit: 300 });
+    assert.deepEqual((await preview(f, s, usage)).actions, []);
+    s.treasure.chaseSpeedUp = true;
+    await run(f, s, usage); await run(f, s, usage);
+    assert.equal(speeds(f).length, 2);
+    assert.equal(usage.snapshot().counters.diamonds, 60);
+    assert.equal(usage.snapshot().counters.treasureOutboundDiamonds ?? 0, 0);
+  });
+
+  await check('追杀去程在最终读舰队时跨过截止分钟，停止花钻，回城仍按回城设置加速', async () => {
+    const { f, s } = fixture(), usage = ledger();
+    const todayUTC = Math.floor(Date.now() / 86400000) * 86400000;
+    f.client.serverClockOffsetMs = todayUTC - Date.now();
+    Object.assign(s.treasure, { autoJoin: false, chase: true, chaseNames: ['对手甲'], chaseWindows: ['08:00-08:01'],
+      chaseSpeedUp: false, chaseDailyDiamondLimit: 120, returnSpeedUp: true });
+    Object.assign(f.state.targets[0], { ownerGuildIdx: 8, ownerFleetNum: 1 });
+    f.state.defenders[72] = [{ guildIdx: 8, name: '对手甲' }];
+    await run(f, s, usage);
+    assert.equal(dispatches(f).length, 1);
+    s.treasure.chaseSpeedUp = true;
+    assert.equal((await preview(f, s, usage)).actions[0]?.speedMode, 'chase');
+    let reads = 0;
+    f.beforeRead = name => {
+      if (name === 'MyFleetsRequest' && ++reads === 3) f.client.serverClockOffsetMs = todayUTC + 60000 - Date.now();
+    };
+    const result = await run(f, s, usage);
+    assert.match(result.results[0].reason, /追杀时间范围/);
+    assert.equal(speeds(f).length, 0);
+    assert.equal(usage.snapshot().counters.diamonds ?? 0, 0);
+    assert.deepEqual((await preview(f, s, usage)).actions, []);
+    const now = nowOf(f);
+    Object.assign(fleetOf(f), { startGridIdx: 500, targetGridIdx: 123, cityId: 7, targetCityId: 7, moveStartTs: now, moveEndTs: now + 180 });
+    assert.equal((await run(f, s, usage)).results[0]?.step.speedMode, 'return');
+    assert.equal(speeds(f).length, 1);
+  });
+
   await check('默认关闭加速与预算，普通出征保持可用', async () => {
     const defaults = defaultSettings();
     assert.equal(defaults.treasure.marchSpeedUp, false);

@@ -311,6 +311,8 @@ test('所有显式父项位于同组，字段无重复且依赖无环', () => {
     ['silicon.fleets.0.huntPlayers', 'silicon.fleets.0.huntEnabled'],
     ['antique.targetStar', 'antique.star'],
     ['cityWar.recallLeadMinutes', 'cityWar.recallSilicon'], ['treasure.recallLeadMinutes', 'treasure.recallSilicon'],
+    ['treasure.chaseNames', 'treasure.chase'], ['treasure.chaseWindows', 'treasure.chase'], ['treasure.chaseSpeedUp', 'treasure.chase'],
+    ['treasure.chaseTargetSeconds', 'treasure.chaseSpeedUp'], ['treasure.chaseDailyDiamondLimit', 'treasure.chaseSpeedUp'],
     ['treasure.outboundSpeedUp', 'treasure.marchSpeedUp'], ['treasure.marchTargetSeconds', 'treasure.outboundSpeedUp'],
     ['treasure.returnSpeedUp', 'treasure.marchSpeedUp'], ['treasure.returnTargetSeconds', 'treasure.returnSpeedUp'], ['treasure.dailyDiamondLimit', 'treasure.outboundSpeedUp'], ['treasure.returnDailyDiamondLimit', 'treasure.returnSpeedUp'],
   ]) assert.equal(fields.get(child)?.parent, parent, child);
