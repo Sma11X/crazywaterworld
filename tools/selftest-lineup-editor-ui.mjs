@@ -652,6 +652,16 @@ await test('查看弹窗仅请求离线目录，站位只读，缺海兽信息�
   assert.equal(f.state.editor, null);
 });
 
+await test('查看阵容时，英雄列表与站位都采用已读取的账号皮肤', async () => {
+  const f = fixture(), data = savedData();
+  data.catalog = editorData();
+  f.runtime.response = () => data;
+  f.state.editor.heroes[0].icon = { name: '已装备的皮肤' };
+  f.context.iconEl = icon => new Element('span', '', icon?.name);
+  await f.context.openSavedLineupViewer('account-a', 'p1');
+  assert.equal(f.body.querySelector('dialog').textContent.split('已装备的皮肤').length - 1, 2);
+});
+
 await test('关闭与Esc返回触发按钮，草稿保留，切号关闭弹窗', async () => {
   const f = fixture(), trigger = new Element('button'); f.body.append(trigger); f.context.document.activeElement = trigger;
   await f.context.openSavedLineupEditor('account-a', f.state.saved.presets[0]);

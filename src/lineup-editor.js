@@ -429,7 +429,7 @@ function renderLineupViewer(host, state, preset, account) {
   if (type?.unlockEffect) details.append(el('p', 'lineup-muted', type.unlockEffect));
   const heroes = el('ul', 'lineup-viewer-heroes');
   for (const position of formation.heroPositions) {
-    const hero = catalog.heroes?.find(item => item.heroId === position.heroId) || { name: position.heroId };
+    const hero = lineupHero(state, position.heroId);
     const item = el('li'); item.append(lineupPortrait(hero, 40), el('span', '', hero.name)); heroes.append(item);
   }
   details.append(heroes); workspace.append(battlefield, details); root.append(workspace);
@@ -441,14 +441,17 @@ function renderLineupViewer(host, state, preset, account) {
   root.append(petField);
   const footer = el('div', 'lineup-viewer-footer'), close = smallButton('关闭');
   close.onclick = () => closeLineupDialog(); footer.append(close); root.append(footer);
-  const viewerState = { editor: catalog, drafts: new Map([[preset.id, preset]]), activeDraft: preset.id, ui: { root, board } };
+  const viewerState = { editor: state.editor || catalog, saved: state.saved,
+    drafts: new Map([[preset.id, preset]]), activeDraft: preset.id, ui: { root, board } };
   drawLineupBoard(viewerState, account, true); host.append(root);
 }
 
 function currentLineupDraft(state) { return state.drafts.get(state.activeDraft); }
 function lineupPositionKey(position) { return position.x + ',' + position.y; }
 function lineupHero(state, heroId) {
-  return state.editor?.heroes?.find(hero => hero.heroId === heroId) || { heroId, name: heroId, quality: '' };
+  return state.editor?.heroes?.find(hero => hero.heroId === heroId)
+    || state.saved?.catalog?.heroes?.find(hero => hero.heroId === heroId)
+    || { heroId, name: heroId, quality: '' };
 }
 function currentLineupPositions(state) {
   const draft = currentLineupDraft(state);
