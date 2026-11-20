@@ -449,7 +449,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 19);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 20);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
@@ -478,6 +478,18 @@ try {
     const saved = saveAutomationSettings('test', old, { file, revision: 7 });
     assert.deepEqual(JSON.parse(fs.readFileSync(file)).accounts.test.settings, expected);
     assert.deepEqual(exportAutomationSettings(saved.settings).settings, expected);
+  });
+  test('旧硅矿等级按舰队迁移为多选，空选可以保存和导入', () => {
+    const old = defaultSettings(), levels = ['PURPLE', 'BLUE', 'ORANGE'];
+    old.silicon.fleets.forEach((fleet, index) => { delete fleet.tiers; fleet.tier = levels[index]; });
+    fs.writeFileSync(file, JSON.stringify({ version: 19, accounts: { test: { settingsVersion: 19, revision: 1, settings: old } } }));
+    const loaded = loadAutomationSettings('test', { file }).settings;
+    assert.deepEqual(loaded.silicon.fleets.map(fleet => fleet.tiers), levels.map(tier => [tier]));
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 19, settings: old }), loaded);
+    assert.deepEqual(validateSettings(old), loaded);
+    loaded.silicon.fleets[1].tiers = [];
+    const saved = saveAutomationSettings('test', loaded, { file, revision: 1 });
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(saved.settings)), loaded);
   });
   test('旧货轮开关迁移为类型多选，保留兜底和显式空选', () => {
     const all = ['ORANGE', 'PURPLE', 'BLUE'];

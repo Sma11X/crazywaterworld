@@ -6,7 +6,7 @@ import { atomicJson, readJson, withFileLock } from './json-store.mjs';
 import { accountKey, dataDirectory } from './usage-ledger.mjs';
 export { beijingDay, createUsageLedger, usageFile } from './usage-ledger.mjs';
 import { taskSettings, retiredAutomationTasks, migratedAutomationTasks } from './automation.mjs';
-import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, validateSiliconFleets } from './extended-settings.mjs';
+import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, siliconTierLabels, validateSiliconFleets } from './extended-settings.mjs';
 import { treasureRewardOptions } from './treasure-reward-filter.mjs';
 import { activityAutomationDefaults, activityAutomationFields } from './activity-automation.mjs';
 import { DEFAULT_APPOINTMENT_PRIORITIES, normalizeAppointmentPriorities } from './appointment-priorities.mjs';
@@ -21,7 +21,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 19;
+export const SETTINGS_SCHEMA_VERSION = 20;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 export const DEMAND_SOURCES = [
@@ -313,7 +313,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   input = migrateVersion14Settings(migrateVersion13Settings(input));
   if (plain(input?.treasure) && Object.hasOwn(input.treasure, 'onlyTenThousand')) input = migrateVersion15Settings(input);
   input = migrateVersion17Settings(migrateVersion16Settings(input));
-  input = migrateVersion18Settings(input);
+  input = migrateVersion19Settings(migrateVersion18Settings(input));
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
   }
@@ -484,6 +484,7 @@ export function settingsCatalog(config) {
     guildTech: unique(rows('GuildTechCfg').map(r => option(r.techId, r.name || '科技 ' + r.techId))),
     materials, treasureRewards: treasureRewardOptions(config, materials),
     treasureQualities: Object.entries(treasureQualityLabels).map(([value, label]) => option(value, label)),
+    siliconTiers: Object.entries(siliconTierLabels).map(([value, label]) => option(value, label)),
     crops: rows('FarmlandPlantCfg').map(r => option(r.id)),
     maps: rows('MuseumExpeditionStageCfg').map(r => option(r.stageId, r.name)),
     heroes: rows('HeroCfg').filter(r => r.universalItemId || r.quality).map(r => ({
@@ -636,7 +637,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1017,4 +1018,14 @@ function migrateVersion18Settings(settings) {
     input.antique = antique;
   }
   return input;
+}
+
+function migrateVersion19Settings(settings) {
+  if (!Array.isArray(settings?.silicon?.fleets)) return settings;
+  const fleets = settings.silicon.fleets.map(fleet => {
+    if (!plain(fleet) || !Object.hasOwn(fleet, 'tier')) return fleet;
+    const { tier, ...rest } = fleet;
+    return { tiers: [tier], ...rest };
+  });
+  return { ...settings, silicon: { ...settings.silicon, fleets } };
 }

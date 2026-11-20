@@ -195,7 +195,7 @@ const configGroups = [
     ...[0,1,2].flatMap(i=>{
       const key='silicon.fleets.'+i+'.',label='舰队'+(i+1)+' · ',when=d=>d.silicon.fleets[i].enabled;
       return [configField(key+'enabled',label+'启用'),
-        configField(key+'tier',label+'硅矿等级','choice',{options:[['BLUE','初等'],['PURPLE','中等'],['ORANGE','高等']],parent:key+'enabled',when}),
+        configField(key+'tiers',label+'硅矿等级','multi',{catalog:'siliconTiers',parent:key+'enabled',when,empty:'未选择等级，暂停派遣',help:'可多选，任一所选等级有符合条件的矿位即可出发。'}),
         configField(key+'emptyOnly',label+'只占空位','switch',{parent:key+'enabled',when,help:'启用后不攻击占领者，也不追击；初等矿始终不攻击占领者。'}),
         configField(key+'opponentOrder',label+'对手战力排序','choice',{options:[['powerDesc','战力从高到低'],['powerAsc','战力从低到高']],parent:key+'enabled',when}),
         configField(key+'maxPowerRatio',label+'敌我最高战力比例','number',{unit:'%',parent:key+'enabled',when}),
