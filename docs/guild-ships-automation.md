@@ -52,7 +52,7 @@
 - `CityFortInfoRequest { cityId }` → `CityFortInfoResponse { fort, dailyDonateNum, ... }`；`fort.process[]` 是 `{ itemId, num }` 累计材料进度。
 - `WorldFortCfg.donateCost` 是总材料需求，`FortDonateMaterialCfg` 给出可捐材料的真实规则，`FortSeasonUnlockCfg` 决定赛季开放。`FORT_BUILDING = 0`，`FORT_ACTIVE = 1`。
 - `DonateFortRequest { cityId, item: { itemId, num }, selectPackNum: 0 }` → `DonateFortResponse { process[], reward }`。始终把 `selectPackNum` 设为 0；该参数在客户端用于兑换不足材料，本实现不启用。
-- 「捐赠物料」留空时可捐工事仍缺的任意物料，选中后只捐所选物料。「排除物料」优先，即使两处同时选中也会跳过。展开列表时读取当前区服和联盟的在建工事，只列出仍有缺口的物料。读取失败或账号离线时显示全部物资，已保存的选择可跨工事使用。
+- 「捐赠物料」和「排除物料」均可从完整物料目录中搜索、多选，离线或当前没有在建工事时也能提前配置。「捐赠物料」留空时可捐工事仍缺的任意物料，选中后只捐所选物料。「排除物料」优先，即使两处同时选中也会跳过。
 - `reserve` 是每种库存保留量；额外保留周订单、贸易港和居民订单。`dailyLimit = 0` 表示不加本工具日限，正数同时计入服务器 `dailyDonateNum` 和持久预占数量。
 
 ## 确认、持久化和离线验证
