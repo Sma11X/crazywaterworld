@@ -2166,7 +2166,8 @@ async function readAccountCard(card) {
   } finally {
     if (card.readingProfile === request) {
       card.readingProfile = null;
-      if (card.isConnected && !$('tab-account').classList.contains('hidden')) renderAccounts();
+      const account = consoleStore.getState().accountsById[card.accountId];
+      if (account && card.isConnected && !$('tab-account').classList.contains('hidden')) renderAccountCard(card, account);
     }
   }
 }
@@ -2200,6 +2201,50 @@ function renderAccountResources(card, view, status) {
   res.replaceChildren(...entries.map(entry => cell(entry.icon, 15, entry.name, entry.amount == null ? '未取得' : fmt(entry.amount), false)));
 }
 
+function renderAccountCard(card, account) {
+  const selected = account.id === current;
+  const status = selected ? snapshot : account.status ?? {};
+  const { card: profile, overview } = consoleStore.getState().gameByAccount[account.id] ?? {};
+  const view = profile && (!overview || profile.readAt >= overview.readAt) ? profile : overview;
+  const seen = { ...account.lastSeen, ...view?.player };
+  const updated = when(view?.readAt || seen.at);
+  const world = account.hasSiblingRoles && account.loginWorldName && seen.worldName && seen.worldName !== account.loginWorldName
+    ? account.loginWorldName + '（现 ' + seen.worldName + '）' : seen.worldName || account.loginWorldName;
+  const fields = {
+    title: account.label || seen.nickname || account.title,
+    channel: accountChannel(account.source),
+    status: connectingAccounts.has(account.id) ? '连接中…' : connectionStatus(status),
+    role: seen.nickname || '待连接读取',
+    world: world || '待连接读取',
+    level: seen.level == null ? '—' : String(seen.level),
+    power: seen.power == null ? '—' : fmt(seen.power),
+    afk: formatAccountAfk(view?.afk) || (view ? '暂无数据' : '待连接读取'),
+    seen: updated ? (view && !status.connected ? '上次读取 ' : '更新于 ') + updated : '连接后更新角色资料',
+  };
+  for (const [name, value] of Object.entries(fields)) {
+    const field = card.querySelector('[data-account-field="' + name + '"]');
+    if (field.textContent !== value) field.textContent = value;
+  }
+  card.querySelector('[data-account-field="role"]').parentNode.hidden = fields.title === fields.role;
+  card.classList.toggle('on', selected);
+  card.querySelector('[data-account-field="current"]').hidden = !selected;
+  const badge = card.querySelector('[data-account-field="status"]');
+  badge.classList.remove('done', 'waiting', 'blocked');
+  badge.classList.add(connectionStatusKind(status, connectingAccounts.has(account.id)));
+  const select = card.querySelector('[data-account-action="select"]');
+  select.hidden = selected;
+  const loop = card.querySelector('[data-account-action="loop"]');
+  const running = status.looping || status.reconnecting;
+  loop.disabled = hostingActions.has(account.id) || !!status.loopStopping || (!running && account.id === current && loopAccount !== current);
+  loop.textContent = status.loopStopping ? '暂停中…' : hostingActions.has(account.id) ? '处理中…' : running ? '暂停挂机' : '开始挂机';
+  loop.title = running ? '停止此账号自动循环，保留游戏连接和手动操作' : '按此账号已保存的任务持续挂机，直到手动暂停';
+  if (account.hasSiblingRoles && status.paused && !loop.disabled) {
+    loop.textContent = '切换并托管';
+    loop.title = '先暂停同一账号的其他角色，再按本角色的配置开始托管';
+  }
+  renderAccountResources(card, view, status);
+}
+
 function renderAccounts() {
   $('export-accounts').disabled = !accounts.length;
   $('account-count').textContent = accounts.length + ' 个账号';
@@ -2217,52 +2262,11 @@ function renderAccounts() {
   const cards = new Map(Array.from(box.children).map(card => [card.accountId, card]));
   accounts.forEach((account, index) => {
     const card = cards.get(account.id) || createAccountCard(account.id);
-    const selected = account.id === current;
-    const status = selected ? snapshot : account.status ?? {};
-    const { card: profile, overview } = consoleStore.getState().gameByAccount[account.id] ?? {};
-    const view = profile && (!overview || profile.readAt >= overview.readAt) ? profile : overview;
-    const seen = { ...account.lastSeen, ...view?.player };
-    const updated = when(view?.readAt || seen.at);
-    const world = account.hasSiblingRoles && account.loginWorldName && seen.worldName && seen.worldName !== account.loginWorldName
-      ? account.loginWorldName + '（现 ' + seen.worldName + '）' : seen.worldName || account.loginWorldName;
-    const fields = {
-      title: account.label || seen.nickname || account.title,
-      channel: accountChannel(account.source),
-      status: connectingAccounts.has(account.id) ? '连接中…' : connectionStatus(status),
-      role: seen.nickname || '待连接读取',
-      world: world || '待连接读取',
-      level: seen.level == null ? '—' : String(seen.level),
-      power: seen.power == null ? '—' : fmt(seen.power),
-      afk: formatAccountAfk(view?.afk) || (view ? '暂无数据' : '待连接读取'),
-      seen: updated ? (view && !status.connected ? '上次读取 ' : '更新于 ') + updated : '连接后更新角色资料',
-    };
-    for (const [name, value] of Object.entries(fields)) {
-      const field = card.querySelector('[data-account-field="' + name + '"]');
-      if (field.textContent !== value) field.textContent = value;
-    }
-    card.querySelector('[data-account-field="role"]').parentNode.hidden = fields.title === fields.role;
-    card.classList.toggle('on', selected);
-    card.querySelector('[data-account-field="current"]').hidden = !selected;
-    const badge = card.querySelector('[data-account-field="status"]');
-    badge.classList.remove('done', 'waiting', 'blocked');
-    badge.classList.add(connectionStatusKind(status, connectingAccounts.has(account.id)));
-    const select = card.querySelector('[data-account-action="select"]');
-    select.hidden = selected;
-    const loop = card.querySelector('[data-account-action="loop"]');
-    const running = status.looping || status.reconnecting;
-    loop.disabled = hostingActions.has(account.id) || !!status.loopStopping || (!running && account.id === current && loopAccount !== current);
-    loop.textContent = status.loopStopping ? '暂停中…' : hostingActions.has(account.id) ? '处理中…' : running ? '暂停挂机' : '开始挂机';
-    loop.title = running ? '停止此账号自动循环，保留游戏连接和手动操作' : '按此账号已保存的任务持续挂机，直到手动暂停';
-    if (account.hasSiblingRoles && status.paused && !loop.disabled) {
-      loop.textContent = '切换并托管';
-      loop.title = '先暂停同一账号的其他角色，再按本角色的配置开始托管';
-    }
+    renderAccountCard(card, account);
     if (box.children[index] !== card) box.insertBefore(card, box.children[index] || null);
-    renderAccountResources(card, view, status);
+    cards.delete(account.id);
   });
-  for (const [id, card] of cards) {
-    if (!accounts.some(account => account.id === id)) card.remove();
-  }
+  for (const card of cards.values()) card.remove();
 }
 
 let worldManager = null;

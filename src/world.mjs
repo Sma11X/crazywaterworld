@@ -572,7 +572,12 @@ export function planWorld(survey, {
   extraDemand = [],
 } = {}) {
   const { now, have } = survey;
-  const enabled = kind => taskEnabled(kind) && worldPreferenceEnabled(settings, kind);
+  // 规划是同步的。运行时检查可能读取磁盘，每种动作在本次规划中只查询一次。
+  const enabledKinds = new Map();
+  const enabled = kind => {
+    if (!enabledKinds.has(kind)) enabledKinds.set(kind, worldPreferenceEnabled(settings, kind) && taskEnabled(kind));
+    return enabledKinds.get(kind);
+  };
   const blockedBuilding = b => !!settings?.building.disabledTypes.some(id => id === b.type || id === b.buildingId);
   const blockedFactory = b => !!settings?.factory.disabledTypes.some(id => id === b.type || id === b.buildingId);
   if (settings) maxUpgrades = settings.building.maxUpgrades;
