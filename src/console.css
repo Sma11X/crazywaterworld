@@ -92,19 +92,17 @@ section h2:first-child { margin-top:0 }
 [data-slot=table-container]::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px }
 
 /* ---- 物品与角色 ---- */
-.who { display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px; background:var(--muted); padding:10px 12px; border-radius:8px }
-.who .item { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px }
-.who .k,.kv .k { color:var(--muted-foreground); font-size:12px }
-.who .v { font-weight:500 }
+.kv .k { color:var(--muted-foreground); font-size:12px }
 .icons { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,140px),1fr)); gap:8px; align-items:start }
 .cell,.who-cell { display:flex; align-items:center; gap:8px }
 .cell { padding:8px }
 .cell .txt { display:grid; min-width:0 }
 .icons>.cell { min-width:0; min-height:52px }
 .icons .txt { overflow-wrap:anywhere }
-.resource-strip { display:flex; flex-wrap:wrap; gap:8px 24px }
-.resource-strip>.cell { border:0; padding:0; min-height:24px; background:transparent }
-.resource-strip .txt { display:flex; align-items:baseline; gap:6px }
+.resource-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,124px),1fr)); gap:3px 12px; font-size:12px; font-variant-numeric:tabular-nums }
+.resource-strip>.cell { border:0; padding:0; gap:4px; min-width:0; min-height:20px; background:transparent }
+.resource-strip .txt { flex:1; display:flex; align-items:baseline; justify-content:space-between; gap:4px; overflow-wrap:anywhere }
+.resource-strip .nm { color:var(--muted-foreground) }
 .resource-strip .qty { color:var(--foreground); font-weight:500 }
 .ico { display:inline-block; position:relative; overflow:hidden; flex:none; border-radius:6px; background:var(--muted); object-fit:contain }
 .ico .fallback { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted-foreground); font-size:11px }
@@ -487,17 +485,14 @@ summary.plan-material-label::after { width:12px; height:12px }
 .account-page-title { flex-wrap:wrap }
 .account-page-title h2 { margin:0 }
 .account-page-actions { margin-inline-start:auto; flex-wrap:wrap; justify-content:flex-end }
-.account-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); align-items:start; gap:16px }
+.account-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); gap:16px }
 .account-card { min-width:0 }
 .account-card-heading { display:flex; align-items:center; flex-wrap:wrap; gap:2px 6px }
-.account-card [data-account-field=title] { line-height:1.5; overflow-wrap:anywhere }
-.account-card-data { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px }
-.account-card-data>div { min-width:0 }
-.account-card-data dt { margin-bottom:2px; font-size:12px }
-.account-card-data dd { margin:0; overflow-wrap:anywhere; font-size:14px; font-weight:500 }
-.account-card-data>div:nth-child(-n+2) { grid-column:1 / -1 }
-.account-card-world { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px }
-.account-card-world>[data-account-field=world] { min-width:0 }
+.account-card [data-account-field=title] { line-height:1.5; overflow-wrap:anywhere; scroll-margin-top:calc(var(--header-h,0px) + 16px) }
+.account-card-data { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; line-height:1.4 }
+.account-card-data>div { display:flex; align-items:baseline; gap:5px; min-width:0; max-width:100% }
+.account-card-data dt { flex:none; font-size:12px }
+.account-card-data dd { min-width:0; margin:0; overflow-wrap:anywhere; font-size:14px; font-weight:500 }
 .account-card-footer { flex-direction:column; align-items:stretch; gap:8px; margin-top:auto }
 .account-card-footer [data-account-field=seen] { font-size:12px; overflow-wrap:anywhere }
 .account-card-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:4px }
@@ -509,7 +504,9 @@ summary.plan-material-label::after { width:12px; height:12px }
 .account-menu-content>button { width:100%; justify-content:flex-start }
 .account-grid>.account-empty { grid-column:1 / -1 }
 .account-empty { display:grid; justify-items:center; gap:12px; padding:56px 24px; text-align:center }
-#account-add-dialog,#account-info-dialog { width:min(680px,calc(100vw - 32px)); max-width:none; padding:24px }
+#account-add-dialog,#account-worlds-dialog { width:min(680px,calc(100vw - 32px)); max-width:none; padding:24px }
+#account-worlds-dialog[open] { grid-template-rows:auto minmax(0,1fr) }
+#worlds-controls { min-width:0; overflow:auto; overscroll-behavior:contain }
 #account-login-dialog { width:min(880px,calc(100vw - 32px)); max-width:none; padding:24px }
 #account-login-dialog[open] { grid-template-rows:auto minmax(0,1fr); overflow:hidden }
 #login-settings-root { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain }
@@ -547,14 +544,14 @@ summary.plan-material-label::after { width:12px; height:12px }
   .account-page-actions { gap:4px }
   .account-channel-grid { grid-template-columns:minmax(0,1fr) }
   .account-channel { min-height:88px }
-  #account-add-dialog,#account-info-dialog,#account-login-dialog,#account-export-dialog { padding:12px }
+  #account-add-dialog,#account-worlds-dialog,#account-login-dialog,#account-export-dialog { padding:12px }
   #account-add-dialog[open] { gap:12px }
   .account-dialog-heading { gap:12px }
 }
-#account-details { min-width:0 }
-#account-details h4:first-child { margin-top:0 }
-#account-details h4 { margin:16px 0 8px; font-weight:500 }
-#account-details .bar { margin-block:8px }
+.account-resources { min-width:0; margin-top:10px; padding-top:8px; border-top:1px solid var(--border) }
+.account-resources h3 { margin:0; font-size:13px; font-weight:600 }
+.account-resources-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:3px }
+#worlds-hint:not(:empty) { margin-top:8px }
 #worlds .acct { margin:12px 0; padding:16px }
 #worlds .acct:last-child { margin-bottom:0 }
 #worlds .acct .top { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px }

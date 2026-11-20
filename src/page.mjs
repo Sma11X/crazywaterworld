@@ -761,6 +761,7 @@ function refreshAccountStatuses() {
       accountStatusRevision++;
       stateActions.mergeStatuses(data.accounts);
       renderAccountSelect();
+      if (!$('tab-account').classList.contains('hidden')) refreshAccountCards();
     } catch {
       /* call 已记录错误，下次刷新继续读取。 */
     } finally {
@@ -789,9 +790,6 @@ function renderAccountSelect() {
   if(accountDetailsOwner!==current){
     accountSelectionVersion++;
     accountDetailsOwner=current;
-    clear($('worlds'));$('worlds-hint').textContent='';$('world-input').value='';
-    $('who').textContent=current?'等待连接':'未选择账号';$('res').textContent='';
-    if ($('account-info-dialog').open) $('account-info-dialog').close();
   }
   if(worldMapOwner!==null&&worldMapOwner!==current)resetWorldMap();
   siliconAccountChanged();
@@ -803,12 +801,10 @@ function renderAccountSelect() {
   paintConnection();
   $('connect').disabled = snapshot.paused || snapshot.reconnecting || snapshot.connected || connectingAccounts.has(current) || !accounts.length;
   $('connect').hidden = !current || snapshot.connected || snapshot.paused || snapshot.reconnecting || snapshot.loginBlocked;
-  $('account-info-refresh').disabled = !current || snapshot.paused || snapshot.reconnecting || connectingAccounts.has(current);
-  $('account-info-refresh').textContent = snapshot.connected ? '刷新资料' : '连接并读取';
   if (!$('tab-account').classList.contains('hidden')) renderAccounts();
 }
 
-async function loadAccounts(reload) {
+async function loadAccounts(reload, readOverview = true) {
   const version = ++accountLoadVersion;
   const revision = ++accountStatusRevision;
   accountsLoading++;
@@ -830,7 +826,7 @@ async function loadAccounts(reload) {
   if (previous !== current) {configAccountChanged();giftAccountChanged();}
   if (reload) {
     subscribe();
-    refreshOverview();
+    if (readOverview) refreshOverview();
   }
 }
 
@@ -933,14 +929,14 @@ $('loop-toggle').onclick = async () => {
   }
 };
 
-$('connect').onclick = async () => {
-  const account = current;
+$('connect').onclick = () => connectAccount(current);
+async function connectAccount(account) {
   if (!account || connectingAccounts.has(account)) return;
   accountStatusRevision++;
   stateActions.setFlag('connecting', account, true);
   renderAccountSelect();
   try {
-    await call('/api/connect', { method: 'POST' });
+    await call(account === current ? '/api/connect' : '/api/connect?account=' + encodeURIComponent(account), { method: 'POST' });
     stateActions.setFlag('disconnected', account, false);
     const status = accounts.find(row => row.id === account)?.status ?? {};
     setAccountStatus(account, { ...status, connected: true, state: 'READY', loginBlocked: false, reconnecting: false });
@@ -956,61 +952,25 @@ $('connect').onclick = async () => {
     renderAccountSelect();
     void refreshAccountStatuses();
   }
-};
+}
 // ---- 总览 ------------------------------------------------------------------
-function renderWho(view) {
-  const box = clear($('who'));
-  const role = view.player || {};
-  const account = view.account || {};
-  const status = view.status || {};
-  const items = [
-    ['账号', account.title || '-'],
-    ['角色', role.nickname || '-'],
-    ['等级', role.level == null ? '-' : String(role.level)],
-    ['战力', fmt(role.power)],
-    ['区服', role.worldId == null ? '-' : (role.worldName ? role.worldName + '（' + role.worldId + '）' : String(role.worldId))],
-    ['状态', connectionStatus(status)],
-  ];
-  for (const [k, v] of items) {
-    const cellBox = el('div', 'item');
-    cellBox.appendChild(el('span', 'k', k));
-    cellBox.appendChild(el('span', 'v', v));
-    box.appendChild(cellBox);
-  }
-  if (view.afk) {
-    const afk = el('div', 'item');
-    afk.appendChild(el('span', 'k', '闯关挂机收益'));
-    const finish = view.afk.finishTime;
-    const status = view.afk.capped ? '收益已满' : finish > 0 ? new Date(finish * 1000).toLocaleTimeString() + ' 满额' : '暂无计时';
-    afk.appendChild(el('span', 'v', '等级 ' + (view.afk.level ?? '-') + ' · ' + status));
-    box.appendChild(afk);
-  }
-}
-
-function renderOverview(data) {
-  stateActions.setGameData(current, 'overview', data);
-  renderWho(data);
-
-  const res = clear($('res'));
-  for (const entry of data.resources || []) res.appendChild(cell(entry.icon, 18, entry.name, entry.amount == null ? '未取得' : fmt(entry.amount), false));
-  if (!res.childElementCount) res.appendChild(el('span', 'dim', '暂无数据'));
-
-}
-
-let overviewPending = false;
+let overviewPending = null;
 async function refreshOverview() {
-  if (overviewPending===current || !current || snapshot.paused || snapshot.loginBlocked || disconnected.has(current) || document.hidden || ($('tab-overview').classList.contains('hidden')&&$('tab-heroes').classList.contains('hidden')&&(!$('account-info-dialog').open||!snapshot.connected))) return;
+  if (!$('tab-account').classList.contains('hidden')) return refreshAccountCards();
+  if (!current || overviewPending?.account === current || snapshot.paused || snapshot.loginBlocked || disconnected.has(current) || document.hidden) return;
+  if ($('tab-overview').classList.contains('hidden') && $('tab-heroes').classList.contains('hidden')) return;
   const account = current;
   const statusRevision = accountStatusRevision;
-  overviewPending = account;
+  const request = { account };
+  overviewPending = request;
   if (!snapshot.connected) setBusy('连接中…');
   try {
     const data = await call('/api/overview');
-    if (account !== current || snapshot.paused || disconnected.has(account)) return;
+    if (overviewPending !== request || account !== current || snapshot.paused || disconnected.has(account)) return;
     if (statusRevision === accountStatusRevision) setAccountStatus(account, data.status);
     else data.status = snapshot;
+    stateActions.setGameData(account, 'overview', data);
     renderAccountSelect();
-    renderOverview(data);
     if(!$('tab-overview').classList.contains('hidden'))maybeRefreshWorldMap();
     maybeRefreshSilicon();
     $('hint').textContent = '';
@@ -1018,7 +978,7 @@ async function refreshOverview() {
   } catch (error) {
     reportError(error, '刷新总览');
     paintConnection();
-  } finally { if(overviewPending===account)overviewPending=false; }
+  } finally { if (overviewPending === request) overviewPending = null; }
 }
 
 
@@ -1998,21 +1958,18 @@ function createAccountCard(id) {
   const card = component('ui-account-card');
   card.accountId = id;
   const action = name => card.querySelector('[data-account-action="' + name + '"]');
-  action('select').onclick = () => useAccountCard(id);
+  action('select').onclick = async () => {
+    if (await useAccountCard(id)) card.querySelector('[data-account-field="title"]').focus();
+  };
   action('loop').onclick = () => toggleAccountCardLoop(id);
+  action('worlds').onclick = () => openWorldManager(card);
+  action('refresh').onclick = () => {
+    if (action('refresh').disabled) return;
+    const status = accounts.find(row => row.id === id)?.status;
+    return status?.connected ? readAccountCard(card) : connectAccount(id);
+  };
   action('login-settings').onclick = () => {
     if (accounts.some(account => account.id === id)) stateActions.setView({ loginSettingsAccountId: id });
-  };
-  action('details').onclick = async () => {
-    if (!await useAccountCard(id)) return;
-    const account = accounts.find(row => row.id === id);
-    if (!account || current !== id) return;
-    $('account-info-title').textContent = (account.label || account.lastSeen?.nickname || account.title) + ' · 账号详情';
-    renderWho({ account, player: account.lastSeen, status: snapshot });
-    if (!snapshot.connected) $('res').textContent = '连接后读取资源';
-    $('account-info-dialog').showModal();
-    $('account-info-close').focus();
-    if (snapshot.connected) void refreshOverview();
   };
   action('rename').onclick = async () => {
     card.querySelector('details').open = false;
@@ -2039,10 +1996,65 @@ function createAccountCard(id) {
   return card;
 }
 
+function formatAccountAfk(afk) {
+  if (!afk) return '';
+  const finish = afk.capped ? '收益已满' : afk.finishTime > 0 ? new Date(afk.finishTime * 1000).toLocaleTimeString() + ' 满额' : '暂无计时';
+  return '等级 ' + (afk.level ?? '—') + ' · ' + finish;
+}
+
+async function readAccountCard(card) {
+  if (card.readingProfile) return;
+  const request = {};
+  card.readingProfile = request;
+  card.nextProfileRead = Date.now() + 20000;
+  card.querySelector('[data-account-action="refresh"]').disabled = true;
+  try {
+    const data = await call('/api/accounts/card?account=' + encodeURIComponent(card.accountId));
+    if (card.isConnected && card.readingProfile === request && data) stateActions.setGameData(card.accountId, 'card', data);
+  } catch (error) {
+    reportError(error, '读取账号资料');
+  } finally {
+    if (card.readingProfile === request) {
+      card.readingProfile = null;
+      if (card.isConnected && !$('tab-account').classList.contains('hidden')) renderAccounts();
+    }
+  }
+}
+
+function refreshAccountCards() {
+  if (document.hidden) return;
+  for (const card of $('accounts').children) {
+    const status = consoleStore.getState().accountsById[card.accountId]?.status;
+    if (!status || card.readingProfile) continue;
+    const online = !!status.connected && !status.paused && !status.loginBlocked;
+    if (card.profileOnline === online && (!online || Date.now() < card.nextProfileRead)) continue;
+    card.profileOnline = online;
+    void readAccountCard(card);
+  }
+}
+
+function renderAccountResources(card, view, status) {
+  const res = card.querySelector('[data-account-field="resources"]');
+  const online = !!status.connected && !status.paused && !status.loginBlocked;
+  const refresh = card.querySelector('[data-account-action="refresh"]');
+  refresh.disabled = !!(card.readingProfile || status.paused || status.reconnecting || connectingAccounts.has(card.accountId));
+  refresh.textContent = status.connected ? '刷新资料' : '连接并读取';
+  const entries = view?.resources?.length ? view.resources
+    : !online ? '连接后读取资源' : view ? '暂无数据' : card.readingProfile ? '正在读取资源…' : '暂未读取资源';
+  if (res.renderedResources === entries) return;
+  res.renderedResources = entries;
+  if (typeof entries === 'string') {
+    res.replaceChildren(el('span', 'dim', entries));
+    return;
+  }
+  res.replaceChildren(...entries.map(entry => cell(entry.icon, 15, entry.name, entry.amount == null ? '未取得' : fmt(entry.amount), false)));
+}
+
 function renderAccounts() {
   $('export-accounts').disabled = !accounts.length;
   $('account-count').textContent = accounts.length + ' 个账号';
   const box = $('accounts');
+  if ($('account-worlds-dialog').open && !accounts.some(row => row.id === worldManager?.id)) $('account-worlds-dialog').close();
   if (!accounts.length) {
     if (!box.querySelector('.account-empty')) {
       clear(box);
@@ -2053,37 +2065,39 @@ function renderAccounts() {
     return;
   }
   const cards = new Map(Array.from(box.children).map(card => [card.accountId, card]));
-  for (const card of Array.from(box.children)) {
-    if (!accounts.some(account => account.id === card.accountId)) card.remove();
-  }
   accounts.forEach((account, index) => {
     const card = cards.get(account.id) || createAccountCard(account.id);
-    const status = account.id === current ? snapshot : account.status ?? {};
-    const seen = account.lastSeen;
+    const selected = account.id === current;
+    const status = selected ? snapshot : account.status ?? {};
+    const { card: profile, overview } = consoleStore.getState().gameByAccount[account.id] ?? {};
+    const view = profile && (!overview || profile.readAt >= overview.readAt) ? profile : overview;
+    const seen = { ...account.lastSeen, ...view?.player };
+    const updated = when(view?.readAt || seen.at);
+    const world = account.hasSiblingRoles && account.loginWorldName && seen.worldName && seen.worldName !== account.loginWorldName
+      ? account.loginWorldName + '（现 ' + seen.worldName + '）' : seen.worldName || account.loginWorldName;
     const fields = {
-      title: account.label || seen?.nickname || account.title,
+      title: account.label || seen.nickname || account.title,
       channel: accountChannel(account.source),
       status: connectingAccounts.has(account.id) ? '连接中…' : connectionStatus(status),
-      role: seen?.nickname || '待连接读取',
-      world: account.hasSiblingRoles && account.loginWorldName && seen?.worldName && seen.worldName !== account.loginWorldName
-        ? account.loginWorldName + '（现 ' + seen.worldName + '）' : seen?.worldName || account.loginWorldName || '待连接读取',
-      level: seen?.level == null ? '—' : String(seen.level),
-      power: seen?.power == null ? '—' : fmt(seen.power),
-      seen: seen?.at ? '更新于 ' + when(seen.at) : '连接后更新角色资料',
+      role: seen.nickname || '待连接读取',
+      world: world || '待连接读取',
+      level: seen.level == null ? '—' : String(seen.level),
+      power: seen.power == null ? '—' : fmt(seen.power),
+      afk: formatAccountAfk(view?.afk) || (view ? '暂无数据' : '待连接读取'),
+      seen: updated ? (view && !status.connected ? '上次读取 ' : '更新于 ') + updated : '连接后更新角色资料',
     };
     for (const [name, value] of Object.entries(fields)) {
       const field = card.querySelector('[data-account-field="' + name + '"]');
       if (field.textContent !== value) field.textContent = value;
     }
     card.querySelector('[data-account-field="role"]').parentNode.hidden = fields.title === fields.role;
-    card.classList.toggle('on', account.id === current);
-    card.querySelector('[data-account-field="current"]').hidden = account.id !== current;
+    card.classList.toggle('on', selected);
+    card.querySelector('[data-account-field="current"]').hidden = !selected;
     const badge = card.querySelector('[data-account-field="status"]');
     badge.classList.remove('done', 'waiting', 'blocked');
     badge.classList.add(connectionStatusKind(status, connectingAccounts.has(account.id)));
     const select = card.querySelector('[data-account-action="select"]');
-    select.disabled = account.id === current;
-    select.textContent = account.id === current ? '当前账号' : '切换账号';
+    select.hidden = selected;
     const loop = card.querySelector('[data-account-action="loop"]');
     const running = status.looping || status.reconnecting;
     loop.disabled = hostingActions.has(account.id) || !!status.loopStopping || (!running && account.id === current && loopAccount !== current);
@@ -2094,26 +2108,48 @@ function renderAccounts() {
       loop.title = '先暂停同一账号的其他角色，再按本角色的配置开始托管';
     }
     if (box.children[index] !== card) box.insertBefore(card, box.children[index] || null);
+    renderAccountResources(card, view, status);
   });
+  for (const [id, card] of cards) {
+    if (!accounts.some(account => account.id === id)) card.remove();
+  }
 }
 
-$('account-info-close').onclick = () => $('account-info-dialog').close();
-$('account-info-refresh').onclick = async () => {
-  if ($('account-info-refresh').disabled) return;
-  const owner = current;
-  $('account-info-refresh').disabled = true;
-  try {
-    if (!snapshot.connected) await $('connect').onclick();
-    if (owner === current && snapshot.connected) await refreshOverview();
-  } finally {
-    renderAccountSelect();
-  }
-};
+let worldManager = null;
+function openWorldManager(card) {
+  worldManager = { id: card.accountId };
+  $('account-worlds-title').textContent = card.querySelector('[data-account-field="title"]').textContent + ' · 区服管理';
+  clear($('worlds'));
+  $('worlds-hint').textContent = '';
+  $('world-input').value = '';
+  $('worlds-controls').disabled = false;
+  $('account-worlds-dialog').showModal();
+  $('load-worlds').focus();
+}
 
-async function renderWorlds() {
-  const owner=current;
-  const data = await call('/api/worlds');
-  if(owner!==current)return;
+function worldManagerOpen(context) {
+  return context === worldManager && $('account-worlds-dialog').open;
+}
+
+async function runWorldAction(context, message, work) {
+  const controls = $('worlds-controls');
+  if (!worldManagerOpen(context) || controls.disabled) return;
+  controls.disabled = true;
+  $('worlds-hint').textContent = message;
+  try {
+    const result = await work(context);
+    if (worldManagerOpen(context)) $('worlds-hint').textContent = result || '';
+  } catch (error) {
+    if (worldManagerOpen(context)) $('worlds-hint').textContent = error.message;
+    reportError(error, '区服管理', context.id);
+  } finally {
+    if (worldManagerOpen(context)) controls.disabled = false;
+  }
+}
+
+async function renderWorlds(context) {
+  const data = await call('/api/worlds?account=' + encodeURIComponent(context.id));
+  if (!worldManagerOpen(context)) return;
   const box = clear($('worlds'));
   for (const world of data.recentWorlds) {
     const role = world.role || {};
@@ -2123,23 +2159,21 @@ async function renderWorlds() {
     if (role.worldId && role.worldId !== world.worldId) top.appendChild(el('span', 'id', '合服后 -> ' + (role.worldName ? role.worldName + '（' + role.worldId + '）' : role.worldId)));
     top.appendChild(el('span', 'id', (role.nickname || '') + ' lv' + (role.level ?? '') + ' 战力' + fmt(role.power) + ' 上次登录 ' + (when(role.lastLoginTime) || '未知')));
     const enter = smallButton('进入');
-    enter.onclick = () => enterWorld(world.worldId);
+    enter.onclick = () => enterWorld(context, world.worldId);
     top.appendChild(enter);
     if (role.id) {
       const save = smallButton(world.saved ? '已添加' : '添加角色');
       save.disabled = world.saved;
-      save.onclick = async () => {
-        save.disabled = true;
-        try {
-          await call('/api/worlds/save-role?account=' + encodeURIComponent(owner), {
-            method: 'POST', body: JSON.stringify({ confirm: true, worldId: world.worldId }),
-          });
-          if (current !== owner) return;
+      save.onclick = () => runWorldAction(context, '正在添加角色…', async () => {
+        await call('/api/worlds/save-role?account=' + encodeURIComponent(context.id), {
+          method: 'POST', body: JSON.stringify({ confirm: true, worldId: world.worldId }),
+        });
+        if (worldManagerOpen(context)) {
           save.textContent = '已添加';
-          await loadAccounts(false);
-          renderAccounts();
-        } catch (error) { save.disabled = false; reportError(error); }
-      };
+          save.disabled = true;
+        }
+        await loadAccounts(false);
+      });
       top.appendChild(save);
     }
     row.appendChild(top);
@@ -2149,40 +2183,30 @@ async function renderWorlds() {
   else box.appendChild(el('div', 'dim', '共 ' + data.recentWorlds.length + ' 个区服，分组 ' + data.latestGroupId));
 }
 
-async function enterWorld(worldId) {
-  const owner=current;
-  $('worlds-hint').textContent = '进入 ' + worldId + ' ...';
-  try {
-    const data = await call('/api/worlds/enter', { method: 'POST', body: JSON.stringify({ confirm: true, worldId, fromWorldId: 0 }) });
-    if(owner!==current)return;
+function enterWorld(context, worldId) {
+  return runWorldAction(context, '正在进入 ' + worldId + '…', async ({ id: owner }) => {
+    const data = await call('/api/worlds/enter?account=' + encodeURIComponent(owner), { method: 'POST', body: JSON.stringify({ confirm: true, worldId, fromWorldId: 0 }) });
+    if (overviewPending?.account === owner) overviewPending = null;
+    stateActions.setGameData(owner, 'card', null);
+    stateActions.setGameData(owner, 'overview', null);
+    const card = Array.from($('accounts').children).find(row => row.accountId === owner);
+    if (card) { card.readingProfile = null; card.nextProfileRead = 0; }
     const role = data.player || {};
-    $('worlds-hint').textContent = '已在 ' + (role.worldName ? role.worldName + '（' + worldId + '）' : worldId) + '：' + (role.nickname || '') + ' lv' + (role.level ?? '') + ' 战力' + fmt(role.power);
     await loadAccounts(false);
-    renderAccounts();
-    refreshOverview();
-  } catch (error) {
-    $('worlds-hint').textContent = '';
-    reportError(error);
-  }
+    if (!$('tab-account').classList.contains('hidden')) refreshAccountCards();
+    return '已在 ' + (role.worldName || worldId) + '：' + (role.nickname || '') + ' lv' + (role.level ?? '') + ' 战力' + fmt(role.power);
+  });
 }
 
-$('load-worlds').onclick = async () => {
-  $('worlds-hint').textContent = '加载中 ...';
-  try {
-    await renderWorlds();
-    $('worlds-hint').textContent = '';
-  } catch (error) {
-    $('worlds-hint').textContent = '';
-    reportError(error);
-  }
-};
+$('account-worlds-close').onclick = () => $('account-worlds-dialog').close();
+$('load-worlds').onclick = () => runWorldAction(worldManager, '正在加载区服…', renderWorlds);
 $('enter-world').onclick = () => {
   const worldId = Number($('world-input').value.trim());
-  if (!worldId) {
-    $('worlds-hint').textContent = '先填 worldId';
+  if (!Number.isSafeInteger(worldId) || worldId <= 0) {
+    $('worlds-hint').textContent = '请输入有效的区服 ID';
     return;
   }
-  enterWorld(worldId);
+  return enterWorld(worldManager, worldId);
 };
 
 // ---- 添加账号：从电脑微信采集登录 -----------------------------------------
@@ -2475,6 +2499,7 @@ function activateConsolePage(button, resource = selectedResource) {
     if (target === 'lineups') void refreshSavedLineups();
     if (button.dataset.tab === 'account') {
       renderAccounts();
+      refreshAccountCards();
       pollCapture();
     }
     if (button.dataset.tab === 'manual') refreshManualWorld();
@@ -2498,19 +2523,20 @@ new ResizeObserver(() => {
 }).observe(document.querySelector('header'));
 
 async function boot() {
-  try {
-    await loadAccounts(true);
-  } catch (error) {
-    $('hint').textContent = '';
-    reportError(error);
-    return;
-  }
   // 显式链接优先，否则恢复当前历史记录的页面；配置分组由 configApplyHash 恢复。
   const savedView = history.state?.consoleView;
   const initialTab = location.hash.startsWith('#config-group-') ? 'settings'
     : location.hash === '#pirate-first-kill' ? 'stages' : location.hash === '#journal' ? 'overview'
     : savedView?.tab === 'login-settings' ? 'account'
     : savedView?.tab === 'resources' && savedView.resource === 'activities' ? 'activities' : savedView?.tab;
+  try {
+    // 恢复账号页时先显示保存的角色资料，由该页按连接状态决定是否读取资源。
+    await loadAccounts(true, initialTab !== 'account');
+  } catch (error) {
+    $('hint').textContent = '';
+    reportError(error);
+    return;
+  }
   const button = [...document.querySelectorAll('#tabs button')].find(tab => tab.dataset.tab === initialTab)
     || document.querySelector('#tabs [data-tab="overview"]');
   const resource = [...document.querySelectorAll('[data-resource-tab]')].some(tab => tab.dataset.resourceTab === savedView?.resource)

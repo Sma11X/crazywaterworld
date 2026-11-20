@@ -258,6 +258,15 @@ export function accountPage() {
     <p id="account-transfer-notice" className="dim" role="status" aria-live="polite" hidden />
     <div id="accounts" className="account-grid" />
 
+    <dialog id="account-worlds-dialog" aria-labelledby="account-worlds-title">
+      <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-worlds-title">区服管理</DialogTitle></DialogHeader><Button id="account-worlds-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭区服管理"><X aria-hidden="true" /></Button></div>
+      <fieldset id="worlds-controls" aria-label="区服操作">
+        <div className="bar"><Button id="load-worlds" type="button" variant="outline" size="sm">加载区服</Button><Input id="world-input" inputMode="numeric" aria-label="区服 ID" placeholder="区服 ID" className="w-28 max-sm:w-20" /><Button id="enter-world" type="button" variant="outline" size="sm">进入该区服</Button></div>
+        <p id="worlds-hint" className="warn" role="status" />
+        <div id="worlds" />
+      </fieldset>
+    </dialog>
+
     <dialog id="account-login-dialog" aria-labelledby="account-login-title">
       <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-login-title" className="leading-snug">登录设置</DialogTitle></DialogHeader><Button id="account-login-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭登录设置"><X aria-hidden="true" /></Button></div>
       <div id="login-settings-root" data-account="">
@@ -279,18 +288,6 @@ export function accountPage() {
       </div>
       <p className="dim">文件含登录凭据，请妥善保管。配置不包含用量账本和运行状态。</p>
       <p id="account-export-error" className="warn" role="alert" hidden />
-    </dialog>
-
-    <dialog id="account-info-dialog" aria-labelledby="account-info-title">
-      <div className="account-dialog-heading"><DialogHeader><DialogTitle id="account-info-title" className="leading-snug">账号详情</DialogTitle></DialogHeader><Button id="account-info-close" type="button" size="icon-sm" variant="ghost" aria-label="关闭账号详情"><X aria-hidden="true" /></Button></div>
-      <div className="bar"><Button id="account-info-refresh" type="button" variant="outline">连接并读取</Button></div>
-      <div id="account-details">
-        <h4>角色概况</h4><div className="who" id="who">等待连接</div>
-        <h4>资源</h4><div className="resource-strip" id="res">连接后显示</div>
-        <h4>区服</h4>
-        <div className="bar"><Button id="load-worlds" variant="outline">加载区服</Button><Input id="world-input" aria-label="区服 ID" placeholder="区服 ID" className="w-32" /><Button id="enter-world" variant="outline">进入该区服</Button><span id="worlds-hint" className="warn" /></div>
-        <div id="worlds" />
-      </div>
     </dialog>
 
     <dialog id="account-add-dialog" aria-labelledby="account-add-title" aria-describedby="account-add-step">

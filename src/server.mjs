@@ -144,6 +144,7 @@ const overviewQueries = ENTRY_QUERIES.filter(({ name }) => [
   'AllResourceRequest', 'AllItemRequest', 'AllHeroRequest', 'MainTaskInfoRequest', 'DailyTaskInfoRequest',
   'AchievementInfoRequest', 'EmailBoxRequest', 'AfkInfoRequest', 'OnWaterRequest', 'MyResFieldsRequest', 'MonthCardRequest',
 ].includes(name));
+const accountCardQueries = overviewQueries.filter(({ name }) => ['AllResourceRequest', 'AllItemRequest', 'AfkInfoRequest'].includes(name));
 // 协议帧不再进界面，但仍然要能事后查。默认只写文件，CW_DEBUG=1 时才同时打到终端。
 const TRACE_PATH = path.join(DATA_DIR, 'protocol.log');
 const TRACE_MAX_BYTES = (() => {
@@ -1758,10 +1759,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     }
   }
 
-  async function overview(session, account) {
-    const instance = await ensureConnected(session, account);
+  async function overview(session, account, cardClient = null) {
+    const instance = cardClient ?? await ensureConnected(session, account);
     const [{ ok, failed }] = await Promise.all([
-      collectState(instance, protocolFor(instance), { queries: overviewQueries, signals: [], timeout: 8000 }),
+      collectState(instance, protocolFor(instance), { queries: cardClient ? accountCardQueries : overviewQueries, signals: [], timeout: 8000 }),
       refreshPlayerPower(session, instance),
     ]);
     const sections = { AllResourceRequest: '资源', AllItemRequest: '仓库', AllHeroRequest: '英雄', MainTaskInfoRequest: '主线任务',
@@ -1778,12 +1779,19 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       const amount=quantities?.every(n=>Number.isSafeInteger(n)&&n>=0)&&Number.isSafeInteger(total)?total:null;
       return {res:id,name:displayMaterial(config,id),amount,sources:config?.materialSources(id),icon:itemIcon(id)};
     });
+    const card = {
+      player: describeRole(session.player),
+      afk: view.afk,
+      readAt: Date.now(),
+      resources: [...view.resources.map((entry) => ({ ...entry, sources: config?.materialSources(entry.res), icon: resourceIcon(entry.res) })), ...worldResources],
+    };
+    if (instance === session.client && instance.connected) session.lastCard = card;
+    if (cardClient) return session.lastCard ?? null;
     return {
+      ...card,
       account: describeAccount(account, { active: account.id === loadStore().activeId }),
       status: accountStatus(session),
-      player: describeRole(session.player),
       weekCalendar: await readWeekCalendar(instance).then(items=>({items})).catch(error=>({items:[],error:error.message})),
-      resources: [...view.resources.map((entry) => ({ ...entry, sources: config?.materialSources(entry.res), icon: resourceIcon(entry.res) })), ...worldResources],
       items: {
         ...view.items,
         top: view.items.top.map((item) => ({ itemId: item.itemId, name: displayMaterial(config, item.itemId), num: item.num, sources: config?.materialSources(item.itemId), icon: itemIcon(item.itemId) })),
@@ -1795,7 +1803,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         email: view.email?.unclaimed ?? 0,
         afk: view.afk ? Math.max((view.afk.level ?? 0) - (view.afk.rewardedLevel ?? 0), 0) : 0,
       },
-      afk: view.afk,
       heroes: {
         count: view.heroes.count,
         power: view.heroes.power,
@@ -1985,7 +1992,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       store = loadStore();
       pinLegacyWorld(store, { credential, choices: worlds.recentWorlds.filter(row => uidText(row.role?.id)), player: worlds.player });
       if (store.accounts.some(row => row.id === unpinned.id && !Number(row.login.worldId))) {
-        throw new Error('未能确认旧角色的登录区服，请先在账号详情加载区服并核对角色');
+        throw new Error('未能确认旧角色的登录区服，请打开对应卡片的区服管理，加载区服并核对角色');
       }
     }
     const { account, created } = upsertAccount(store, credential);
@@ -3380,6 +3387,18 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         }
         const result=await progressionJob(session,account,route+':'+(parsed.searchParams.get('key')||'catalog')+':'+(parsed.searchParams.get('page')||1),null,client=>route.endsWith('/view')?readActivityRanking(client,loadConfigSafe(),session.player,parsed.searchParams.get('key'),Number(parsed.searchParams.get('page')||1)):{tabs:activityRankCatalog(client,loadConfigSafe(),session.player).map(({key,label})=>({key,label}))},{read:true});
         json(result);return;
+      }
+      if (route === 'GET /api/accounts/card') {
+        const { account, session } = scoped_(parsed);
+        const client = session.client;
+        const readable = () => client?.connected && session.client === client && !session.paused && !session.loginBlocked;
+        if (readable()) {
+          session.cardRead ??= readJob(session, () => readable() ? overview(session, account, client) : session.lastCard, { recoverFormation: false })
+            .finally(() => { session.cardRead = null; });
+          await session.cardRead;
+        }
+        json(session.lastCard ?? null);
+        return;
       }
       if (route === 'GET /api/overview') {
         const { account, session } = scoped_(parsed);

@@ -190,7 +190,8 @@ export function templates() {
       <Card className="account-card gap-3 py-4 max-md:gap-3">
         <CardHeader className="grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0 px-4">
           <div className="account-card-heading">
-            <CardTitle className="leading-normal" data-account-field="title" />
+            <CardTitle className="leading-normal" data-account-field="title" tabIndex={-1} />
+            <Badge data-account-field="status" className="chip rounded-md max-w-full whitespace-normal text-left" variant="outline" />
             <Badge data-account-field="current" variant="secondary" hidden>当前</Badge>
           </div>
           <details className="account-card-menu col-start-2 row-span-2 row-start-1">
@@ -206,12 +207,28 @@ export function templates() {
         <CardContent className="px-4">
           <dl className="account-card-data">
             <div><dt>角色</dt><dd data-account-field="role" /></div>
-            <div><dt>区服</dt><dd className="account-card-world"><span data-account-field="world" /><Badge data-account-field="status" className="chip rounded-md max-w-full whitespace-normal text-left" variant="outline" /></dd></div>
             <div><dt>等级</dt><dd data-account-field="level" /></div>
             <div><dt>战力</dt><dd data-account-field="power" /></div>
+            <div><dt>区服</dt><dd data-account-field="world" /></div>
+            <div className="basis-full"><dt>闯关挂机收益</dt><dd data-account-field="afk" /></div>
           </dl>
+          <div className="account-resources">
+            <div className="account-resources-heading">
+              <h3>资源</h3>
+              <Button type="button" size="sm" variant="ghost" data-account-action="refresh">刷新资料</Button>
+            </div>
+            <div className="resource-strip" data-account-field="resources" />
+          </div>
         </CardContent>
-        <CardFooter className="account-card-footer items-stretch px-4"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="loop">开始挂机</Button></div></CardFooter>
+        <CardFooter className="account-card-footer items-stretch px-4">
+          <p className="dim" data-account-field="seen" />
+          <div className="account-card-actions">
+            <Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="worlds" aria-haspopup="dialog" aria-controls="account-worlds-dialog">区服管理</Button>
+            <Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button>
+            <Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="select">切换账号</Button>
+            <Button type="button" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="loop">开始挂机</Button>
+          </div>
+        </CardFooter>
       </Card>
     </template>
   </>)
