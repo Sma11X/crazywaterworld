@@ -73,6 +73,54 @@ try {
     await page.locator('#config-group-' + id).waitFor();
   };
   await page.goto(base); await openConfig();
+  {
+    const history = page.locator('#config-history-dialog');
+    const action = name => history.getByRole('button', { name, exact: true });
+    const preview = async name => {
+      await page.locator('#config-history-open').click();
+      await history.locator('.history-record').filter({ hasText: name }).getByRole('button').click();
+    };
+    await page.locator('#config-history-save').click();
+    await history.getByLabel('配置名称').fill('日常方案');
+    await action('保存').click();
+    await history.getByText('快照已保存', { exact: true }).waitFor();
+    await action('关闭').click();
+    await group('factory');
+    const stock = page.locator('#config-field-factory-keepStock');
+    await stock.fill('332'); await saved();
+    await stock.fill('');
+    await preview('日常方案');
+    assert.match(await history.locator('.history-differences').innerText(), /备货水位[\s\S]*当前：未设置[\s\S]*恢复后：321/);
+    await action('继续恢复').click();
+    await history.getByLabel('草稿名称').fill('待补水位');
+    await action('保存草稿并恢复').click(); await saved();
+    assert.equal(loadAutomationSettings('config-a').settings.factory.keepStock, 321);
+
+    await preview('待补水位');
+    await action('取回并编辑').click(); await action('直接取回').click();
+    await page.locator('#config-state').filter({ hasText: '请修正配置' }).waitFor();
+    assert.equal(await stock.inputValue(), '');
+    assert.equal(await stock.getAttribute('aria-invalid'), 'true');
+    assert.equal(loadAutomationSettings('config-a').settings.factory.keepStock, 321);
+    await stock.fill('333'); await saved();
+    assert.equal(loadAutomationSettings('config-a').settings.factory.keepStock, 333);
+
+    const list = async account => (await (await fetch(base + '/api/settings/history?account=' + account)).json()).entries;
+    const entries = await list('config-a');
+    assert.deepEqual(entries.map(row => [row.name, row.draft]), [['待补水位', true], ['日常方案', false]]);
+    assert.deepEqual(await list('config-b'), []);
+    assert.equal((await fetch(base + '/api/settings/history?account=config-b&id=' + entries[0].id)).ok, false);
+    await preview('日常方案');
+    await action('继续恢复').click();
+    const newer = loadAutomationSettings('config-a');
+    newer.settings.factory.keepStock = 334;
+    saveAutomationSettings('config-a', newer.settings, { revision: newer.revision });
+    await action('直接恢复').click();
+    await page.locator('#config-state').filter({ hasText: '配置有冲突' }).waitFor();
+    assert.equal(loadAutomationSettings('config-a').settings.factory.keepStock, 334);
+    await page.reload(); await openConfig();
+    console.log('通过：命名快照、差异、跨账号隔离、草稿取回修正和恢复版本冲突');
+  }
   assert.equal(await page.locator('#tabs [data-tab=idle], #tab-idle').count(), 0);
   assert.equal(await page.locator('#tabs [data-tab=lineups]').count(), 1);
   assert.equal(await page.getByText('前往挂机启停', { exact: true }).count(), 0);

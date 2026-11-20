@@ -5,6 +5,7 @@ import { LOG_CATEGORIES, LOG_GROUPS, LOG_GROUP_TONES } from './log-categories.mj
 import { createLogAccountLabels } from './log-accounts.mjs';
 import { chrome, journal, dialogs, templates, giftCodesPage, overviewPage, manualPage, inventoryPage, heroesPage, lineupsPage, guildPage, activitiesPage, accountPage, stagePanel, settingsPage } from './ui/dist/console.mjs';
 const componentCss = readFileSync(new URL('./ui/dist/theme.css', import.meta.url), 'utf8');
+const settingsHistoryScript = readFileSync(new URL('./settings-history-ui.js', import.meta.url), 'utf8');
 const consoleCss = readFileSync(new URL('./console.css', import.meta.url), 'utf8');
 const progressionScript = readFileSync(new URL('./ui/progression.js', import.meta.url), 'utf8');
 const lineupScript = readFileSync(new URL('./lineup-editor.js', import.meta.url), 'utf8');
@@ -2138,6 +2139,7 @@ ${resourceFieldsScript}
 ${inventoryScript}
 ${productionPlanningScript}
 ${settingsScript}
+${settingsHistoryScript}
 ${appointmentsScript}
 ${giftCodeScript}
 window.addEventListener('beforeunload', event => {

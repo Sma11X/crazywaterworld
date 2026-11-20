@@ -1,3 +1,4 @@
+import { createSettingsHistory } from './settings-history.mjs';
 import { serveClientAsset } from './ui-assets.mjs';
 import { normalizeConsoleHost, consoleUrl } from './console-address.mjs';
 import { createConsoleVersion, renderVersionedPage, consoleVersionError } from './console-version.mjs';
@@ -164,6 +165,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   captureController = { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture } } = {}) {
   host = normalizeConsoleHost(host);
   const consoleVersion = createConsoleVersion(PAGE);
+  const settingsHistory = createSettingsHistory(DATA_DIR);
   const pageRaw = Buffer.from(renderVersionedPage(PAGE, consoleVersion));
   const pageAsset = { raw: pageRaw, gzip: zlib.gzipSync(pageRaw, { level: 9 }),
     etag: '"' + createHash('sha1').update(pageRaw).digest('hex').slice(0, 16) + '"' };
@@ -2243,6 +2245,24 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           return readGuildMembers(client, loadConfigSafe(), session.player);
         });
         json(members);
+        return;
+      }
+      if (route === 'GET /api/settings/history' || route === 'POST /api/settings/history') {
+        const { account } = resolve(parsed);
+        if (account.id !== parsed.searchParams.get('account')) throw Error('请选择当前游戏账号');
+        res.setHeader('cache-control', 'no-store');
+        if (req.method === 'GET' && !parsed.searchParams.has('id')) {
+          json({ entries: settingsHistory.list(account.id) });
+          return;
+        }
+        const options = { catalog: settingsCatalog(loadConfigSafe({ allowStale: true })) };
+        if (req.method === 'GET') {
+          json(settingsHistory.preview(account.id, parsed.searchParams.get('id'), options));
+          return;
+        }
+        const payload = jsonBody();
+        needConfirm(payload);
+        json(settingsHistory.save(account.id, payload.name, payload.settings, { ...options, draft: payload.draft === true }));
         return;
       }
       if (route === 'POST /api/settings/validate') {

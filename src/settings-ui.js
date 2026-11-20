@@ -630,6 +630,9 @@ function configCompatibilityMessage(data) {
 function configBusy(value) {
   configEditor.busy = value;
   for (const id of ['config-retry', 'config-import', 'config-export', 'config-preview']) $(id).disabled = value || configEditor.loading || !configEditor.draft;
+  for (const id of ['config-history-save', 'config-history-open']) {
+    $(id).disabled = value || configEditor.loading || !configEditor.draft || configEditor.recoveryBlocked || configPageStale();
+  }
   if (configEditor.recoveryBlocked) $('config-import').disabled = true;
   if (configPageStale()) {
     for (const id of ['config-retry', 'config-import', 'config-preview']) $(id).disabled = true;
@@ -1411,6 +1414,7 @@ async function configMayChangeAccount(next) {
 function configAccountChanged() {
   resetWorldMap();
   if (configEditor.owner === current) return;
+  if ($('config-history-dialog')?.open) $('config-history-dialog').close();
   configWeeklyRankingReset();
   configCancelSaveTimer(); configEditor.savePromise = null; configEditor.saving = false; configEditor.saveError = null; configEditor.saveRetries = 0; configEditor.busy = false;
   configEditor.serial++; configEditor.owner = null; configEditor.data = null; configEditor.draft = null; configEditor.baseline = null; configEditor.loading = false; configEditor.errors = {}; configEditor.recoveryBlocked = false; configEditor.recoveryNotice = null; configEditor.recoverySync = null;
