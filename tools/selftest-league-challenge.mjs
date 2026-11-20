@@ -19,7 +19,7 @@ function fixture() {
   const settings = defaultSettings();
   settings.schedule.leagueChallenge = true;
   const file = path.join(root, ++sequence + '.json');
-  const state = { progress: 0, tickets: 3, rivals: [
+  const state = { progress: 0, tickets: 3, refreshTimes: 1, refreshes: 0, rivals: [
     { playerId: player.playerId, nickname: '自己', power: 1, score: 9999 },
     { playerId: 15, nickname: '甲', power: 300, score: 900 },
     { playerId: largeId, nickname: '乙', power: 180, score: 700 },
@@ -31,9 +31,15 @@ function fixture() {
       case 'LeagueInfoRequest': return { roomDan: 1, mine: { playerId: player.playerId, power: state.ownPower }, top10: [{}, {}], settleTime: reset + 2 * 86400, ownFormations: state.teams };
       case 'AllResourceRequest': return { list: [{ res: 6, amount: state.tickets }] };
       case 'LeagueRefreshRivalRequest':
-        assert.deepEqual(body, { isRefresh: false });
-        state.onList?.(++state.reads);
-        return { rivals: state.rivals };
+        if (body.isRefresh) {
+          assert.ok(Number.isSafeInteger(state.refreshTimes) && state.refreshTimes >= 0 && state.refreshTimes <= 1, '禁止使用付费刷新');
+          state.refreshTimes++;
+          state.onRefresh?.(++state.refreshes);
+        } else {
+          assert.deepEqual(body, { isRefresh: false });
+          state.onList?.(++state.reads);
+        }
+        return { rivals: state.rivals, refreshTimes: state.refreshTimes };
       case 'LeagueFightRequest':
         state.writes.push(body);
         if (state.error) throw state.error;
@@ -55,6 +61,11 @@ try {
   assert.deepEqual(migrated.schedule, { ...old.schedule, leagueChallenge: false });
   assert.deepEqual(migrated.arena, defaultSettings().arena);
   assert.deepEqual(migrated.league, defaultSettings().league);
+
+  const v29 = defaultSettings();
+  delete v29.arena.fallbackLowerRank; delete v29.league.fallbackWeakest;
+  assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 29, settings: v29 }), defaultSettings());
+  assert.deepEqual(validateSettings(v29), defaultSettings(), '旧页面仍可保存');
 
   const previous = defaultSettings();
   delete previous.arena.maxPowerRatio;
@@ -86,6 +97,68 @@ try {
   assert.deepEqual(capped.options.ledger.keyRecords(), {});
   capped.state.ownPower = 0;
   assert.match((await capped.read()).reason, /己方战力/);
+
+  function fallbackFixture() {
+    const f = fixture();
+    Object.assign(f.settings.league, { fallbackWeakest: true, maxPowerRatio: 100, target: 'score' });
+    f.state.ownPower = 100;
+    return f;
+  }
+  for (const available of [0, 1, 2]) {
+    const f = fallbackFixture();
+    f.state.refreshTimes = 2 - available;
+    f.state.onRefresh = () => {
+      f.state.rivals = [{ playerId: 21, power: 190, score: 4 }, { playerId: 22, power: 250, score: 50 }];
+    };
+    const preview = await f.read();
+    if (available) assert.match(preview.note, /免费刷新/);
+    else assert.match(preview.note, /兜底挑战/);
+    assert.equal(f.state.refreshes, 0, '配置预览不能消耗免费刷新次数');
+    assert((await f.run()).ok);
+    assert.equal(f.state.refreshes, available);
+    assert.deepEqual(f.state.writes, [{ playerId: available ? { low: 21, high: 0, unsigned: false } : largeId }]);
+  }
+  for (const refreshFirst of [false, true]) {
+    const f = fallbackFixture();
+    const matches = [{ playerId: 31, power: 85, score: 4 }, { playerId: 32, power: 100, score: 50 }];
+    f.state.refreshTimes = 0;
+    f.state.onRefresh = () => { f.state.rivals = matches; };
+    if (!refreshFirst) f.state.rivals = matches;
+    assert((await f.run()).ok);
+    assert.equal(f.state.refreshes, Number(refreshFirst), '有合格对手即停止刷新');
+    assert.equal(f.state.writes[0].playerId.low, 32, '合格对手仍按配置优先高积分');
+  }
+  for (const count of [undefined, -1, '1']) {
+    const f = fallbackFixture();
+    f.state.refreshTimes = count;
+    assert((await f.run()).ok);
+    assert.deepEqual(f.state.writes, [{ playerId: largeId }], '免费次数未知时直接挑战当前最低战力');
+  }
+  const stale = fallbackFixture();
+  stale.state.onRefresh = () => { stale.state.refreshTimes = 1; };
+  assert((await stale.run()).ok);
+  assert.equal(stale.state.refreshes, 1, '回包次数未递增时不重复刷新');
+  const empty = fallbackFixture();
+  empty.state.rivals = [];
+  empty.state.onRefresh = () => {
+    empty.state.rivals = [{ playerId: 33, power: 90, score: 4 }];
+    empty.state.onList = () => assert.fail('刷新后应直接在返回的名单内选人');
+  };
+  assert((await empty.run()).ok);
+  assert.equal(empty.state.writes[0].playerId.low, 33);
+  const paused = fallbackFixture();
+  paused.state.onRefresh = () => { paused.state.enabled = false; };
+  assert((await paused.run()).skipped);
+  assert.deepEqual(paused.state.writes, []);
+  const lostRefresh = fallbackFixture();
+  lostRefresh.state.onRefresh = () => {
+    lostRefresh.state.refreshTimes = 1;
+    throw Error('刷新回包超时');
+  };
+  await assert.rejects(lostRefresh.run, /刷新回包超时/);
+  lostRefresh.options.ledger = createUsageLedger('test', { file: lostRefresh.file });
+  assert((await lostRefresh.run()).ok, '重连后仍能打当前最低战力');
+  assert.equal(lostRefresh.state.refreshes, 1, '未知结果的免费刷新不会重复发送');
 
   const f = fixture();
   assert.equal((await f.read()).target.id, '9007199254740993');

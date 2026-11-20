@@ -2431,7 +2431,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               const danName = dan => config.tables.LeagueDanCfg?.data?.find(row => row.dan === dan)?.name ?? dan ?? '未知';
               notes.push(`分组段位 ${danName(info.roomDan)} · 预计结算段位 ${danName(info.predictDan)} · 排名 ${info.mine?.rank ?? '未知'} · 积分 ${info.mine ? toNumber(info.mine.score) : '未知'} · 挑战券 ${Number.isFinite(state.tickets) ? state.tickets : '未知'} 张`);
               if (!settings.schedule.leagueChallenge) notes.push('积分赛每日挑战已关闭');
-              else if (state.target) {
+              else if (state.target || state.refreshTimes !== undefined) {
                 actions.push({ kind: 'leagueChallenge', label: state.note, costs: [{ id: 'LEAGUE_POINT', num: 1 }] });
               }
               notes.push(`今日战斗 ${state.battles ?? '未知'} / ${settings.league.dailyBattleLimit} 次`);

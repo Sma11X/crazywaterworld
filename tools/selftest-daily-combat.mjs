@@ -31,7 +31,7 @@ const config = { tables: {
   VipLevelCfg: { data: [{ level: 1, effects: [['野怪扫荡次数', 2]] }] },
   MonthCardCfg: { data: [{ id: '普通月卡', effectList: [] }, { id: '高级月卡', effectList: [] }] },
 } };
-const protocol = { ArenaChallengeRequest: true, ArenaChallengeResponse: true, PirateSweepRequest: true };
+const protocol = { ArenaChallengeRequest: true, ArenaChallengeResponse: true, ArenaSweepRequest: true, PirateSweepRequest: true };
 const bigId = { low: 1, high: 2097152, unsigned: false };
 const exactId = id => typeof id === 'object' ? String((BigInt(id.high) << 32n) + BigInt(id.low >>> 0)) : String(id);
 const opponent = (rankNo, id, power) => ({ rankNo, id, power, nickname: '对手' + rankNo });
@@ -82,6 +82,13 @@ function fixture(id) {
       }
     },
     async sendWatch(name, body) {
+      if (name === 'ArenaSweepRequest') {
+        assert(this.arena.challenges.some(row => row.rankNo === body.rank && exactId(row.id) === exactId(body.challengeId)
+          && row.rankNo > this.arena.myself.rankNo));
+        this.writes.push([name, structuredClone(body)]);
+        this.arena.dailyChallengeTimes++;
+        return;
+      }
       assert.equal(name, 'PirateSweepRequest');
       this.writes.push([name, structuredClone(body)]);
       await this.sweep(body);
@@ -120,6 +127,31 @@ function fixture(id) {
   assert.match((await preview()).tasks[0].reason, /己方战力/);
   settings.arena.maxPowerRatio = 0;
   assert.equal((await preview()).tasks[0].actions[0].body.rank, 65);
+}
+
+{
+  const f = fixture(1005), settings = defaultSettings();
+  settings.dailies.enabled = true;
+  Object.assign(settings.arena, { maxPowerRatio: 70, fallbackLowerRank: true, dailyBattleLimit: 1 });
+  f.arena.challenges[2] = opponent(130, bigId, 701);
+  f.arena.challenges[0] = opponent(80, 812, 70);
+  const preview = () => surveyDailies(f, protocol, { config, player, settings, idle: true, probeGift: false });
+  const run = survey => runDailies(f, protocol, survey, { config, settings, allowMutate: true, claimRewards: false });
+  assert.equal((await preview()).tasks[0].actions[0].request, 'ArenaChallengeRequest');
+  f.arena.challenges[0].power++;
+  const sweep = await preview();
+  assert.equal(sweep.tasks[0].actions[0].request, 'ArenaSweepRequest');
+  assert.match(sweep.tasks[0].actions[0].note, /兜底扫荡第 130 名/);
+  settings.arena.fallbackLowerRank = false;
+  assert((await run(sweep))[0].skipped);
+  assert.deepEqual(f.writes, []);
+  settings.arena.fallbackLowerRank = true;
+  f.arena.challenges.push(opponent(130, 815, 10));
+  assert.ok(!(await preview()).tasks[0].actions?.length, '重复名次的不同对手不能作为扫荡依据');
+  f.arena.challenges.pop();
+  assert((await run(sweep))[0].ok);
+  assert.deepEqual(f.writes, [['ArenaSweepRequest', { rank: 130, challengeId: bigId }]]);
+  assert.equal((await preview()).tasks[0].status, 'done');
 }
 
 {

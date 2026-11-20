@@ -518,7 +518,7 @@ try {
     assert.deepEqual(saveAutomationSettings('old', old, { file, revision: 1 }).settings, expected);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 29);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 30);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

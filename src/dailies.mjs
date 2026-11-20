@@ -497,7 +497,7 @@ export async function runDailies(client, protocol, survey, { allowMutate = false
             results.push(outcome); onStep?.(outcome); continue;
           }
           body = sweepResult?.body;
-        } else if (action.request === 'ArenaChallengeRequest' && typeof arenaDailyDriver.run === 'function') {
+        } else if (entry.task.id === 1005 && typeof arenaDailyDriver.run === 'function') {
           const arenaResult = await arenaDailyDriver.run({ client, protocol, action, timeout, allowAction, getSettings, performWrite });
           if (arenaResult?.skipped) {
             await cancelAction?.(action, ticket, { notSent: !writeAttempted, error: new Error(arenaResult.reason) });

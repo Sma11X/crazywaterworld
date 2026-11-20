@@ -26,7 +26,28 @@ function challengeReason(state, options, now) {
   return '';
 }
 
-export async function readLeagueChallenge(client, config, player, getSettings, { preview = false, ledger } = {}) {
+function selectLeagueRival(state, list, options) {
+  if (!Array.isArray(list?.rivals)) return { reason: '尚未取得积分赛对手名单' };
+  const candidates = list.rivals.map(row => ({ id: uidText(row.playerId), name: row.nickname,
+    power: toNumber(row.power), score: toNumber(row.score) })).filter(row =>
+    row.id && row.id !== state.selfId && integer(row.power) && row.power > 0 && integer(row.score));
+  const filtered = filterOpponentsByPower(candidates, state.info.mine.power, options.maxPowerRatio);
+  if (!filtered.candidates || (filtered.reason && !options.fallbackWeakest)) return { reason: filtered.reason };
+  const fallback = !filtered.candidates.length;
+  // LeagueChallengePop switches to its diamond refresh button above 1.
+  const times = list.refreshTimes;
+  if (fallback && options.fallbackWeakest && Object.hasOwn(list, 'refreshTimes') && integer(times) && times <= 1 && times > state.lastRefreshTimes) {
+    return { refreshTimes: times, note: '免费刷新对手，仍无人符合战力上限时挑战当前名单中战力最低者' };
+  }
+  if (!candidates.length) return { reason: '当前名单没有可挑战的对手' };
+  const byPower = (a, b) => a.power - b.power || b.score - a.score;
+  const byScore = (a, b) => b.score - a.score || a.power - b.power;
+  const target = fallback ? candidates.sort(byPower)[0]
+    : filtered.candidates.sort(options.target === 'score' ? byScore : byPower)[0];
+  return { target, note: (fallback ? '兜底挑战' : '挑战') + (target.name || target.id) + '（战力 ' + target.power + '，积分 ' + target.score + '）' + (filtered.note ?? '') };
+}
+
+async function readLeagueStatus(client, config, player, getSettings, { preview = false, ledger }) {
   const level = config?.tables?.ModuleOpenCfg?.data?.find(row => row.moduleId === '跨服积分赛')?.playerLevel;
   if (!Number.isSafeInteger(level) || level < 1) return { reason: '尚未取得积分赛开放等级' };
   if (!(player?.level >= level)) return { reason: '跨服积分赛在角色 ' + level + ' 级开放' };
@@ -37,9 +58,10 @@ export async function readLeagueChallenge(client, config, player, getSettings, {
   const today = Object.entries(ledger?.keyRecords() ?? {})
     .filter(([key, record]) => key.startsWith(prefix) && record.details?.reset === state.reset)
     .map(([, record]) => record);
+  const fights = today.filter(record => record.details.refreshTimes === undefined);
   // The daily task can stop counting after its reward target. Confirmed fight slots
   // also survive reconnects and a rolling report list.
-  for (const record of today) if (record.confirmed) state.battles = Math.max(state.battles, record.details.progress + 1);
+  for (const record of fights) if (record.confirmed) state.battles = Math.max(state.battles, record.details.progress + 1);
   const limit = getSettings().league.dailyBattleLimit;
   if (task && state.battles >= task.targetProgress && limit > state.battles && state.reset > serverNow(client)) {
     try {
@@ -51,7 +73,7 @@ export async function readLeagueChallenge(client, config, player, getSettings, {
       state.reason = '尚未取得积分赛今日进攻战报：' + error.message;
     }
   }
-  if (today.some(record => !record.confirmed && record.details.progress >= state.battles)) {
+  if (fights.some(record => !record.confirmed && record.details.progress >= state.battles)) {
     state.reason = '本次挑战已提交，等待任务进度或战报更新';
   }
   if (!preview && state.battles >= limit) return { ...state, nextCheck: state.reset, reason: limitReached(limit) };
@@ -66,20 +88,29 @@ export async function readLeagueChallenge(client, config, player, getSettings, {
   if (!state.selfId || state.selfId !== uidText(player.playerId)) return { ...state, reason: '未能确认积分赛本人身份' };
   const reason = state.reason || challengeReason(state, getSettings().league, serverNow(client));
   if (reason) return { ...state, reason, nextCheck: state.battles >= getSettings().league.dailyBattleLimit ? state.reset : undefined };
-  // Opening the opponent list uses false. The explicit rematch button uses true and may cost diamonds.
+  // A refresh with a lost reply may already have used this free slot.
+  state.lastRefreshTimes = Math.max(-1, ...today.filter(record => record.details.progress === state.battles &&
+    integer(record.details.refreshTimes)).map(record => record.details.refreshTimes));
+  return state;
+}
+
+export async function readLeagueChallenge(client, config, player, getSettings, options = {}) {
+  const state = await readLeagueStatus(client, config, player, getSettings, options);
+  if (state.reason) return state;
   const list = await read(client, 'LeagueRefreshRival', { isRefresh: false });
-  const candidates = (list.rivals ?? []).map(row => ({ id: uidText(row.playerId), name: row.nickname,
-    power: toNumber(row.power), score: toNumber(row.score) })).filter(row =>
-    row.id && row.id !== state.selfId && integer(row.power) && row.power > 0 && integer(row.score));
-  const options = getSettings().league;
-  const finalReason = challengeReason(state, options, serverNow(client));
-  if (finalReason) return { ...state, reason: finalReason };
-  if (!candidates.length) return { ...state, reason: '当前名单没有可挑战的对手' };
-  const filtered = filterOpponentsByPower(candidates, info.mine.power, options.maxPowerRatio);
-  if (filtered.reason) return { ...state, reason: filtered.reason };
-  const target = filtered.candidates.sort((a, b) => options.target === 'score'
-    ? b.score - a.score || a.power - b.power : a.power - b.power || b.score - a.score)[0];
-  return { ...state, target, note: '挑战' + (target.name || target.id) + '（战力 ' + target.power + '，积分 ' + target.score + '）' + filtered.note };
+  const settings = getSettings().league;
+  const reason = challengeReason(state, settings, serverNow(client));
+  return reason ? { ...state, reason } : { ...state, ...selectLeagueRival(state, list, settings) };
+}
+
+async function submitLeagueRequest(client, ledger, key, details, name, body) {
+  const ticket = ledger.reserve({}, {}, {}, { uniqueKey: key, details });
+  try {
+    return { ticket, reply: await read(client, name, body) };
+  } catch (error) {
+    if (error.notSent || (error.prompt && error.request === name + 'Request')) ledger.cancel(ticket);
+    throw error;
+  }
 }
 
 export async function runLeagueChallenge(client, protocol, config, player, { getSettings, enabled, ledger }) {
@@ -93,8 +124,9 @@ export async function runLeagueChallenge(client, protocol, config, player, { get
   if (integer(state.reset) && state.reset > serverNow(client) && integer(state.task?.progress)) {
     for (const [key, record] of Object.entries(ledger.keyRecords())) {
       if (!key.startsWith(prefix)) continue;
-      const { reset, progress } = record.details;
-      if (reset < state.reset || (reset === state.reset && progress < state.task.progress)) {
+      const { reset, progress, refreshTimes } = record.details;
+      const completed = refreshTimes === undefined ? state.task.progress : state.battles;
+      if (reset < state.reset || (reset === state.reset && progress < completed)) {
         if (record.confirmed) ledger.releaseCompletedKey(key);
         else ledger.cancel(record); // No counters reserved. This quota can no longer be sent.
       } else if (reset === state.reset && !record.confirmed && progress < state.battles) {
@@ -106,23 +138,31 @@ export async function runLeagueChallenge(client, protocol, config, player, { get
   const key = leagueChallengeKey(player, state);
   const submitted = () => wait('本次挑战已提交，等待任务进度或战报更新');
   if (ledger.hasKey(key)) return submitted();
-  const fresh = await readState();
-  if (fresh.reason) return wait(fresh.reason);
-  if (fresh.reset !== state.reset || fresh.battles !== state.battles || fresh.info.settleTime !== state.info.settleTime ||
-      fresh.target.id !== state.target.id) return wait('任务、赛期或对手已更新，下一轮重新选择');
-  if (!enabled()) return wait('积分赛挑战已关闭');
-  if (ledger.hasKey(key)) return submitted();
-  if (fresh.battles >= getSettings().league.dailyBattleLimit) return wait(limitReached(getSettings().league.dailyBattleLimit));
-  const ticket = ledger.reserve({}, {}, {}, { uniqueKey: key, details: { reset: fresh.reset, progress: fresh.battles } });
-  let reply;
-  try {
-    reply = await client.request('LeagueFightRequest', { playerId: wireUid(fresh.target.id) }, 'LeagueFightResponse');
-  } catch (error) {
-    if (error.notSent || (error.prompt && error.request === 'LeagueFightRequest')) ledger.cancel(ticket);
-    throw error;
+  let fresh = await readState();
+  if (!fresh.reason && (fresh.target?.id !== state.target?.id || fresh.refreshTimes !== state.refreshTimes)) {
+    return wait('对手已更新，下一轮重新选择');
   }
+  const details = { reset: state.reset, progress: state.battles };
+  for (;;) {
+    if (fresh.reason) return wait(fresh.reason);
+    if (fresh.reset !== state.reset || fresh.battles !== state.battles || fresh.info.settleTime !== state.info.settleTime) {
+      return wait('任务或赛期已更新，下一轮重新选择');
+    }
+    if (!enabled()) return wait('积分赛挑战已关闭');
+    if (ledger.hasKey(key)) return submitted();
+    if (fresh.battles >= getSettings().league.dailyBattleLimit) return wait(limitReached(getSettings().league.dailyBattleLimit));
+    if (fresh.target) break;
+    const refreshKey = key + ':refresh:' + fresh.refreshTimes;
+    if (ledger.hasKey(refreshKey)) return wait('本次免费刷新已提交，等待名单更新');
+    const { ticket, reply } = await submitLeagueRequest(client, ledger, refreshKey,
+      { ...details, refreshTimes: fresh.refreshTimes }, 'LeagueRefreshRival', { isRefresh: true });
+    ledger.confirm(ticket);
+    const status = await readLeagueStatus(client, config, player, getSettings, { ledger });
+    fresh = status.reason ? status : { ...status, ...selectLeagueRival(status, reply, getSettings().league) };
+  }
+  const { ticket, reply } = await submitLeagueRequest(client, ledger, key, details, 'LeagueFight', { playerId: wireUid(fresh.target.id) });
   if (uidText(reply?.lPlayer?.playerId) !== fresh.selfId || uidText(reply?.rPlayer?.playerId) !== fresh.target.id ||
       !integer(toNumber(reply.lPlayer.finalScore))) throw new Error('积分赛战果尚未确认，等待任务进度更新');
   ledger.confirm(ticket);
-  return { label, ok: true, note: fresh.note + '，战后积分 ' + toNumber(reply.lPlayer.finalScore) };
+  return { label, ok: true, note: (state.refreshTimes !== undefined ? '免费刷新后' : '') + fresh.note + '，战后积分 ' + toNumber(reply.lPlayer.finalScore) };
 }
