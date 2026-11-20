@@ -213,7 +213,7 @@ export async function previewNativeAutomation(client, config, player, settings, 
   const group = async (label, action) => { try { await action(); } catch (error) { notes.push(label + '：' + error.message); } };
   if (enabled('autoFish')) await group('钓鱼', async () => record(await fishOnce(readonly, config, () => enabled('autoFish'), { dryRun: true, fishBook: settings.gather.fishBook })));
   if (enabled('fishEnhance')) await group('钓具养成', async () => record(await upgradeFishingOnce(readonly, config, { playerLevel: player?.level,
-    reserveGold: settings.gather.fishingGoldReserve, targetLevel: settings.gather.targetLevel, enabled: () => enabled('fishEnhance'), dryRun: true })));
+    targetLevel: settings.gather.targetLevel, enabled: () => enabled('fishEnhance'), dryRun: true })));
   if (['autoDive', 'autoSalvage', 'diveEnhance', 'salvageEnhance'].some(enabled)) await group('船只', () => serviceBoats(readonly, config, enabled, record, { settings, dryRun: true }));
   if (enabled('antiqueFloaters')) await group('藏品宝箱',()=>collectAntiqueFloaters(readonly,config,{enabled:()=>enabled('antiqueFloaters'),report:record,dryRun:true}));
   if (enabled('floaters')) await group('漂浮物', () => collectFloaters(readonly, config, world.floaters, enabled, record, { settings, dryRun: true }));

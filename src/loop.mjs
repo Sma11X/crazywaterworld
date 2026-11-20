@@ -71,7 +71,7 @@ import { claimExtraRewards, extraRewardKeys } from './extra-rewards.mjs';
 import { setTimeout as pause } from 'node:timers/promises';
 import { claimRewards } from './claim-rewards.mjs';
 import { claimWeekly, runLinkage, weekSchedule, readWeekOrder, runAutomaticWeekOrder } from './activities.mjs';
-import { automationTasks, dailyTaskKey, defaultFishingGoldReserve, defaultCompassSpinCount, worldTaskKey } from './automation.mjs';
+import { automationTasks, dailyTaskKey, defaultCompassSpinCount, worldTaskKey } from './automation.mjs';
 import { automationControls } from './automation-controls.mjs';
 import { activityTimeTasks, isActivityTaskAvailable, nextActivityBoundary } from './activity-availability.mjs';
 import { nextWeeklyActivityBoundary } from './weekly-activity.mjs';
@@ -98,7 +98,6 @@ export async function runLoop(client, protocol, {
   sleep = defaultSleep,
   stop = { aborted: false },
   isEnabled,
-  getFishingGoldReserve = () => defaultFishingGoldReserve,
   getCompassSpinCount = () => defaultCompassSpinCount,
   isStageBusy = () => false,
   isTrialBusy = () => false, isPirateBusy = () => false,
@@ -1050,10 +1049,8 @@ export async function runLoop(client, protocol, {
       for (const key of antiqueWait.keys()) if (!isEnabled(key)) antiqueWait.delete(key);
       if (isEnabled && enabled('fishEnhance')) {
         try {
-          const reserve = getFishingGoldReserve();
           const entry = await upgradeFishingOnce(client, config, {
-            playerLevel: player?.level, reserveGold: reserve,
-            enabled: () => enabled('fishEnhance') && reserve === getFishingGoldReserve(),
+            playerLevel: player?.level, enabled: () => enabled('fishEnhance'),
             targetLevel: settings?.gather.targetLevel ?? Infinity,
             beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
           });

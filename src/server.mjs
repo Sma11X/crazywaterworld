@@ -96,7 +96,7 @@ import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
 import { createLogAccountLabels } from './log-accounts.mjs';
 import { operationLabels } from './operation-labels.mjs';
-import { automationTasks, retiredAutomationTasks, migratedAutomationTasks, defaultFishingGoldReserve, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
+import { automationTasks, retiredAutomationTasks, migratedAutomationTasks, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
 import { rewardSchedule } from './reward-schedule.mjs';
 import { beijingDay, loadAutomationSettings, loadRecoverableAutomationSettings, settingsFile, defaultSettings, saveAutomationSettings, validateSettings, settingsCatalog, settingsFromNative, settingsFromLegacyNative, nativeTaskValues, applyNativeTask, hasExtraWork, createUsageLedger, exportAutomationSettings, importAutomationSettings, SettingsError, settingsUiRules } from './automation-settings.mjs';
 import { budgetPreview, exactAutomationId, createActionGuard, nativePreferenceEnabled, needsCargoDemand, AutomationSkip } from './automation-policy.mjs';
@@ -717,7 +717,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         completed: 0,
         everyMs: (preferences?.loop.everySeconds ?? saved?.everySeconds ?? 60) * 1000,
         tasks: preferences ? nativeTaskValues(preferences, taskSettings(saved?.tasks)) : taskSettings(saved?.tasks),
-        fishingGoldReserve: preferences?.gather.fishingGoldReserve ?? saved?.fishingGoldReserve ?? defaultFishingGoldReserve,
         compassSpinCount: validSpinCount(saved?.compassSpinCount) ? saved.compassSpinCount : defaultCompassSpinCount,
         controller: null, job: null,
         attemptController: null, connectionFailure: null, recovery: null,
@@ -784,7 +783,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     if (entry.revision && !loadStore().accounts.find(account => account.id === session.id)?.automation?.settingsConfigured)
       saveAutomation(session.id, { settingsConfigured: true });
     session.loop.tasks = nativeTaskValues(entry.settings, session.loop.tasks);
-    session.loop.fishingGoldReserve = entry.settings.gather.fishingGoldReserve;
     session.loop.everyMs = entry.settings.loop.everySeconds * 1000;
     if (!session.loop.running) session.loop.rounds = entry.settings.loop.rounds;
     session.client?.emit?.('automationSettingsChanged');
@@ -850,9 +848,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   function settingsView(session) {
     const saved = refreshSessionSettings(session, true);
     const settings = saved.revision ? saved.settings : session.preferences ?? settingsFromNative(session.loop.tasks, {
-      rounds: session.loop.rounds, everySeconds: session.loop.everyMs / 1000, fishingGoldReserve: session.loop.fishingGoldReserve,
+      rounds: session.loop.rounds, everySeconds: session.loop.everyMs / 1000,
     });
-    const baseRevision = createHash('sha256').update(JSON.stringify([session.loop.tasks, session.loop.rounds, session.loop.everyMs, session.loop.fishingGoldReserve])).digest('hex');
+    const baseRevision = createHash('sha256').update(JSON.stringify([session.loop.tasks, session.loop.rounds, session.loop.everyMs])).digest('hex');
     const availability = activityAvailability(session.client);
     // Keep the editor available while execution is blocked so obsolete choices can be repaired.
     const config = loadConfigSafe({ allowStale: true });
@@ -4445,20 +4443,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         json({ compassSpinCount });
         return;
       }
-      if (route === 'POST /api/loop/fishing-reserve') {
-        const { session } = scoped_(parsed);
-        const { fishingGoldReserve } = jsonBody();
-        if (!Number.isSafeInteger(fishingGoldReserve) || fishingGoldReserve < 0) throw new Error('预留金币必须是非负整数');
-        if (session.preferences) {
-          const next = structuredClone(settingsView(session).settings);
-          next.gather.fishingGoldReserve = fishingGoldReserve;
-          adoptPreferences(session, saveAutomationSettings(session.id, next, { revision: session.preferencesRevision }));
-        } else saveAutomation(session.id, { fishingGoldReserve });
-        session.loop.fishingGoldReserve = fishingGoldReserve;
-        emit(session, 'info', '钓具强化将保留 ' + fishingGoldReserve.toLocaleString('zh-CN') + ' 金币');
-        json({ fishingGoldReserve });
-        return;
-      }
       if (route === 'POST /api/loop/control') {
         const payload=jsonBody();needConfirm(payload);const {session}=scoped_(parsed);
         const current=settingsView(session);
@@ -4676,7 +4660,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           rounds: rounds === 0 ? 0 : rounds - completedBefore, everyMs: loop.everyMs, allowMutate: true, stop: attemptController.signal,
           schedule: work => enqueue(session, work),
           isEnabled: key => loop.tasks[key] === true,
-          getFishingGoldReserve: () => loop.fishingGoldReserve,
           getCompassSpinCount: () => loop.compassSpinCount,
           isStageBusy: () => session.stages.view().running,
           isTrialBusy: id => session.trials.get(id)?.view().running === true,
@@ -4875,7 +4858,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         key, label, group, enabled: loop.tasks[key], blockedBySettings: loop.tasks[key] && !nativePreferenceEnabled(session.preferences, key),
         nextCheck: loop.tasks[key] && nativePreferenceEnabled(session.preferences, key) ? rewards?.nextCheck(key === 'paidGold' ? 'gold.enabled' : key) : null,
       })),
-      fishingGoldReserve: loop.fishingGoldReserve,
       compassSpinCount: session.preferences?.eventActions.compassDrawCount ?? loop.compassSpinCount,
       settingsRevision: session.preferencesRevision,
       settingsRecovery: session.settingsRecovery,

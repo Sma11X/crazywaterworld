@@ -1,7 +1,5 @@
 // All tasks start disabled. Only explicit saved choices enable an account's
 // schedule; adding a task must never silently opt existing accounts into it.
-// 只限制钓具强化的金币支出，其他挂机任务不使用此预算。
-export const defaultFishingGoldReserve = 10_000;
 export const defaultCompassSpinCount = 10;
 export const maxCompassSpinCount = 999;
 

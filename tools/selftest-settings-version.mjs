@@ -506,8 +506,19 @@ try {
     migrated.treasure.recallLeadMinutes = 3;
     assert.deepEqual(importAutomationSettings(exportAutomationSettings(migrated)), migrated);
   });
+  test('版本28旧配置加载、导入和保存时移除钓具预留金币', () => {
+    const expected = defaultSettings();
+    Object.assign(expected.gather, { enabled: true, upgradeFishing: true, targetLevel: 7 });
+    expected.schedule.fishEnhance = true;
+    const old = structuredClone(expected);
+    old.gather.fishingGoldReserve = 10000;
+    fs.writeFileSync(file, JSON.stringify({ version: 28, accounts: { old: { settingsVersion: 28, revision: 1, settings: old } } }));
+    assert.deepEqual(loadAutomationSettings('old', { file }).settings, expected);
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 28, settings: old }), expected);
+    assert.deepEqual(saveAutomationSettings('old', old, { file, revision: 1 }).settings, expected);
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 28);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 29);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

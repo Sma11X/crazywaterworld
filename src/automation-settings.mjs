@@ -21,7 +21,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 28;
+export const SETTINGS_SCHEMA_VERSION = 29;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 const treasureRewardFilterDefaults = {
@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS = {
   factory: { enabled: false, gain: false, produce: false, cooperateNative: false, disabledTypes: [], keepStock: 50, checkEverySeconds: 30, demandFirst: false, demandPriority: DEMAND_SOURCES.map(([id]) => id), speedUpSources: [], speedUp: false, speedUpItems: [] },
   farm: { enabled: false, harvest: false, autoPlant: false, customPlant: false, crops: [], speedUp: false },
   // 总开关与细项独立保存；开启总开关不会开启任何细项。
-  gather: { enabled: false, fishing: false, fishBook: false, floaters: false, antiqueFloaters: false, continueWhenFull: false, diving: false, keyOpen: false, salvage: false, upgradeFishing: false, upgradeDiving: false, upgradeSalvage: false, targetLevel: 2, fishingGoldReserve: 10000 },
+  gather: { enabled: false, fishing: false, fishBook: false, floaters: false, antiqueFloaters: false, continueWhenFull: false, diving: false, keyOpen: false, salvage: false, upgradeFishing: false, upgradeDiving: false, upgradeSalvage: false, targetLevel: 2 },
   resident: { enabled: false, skipCrops: false, skipProduction: false, blockedMaterials: [], minExp: 0, minGold: 0, dailyCap: 0, rewards: false, reroll: false },
   cargo: { enabled: false, dailyLoadLimit: 0 },
   events: { enabled: false, otherOption: 1 },
@@ -145,7 +145,7 @@ const constraints = {
   'building.disabledTypes': strings(), 'factory.disabledTypes': strings(), 'factory.keepStock': int(100000), 'factory.checkEverySeconds': int(300, 1),
   'factory.demandPriority': { ...strings(12), values: DEMAND_SOURCES.map(([id]) => id) },
   'factory.speedUpSources': { ...strings(12), values: DEMAND_SOURCES.map(([id]) => id) },
-  'factory.speedUpItems': strings(), 'farm.crops': { kind: 'crops' }, 'gather.targetLevel': int(1000, 1), 'gather.fishingGoldReserve': int(),
+  'factory.speedUpItems': strings(), 'farm.crops': { kind: 'crops' }, 'gather.targetLevel': int(1000, 1),
   'resident.blockedMaterials': strings(), 'resident.minExp': int(), 'resident.minGold': int(), 'resident.dailyCap': int(),
   'pet.releaseQualities': { ...strings(4), values: ['BLUE','PURPLE','ORANGE','RED'] },
   'forge.decomposeQualities': { ...strings(5), values: ['GREEN','BLUE','PURPLE','ORANGE','RED'] },
@@ -239,13 +239,12 @@ export function applyNativeTask(settings, key, enabled) {
   }
   return result;
 }
-export function settingsFromNative(tasks, { rounds = 0, everySeconds = 60, fishingGoldReserve = 10000 } = {}) {
+export function settingsFromNative(tasks, { rounds = 0, everySeconds = 60 } = {}) {
   let result = defaultSettings();
   for (const [key, value] of Object.entries(taskSettings(tasks))) result = applyNativeTask(result, key, value);
   if (tasks?.heroGrowth) result.heroes.needsSelection = true;
   result.loop.rounds = rounds;
   result.loop.everySeconds = Math.max(1, Number.isSafeInteger(everySeconds) ? everySeconds : 60);
-  result.gather.fishingGoldReserve = fishingGoldReserve;
   // Native-only accounts still need their original selections before the
   // retired task registry discards them. Never reopen an existing module gate.
   for (const key of migratedAutomationTasks) if (typeof tasks?.[key] === 'boolean') result.schedule[key] = tasks[key];
@@ -334,6 +333,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   // 旧页面仍携带硅矿共享预算；新版缺失方向预算时交由字段校验报告。
   if (plain(input?.silicon) && Object.hasOwn(input.silicon, 'dailyDiamondLimit')) input = migrateVersion25Settings(input);
   input = migrateVersion26Settings(input);
+  input = migrateVersion28Settings(input);
   if (['arena', 'league'].some(group => plain(input?.[group]) && Object.hasOwn(input[group], 'keepTickets'))) input = migrateVersion23Settings(input);
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
@@ -664,7 +664,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings], [28, migrateVersion28Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1077,6 +1077,12 @@ function migrateVersion22Settings(settings) {
     if (plain(next[group])) next[group] = { maxPowerRatio: 0, ...next[group] };
   }
   return next;
+}
+
+function migrateVersion28Settings(settings) {
+  if (!plain(settings?.gather) || !Object.hasOwn(settings.gather, 'fishingGoldReserve')) return settings;
+  const { fishingGoldReserve, ...gather } = settings.gather;
+  return { ...settings, gather };
 }
 
 function migrateVersion27Settings(settings) {

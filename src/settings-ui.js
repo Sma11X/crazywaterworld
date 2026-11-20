@@ -63,7 +63,7 @@ function configPlacePanel(root, panel) {
   }
 }
 const configZeroHints={
- 'gather.fishingGoldReserve':'0 表示不保留强化金币。','forge.universalReserve':'0 表示不保留万能材料。',
+ 'forge.universalReserve':'0 表示不保留万能材料。',
  'museum.stockThreshold':'0 表示关闭库存条件。','resources.keepAccelerators':'0 表示不保留加速器。','resources.diamondThreshold':'0 表示不保留钻石。','gold.times':'0 表示不自动付费点金。',
  'treasure.minDurabilityPercent':'0 表示不设比例门槛，零耐久仍需维修。','radar.minDurabilityPercent':'0 表示不设比例门槛，仍须有耐久。',
  'pirateHunt.minDurabilityPercent':'0 表示不设比例门槛，仍须有耐久。','heroes.keepExp':'0 表示不保留英雄经验。',
@@ -299,7 +299,6 @@ const configGroups = [
     configField('gather.salvage', '自动拾荒', 'switch', { help: '玩法达到 2 级后，每轮搜索一次；满仓、溢出或空奖励均继续，升级后按新等级执行。' }),
     configField('gather.upgradeFishing', '钓鱼升级'), configField('gather.upgradeDiving', '潜水升级'), configField('gather.upgradeSalvage', '拾荒升级'),
     configField('gather.targetLevel', '目标等级', 'number', { unit: '级', help: '达到目标后停止强化和升级；仍需满足游戏建筑数量与等级条件。' }),
-    configField('gather.fishingGoldReserve', '钓具强化后保留金币', 'number', { parent: 'gather.upgradeFishing', unit: '金币', when: d => d.gather.upgradeFishing }),
   ] },
   { id: 'resident', title: '居民需求', category: 'base', fields: [
     configField('resident.enabled', '自动满足'), configField('resident.skipCrops', '跳过农作物订单'), configField('resident.skipProduction', '跳过需生产的订单'),

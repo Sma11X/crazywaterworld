@@ -82,5 +82,5 @@ export const operationLabels = {
   '/api/loop': '查看挂机设置', '/api/loop/start': '开始挂机', '/api/loop/stop': '暂停挂机',
   '/api/loop/auto-start': '设置自动开始挂机', '/api/loop/interval': '设置挂机间隔',
   '/api/login-settings': '保存登录设置',
-  '/api/loop/task': '修改自动任务', '/api/loop/fishing-reserve': '设置钓具预留金币',
+  '/api/loop/task': '修改自动任务',
 };
