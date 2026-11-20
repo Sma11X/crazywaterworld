@@ -35,7 +35,7 @@ try {
   assert(executablePath, '未找到测试浏览器');
   browser = await chromium.launch({ executablePath, headless: true });
   for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
-    const context = await browser.newContext({ viewport });
+    const context = await browser.newContext({ viewport, hasTouch: name === 'mobile' });
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
@@ -67,6 +67,39 @@ try {
     };
 
     await page.goto(base);
+    await tab('overview');
+    const search = page.getByRole('button', { name: '站内搜索', exact: true });
+    const dialog = page.getByRole('dialog', { name: '站内搜索' });
+    const query = dialog.getByRole('combobox');
+    const searchBox = await search.boundingBox();
+    const themeBox = await page.locator('#theme-trigger').boundingBox();
+    assert(searchBox.x + searchBox.width <= themeBox.x && Math.abs(searchBox.y - themeBox.y) <= 1);
+    if (name === 'desktop') {
+      const logBox = await page.locator('#logs-open').boundingBox();
+      assert(logBox.x + logBox.width <= searchBox.x && Math.abs(logBox.y - searchBox.y) <= 1);
+    }
+    await search.click();
+    assert(await query.evaluate(input => input === document.activeElement));
+    await query.fill('自动激活藏品');
+    await dialog.getByRole('option', { selected: true }).filter({ hasText: '自动激活藏品' }).waitFor();
+    await query.press('Enter');
+    await config('antique', 'antique');
+    await page.locator('.console-quick-highlight #config-field-antique-activate').waitFor();
+    await page.keyboard.press('Control+k');
+    await query.fill('无此功能xyz');
+    await dialog.getByRole('status').filter({ hasText: '没有找到匹配的结果' }).waitFor();
+    await query.fill('杂项 仓库');
+    const first = await query.getAttribute('aria-activedescendant');
+    await query.press('ArrowDown');
+    assert.notEqual(await query.getAttribute('aria-activedescendant'), first);
+    await dialog.getByRole('option').filter({ hasText: '养成材料' }).click();
+    await tab('resources', 'inventory');
+    await page.locator('#inventory-tab-growth[aria-selected="true"]').waitFor();
+    await search.click();
+    await query.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    assert(await search.evaluate(button => button === document.activeElement));
+    await reloadFrom(null);
     await tab('overview');
     assert.equal(await page.locator('#tabs [data-tab="activities"]').getAttribute('aria-label'), '活动');
     assert.equal(await page.locator('#tabs [data-tab="resources"]').getAttribute('aria-label'), '杂项');
@@ -172,7 +205,7 @@ try {
     await tab('overview');
     assert.equal(new URL(page.url()).hash, '');
     await context.close();
-    console.log('通过：' + name + ' 首次配置、分类和生产分组刷新恢复，缓存返回、切离配置、顶级活动、杂项子页、旧活动迁移、深链与无效状态回退');
+    console.log('通过：' + name + ' 页头搜索位置、快捷键、配置项高亮与仓库分类跳转，导航刷新恢复、深链与无效状态回退');
   }
   assert.deepEqual(errors, []);
   assert.equal(settingsWrites, 0, '导航不保存配置');

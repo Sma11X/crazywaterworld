@@ -30,6 +30,7 @@ const accountBackupScript = readFileSync(new URL('./account-backup-ui.js', impor
 const accountPickerScript = readFileSync(new URL('./account-picker-ui.js', import.meta.url), 'utf8');
 const helpTipsScript = readFileSync(new URL('./help-tips.js', import.meta.url), 'utf8');
 const themeScript = readFileSync(new URL('./theme-ui.js', import.meta.url), 'utf8');
+const consoleQuickScript = readFileSync(new URL('./console-quick-nav.js', import.meta.url), 'utf8');
 const consoleStoreScript = readFileSync(new URL('./ui/dist/console-store.js', import.meta.url), 'utf8');
 
 export const PAGE = `<!doctype html>
@@ -2519,6 +2520,7 @@ function activateConsolePage(button, resource = selectedResource) {
 document.querySelectorAll('#tabs button').forEach(button => { button.onclick = () => activateConsolePage(button); });
 for(const link of document.querySelectorAll('a[href^="#config-group-"]'))link.onclick=event=>{if(location.hash===link.getAttribute('href')){event.preventDefault();activateConsolePage(document.querySelector('#tabs [data-tab="settings"]'));configApplyHash();}};
 document.querySelectorAll('[data-resource-tab]').forEach(button => { button.onclick = () => activateConsolePage(document.querySelector('#tabs [data-tab="resources"]'), button.dataset.resourceTab); });
+${consoleQuickScript}
 
 // 配置页工具栏吸在页头下方；页头高度随触屏尺寸和提示文字变化，手机上页头不吸顶。
 new ResizeObserver(() => {

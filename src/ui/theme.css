@@ -440,7 +440,7 @@ html[data-theme="dark"] {
 
 @media (max-width:768px) and (pointer:coarse) {
   [data-slot=button]:is([data-size=sm], [data-size=default]), .hosting-controls #loop-every { min-height:2.75rem; }
-  #theme-trigger { min-width:2.75rem; min-height:2.75rem; }
+  #theme-trigger, #console-quick-open { min-width:2.75rem; min-height:2.75rem; }
 }
 
 /* 只放必须盖过工具类的规则。 */

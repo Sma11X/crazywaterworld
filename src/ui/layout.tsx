@@ -1,6 +1,6 @@
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Boxes, Building2, CalendarDays, Check, ChevronDown, CircleUserRound, Download, LayoutDashboard, Monitor, Moon, MoreHorizontal, RefreshCw, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react"
+import { Boxes, Building2, CalendarDays, Check, ChevronDown, CircleUserRound, Download, LayoutDashboard, Monitor, Moon, MoreHorizontal, RefreshCw, ScrollText, Search, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react"
 import { Button } from "./button"
 import { Badge } from "./badge"
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "./card"
@@ -50,6 +50,7 @@ export function chrome() {
           <span id="loop-hint" className="sr-only" role="status" />
         </div>
         <span id="hint" className="warn" />
+        <Button id="console-quick-open" type="button" size="icon-sm" variant="outline" className="pointer-coarse:size-10" aria-label="站内搜索" title="站内搜索（Ctrl / ⌘ + K）" aria-keyshortcuts="Control+k Meta+k" aria-haspopup="dialog" aria-controls="console-quick-dialog"><Search aria-hidden="true" /></Button>
         <div id="theme-picker" className="theme-picker">
           <Button id="theme-trigger" type="button" size="icon-sm" variant="outline" className="pointer-coarse:size-10" aria-label="切换主题，当前为跟随系统" title="切换主题，当前为跟随系统" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">
             {themes.map(([mode, , Icon]) => <span key={mode} data-theme-icon={mode} hidden={mode !== "system"}><Icon aria-hidden="true" /></span>)}
@@ -95,6 +96,13 @@ export function journal() {
 
 export function dialogs() {
   return renderToStaticMarkup(<>
+    <dialog id="console-quick-dialog" aria-labelledby="console-quick-title">
+      <DialogHeader className="flex-row items-center justify-between"><DialogTitle id="console-quick-title">站内搜索</DialogTitle><Button type="button" id="console-quick-close" size="icon-sm" variant="ghost" aria-label="关闭站内搜索"><X aria-hidden="true" /></Button></DialogHeader>
+      <Input id="console-quick-query" type="search" role="combobox" aria-label="搜索功能或页面文字" placeholder="搜索功能或页面文字" autoComplete="off" aria-autocomplete="list" aria-controls="console-quick-results" aria-expanded="true" />
+      <div id="console-quick-results" role="listbox" aria-label="搜索结果" />
+      <p id="console-quick-empty" className="dim" role="status" hidden>没有找到匹配的结果</p>
+      <p className="dim for-mouse">↑ ↓ 选择 · Enter 跳转 · Esc 关闭</p>
+    </dialog>
     <dialog id="console-version-warning" aria-labelledby="console-version-title" aria-describedby="console-version-description">
       <DialogHeader>
         <DialogTitle id="console-version-title" tabIndex={-1} autoFocus>需要刷新控制台</DialogTitle>
