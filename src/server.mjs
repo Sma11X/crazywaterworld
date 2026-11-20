@@ -109,8 +109,8 @@ import { reconcileManualForge } from './manual-forge-sync.mjs';
 import { readAntiqueUpgrade, planAntiqueUpgrade, antiqueEnabled } from './antique-upgrade.mjs';
 import { watchBasePushes, surveyBaseAutomation, planBaseAutomation, baseDemands, previewNativeAutomation } from './base-automation.mjs';
 import { reconcileManualProduction } from './manual-production-sync.mjs';
-import { readProductionSnapshot } from './production-snapshot.mjs';
-import { planProduction } from './production-planning.mjs';
+import { configuredMaterialRecipes, readProductionSnapshot } from './production-snapshot.mjs';
+import { materialTreeRecipes, planProduction } from './production-planning.mjs';
 import { createProductionTiming, watchProductionTimings } from './production-timing.mjs';
 import { captureManualProductionMaterialState } from './order-reservations.mjs';
 import { createStageTask } from './stages.mjs';
@@ -1843,7 +1843,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const typeNames = new Map(config?.tables?.BuildingCfg?.data.map(row => [row.buildingType, row.name]));
     const timing = createProductionTiming({ config, ...survey.productionTiming, serverNow: survey.serverNow });
     const now = Date.now() / 1000;
-    return {
+    const result = {
       serverNow:survey.serverNow,
       population: `${survey.population}/${survey.maxPopulation}`,
       farms: survey.buildings.filter(b => b.type === '农田').map(b => {
@@ -1928,6 +1928,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       notes: [...survey.notes, ...plan.notes],
       text: formatWorldPlan(survey, plan),
     };
+    const products = result.farms.map(plot => plot.productId);
+    for (const factory of result.factories) {
+      for (const job of [...factory.jobs, ...(factory.plannedJobs ?? [])]) products.push(job.productId);
+    }
+    result.recipes = materialTreeRecipes(result.orders, configuredMaterialRecipes(config), products, id => displayMaterial(config, id));
+    return result;
   }
 
   async function heroes(session, account, config = loadConfigSafe()) {
@@ -3866,7 +3872,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if (route === 'GET /api/world/production-plan') {
         const { session } = scoped_(parsed);
-        if (!session.client?.connected || session.paused || session.productionSyncRequired) throw new Error('请先连接并同步当前账号，再计算联合排产');
+        if (!session.client?.connected || session.paused || session.productionSyncRequired) throw new Error('请先连接并同步当前账号，再生成排产计划');
         if (!session.productionPlanRead) {
           const client = session.client, generation = session.generation, player = session.player;
           const view = settingsView(session), settingsKey = JSON.stringify(view.settings);

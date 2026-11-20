@@ -797,6 +797,7 @@ function renderAccountSelect() {
   resourceFieldsAccountChanged();
   if (productionPlanOwner !== null && (productionPlanOwner !== current || !snapshot.connected || snapshot.paused || disconnected.has(current))) resetProductionPlan();
   $('production-plan-refresh').disabled = productionPlanBusy || !snapshot.connected || snapshot.paused || disconnected.has(current);
+  if (productionPlanOwner === null) $('production-plan-status').textContent = $('production-plan-refresh').disabled ? '连接账号后可生成计划' : '';
   renderHostingControl();
   paintConnection();
   $('connect').disabled = snapshot.paused || snapshot.reconnecting || snapshot.connected || connectingAccounts.has(current) || !accounts.length;
@@ -1447,7 +1448,12 @@ const factoryFinishClock = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
 });
 
-function factoryProductionQueue(factory) {
+function factoryProduct(job, recipes, num = 1) {
+  if (!job.productId) return el('span', 'dim', job.name || '产物未同步');
+  return planMaterialList([{ id: job.productId, name: job.name, icon: job.icon, num }], recipes);
+}
+
+function factoryProductionQueue(factory, recipes) {
   const section = el('section', 'factory-game-section');
   section.appendChild(el('h3', null, '游戏生产格'));
   const known = Array.isArray(factory.jobs) && factory.queueKnown !== false;
@@ -1474,8 +1480,7 @@ function factoryProductionQueue(factory) {
       }
       header.appendChild(badge);
       const product = el('div', 'factory-product');
-      if (job.icon) product.appendChild(iconEl(job.icon, 24, job.name));
-      product.appendChild(el('strong', null, job.name || job.productId || '产物未同步'));
+      product.appendChild(factoryProduct(job, recipes));
       slot.appendChild(product);
       if (timed) {
         const time = el('div', 'factory-finish');
@@ -1496,29 +1501,40 @@ function factoryProductionQueue(factory) {
   return section;
 }
 
-function factoryPlannedProduction(factory) {
+function factoryPlannedProduction(factory, recipes) {
   const section = el('section', 'factory-planned-section');
-  section.appendChild(el('h3', null, '排产计划'));
+  const heading = el('h3', null, '排产计划');
+  section.appendChild(heading);
   const jobs = factory.plannedJobs;
   if (!jobs?.length) {
     section.appendChild(el('p', 'dim', Array.isArray(jobs) ? '本轮没有待投产任务' : '本轮计划未同步'));
     return section;
   }
   const list = el('ol', 'factory-planned-list');
+  const groups = [];
   for (const job of jobs) {
-    const row = el('li');
-    const content = el('div', 'factory-planned-line');
-    const time = job.estimatedFinishTime;
-    content.append(el('strong', null, job.name || job.productId),
-      el('span', 'dim', '预计完成 ' + (time > 0 ? factoryFinishClock.format(time * 1000) : '待确认')));
-    row.appendChild(content);
+    const last = groups.at(-1);
+    if (last && (job.productId || job.name) === (last[0].productId || last[0].name)) last.push(job);
+    else groups.push([job]);
+  }
+  heading.appendChild(el('span', 'factory-planned-caption dim', '整批预计完成（北京时间）'));
+  for (const group of groups) {
+    const row = el('li', 'factory-planned-group');
+    const first = group[0];
+    row.appendChild(factoryProduct(first, recipes, group.length));
+    if (group.every(job => Number.isFinite(job.estimatedFinishTime) && job.estimatedFinishTime > 0)) {
+      const time = Math.max(...group.map(job => job.estimatedFinishTime));
+      const stamp = el('time', 'factory-planned-time', factoryFinishClock.format(time * 1000));
+      stamp.dateTime = new Date(time * 1000).toISOString();
+      row.appendChild(stamp);
+    } else row.appendChild(el('span', 'dim', '时间待定'));
     list.appendChild(row);
   }
   section.appendChild(list);
   return section;
 }
 
-function factoryCurrentProduction(factory) {
+function factoryCurrentProduction(factory, recipes) {
   if (!Array.isArray(factory.jobs) || factory.queueKnown === false) {
     return el('span', 'dim', '生产队列未同步');
   }
@@ -1527,20 +1543,20 @@ function factoryCurrentProduction(factory) {
   const active = factory.jobs.filter(job => job.finishTime > now);
   for (const job of active) {
     const product = el('div', 'factory-current-product');
-    product.append(el('span', null, job.name || job.productId || '产物未同步'),
+    product.append(factoryProduct(job, recipes),
       worldProductionTimer(job.finishTime, '已完成 · 待收取'));
     current.appendChild(product);
   }
   if (!active.length) {
     const completed = factory.jobs.find(job => job.finishTime > 0 && job.finishTime <= now);
-    const status = completed ? (completed.name || completed.productId || '产物未同步') + ' · 已完成 · 待收取'
-      : factory.jobs.length ? '等待开工' : '空闲';
+    if (completed) current.appendChild(factoryProduct(completed, recipes));
+    const status = completed ? '已完成 · 待收取' : factory.jobs.length ? '等待开工' : '空闲';
     current.appendChild(el('span', 'dim', status));
   }
   return current;
 }
 
-function factoryProductionSection(factories, expanded) {
+function factoryProductionSection(factories, expanded, recipes) {
   const headers = ['建筑', '类型', '等级', '当前产物', '自动生产', '游戏排队'];
   const result = table(headers, factories.map(b => {
     const button = component('ui-factory-toggle');
@@ -1550,10 +1566,11 @@ function factoryProductionSection(factories, expanded) {
     button.appendChild(el('span', null, name));
     const queued = b.queueKnown !== false && Array.isArray(b.jobs) ? b.jobs.filter(job => !(job.finishTime > 0)) : null;
     const first = queued?.[0];
-    const preview = el('span', 'factory-queue-preview', first ? first.name || first.productId || '产物未同步' : queued ? '—' : '未同步');
+    const preview = el('div', 'factory-queue-preview', first ? '' : queued ? '—' : '未同步');
+    if (first) preview.appendChild(factoryProduct(first, recipes));
     if (queued?.length > 1) preview.appendChild(el('small', 'dim', '共 ' + queued.length + ' 件'));
-    return [button, b.typeName || b.type, 'lv' + b.level, factoryCurrentProduction(b),
-      b.autoEnabled == null ? '未同步' : b.autoEnabled ? '已开启' : '未开启', preview];
+    return [button, b.typeName || b.type, 'lv' + b.level, factoryCurrentProduction(b, recipes),
+      chip(b.autoEnabled ? 'ready' : 'unknown', b.autoEnabled == null ? '未同步' : b.autoEnabled ? '已开启' : '未开启'), preview];
   }), 'sea-records');
   const toggleAll = component('ui-button');
   toggleAll.type = 'button';
@@ -1574,7 +1591,7 @@ function factoryProductionSection(factories, expanded) {
       clear(cell);
       if (open) {
         const sections = el('div', 'factory-detail-sections');
-        sections.append(factoryProductionQueue(factory), factoryPlannedProduction(factory));
+        sections.append(factoryProductionQueue(factory, recipes), factoryPlannedProduction(factory, recipes));
         cell.appendChild(sections);
       }
     };
@@ -1636,6 +1653,7 @@ function renderWorld(data) {
   stateActions.setGameData(current, 'world', data);
   orderClockOffset=Number.isFinite(data.serverNow)?data.serverNow*1000-Date.now():0;
   $('world-view').textContent = '';
+  const recipes = new Map((data.recipes || []).map(recipe => [recipe.productId, recipe]));
   const fbox = $('world-factories');
   const expanded = new Set([...fbox.querySelectorAll('[aria-expanded="true"]')].map(node => node.dataset.factoryProduction).filter(Boolean));
   const collapsed = new Set([...fbox.querySelectorAll('[data-building-list]')].filter(node => node.hidden).map(node => node.dataset.buildingList));
@@ -1644,7 +1662,7 @@ function renderWorld(data) {
   clear(fbox);
   if (data.factories?.length) {
     const factories = [...data.factories].sort((a, b) => a.buildingId.localeCompare(b.buildingId, 'zh-CN', { numeric: true }));
-    fbox.appendChild(factoryProductionSection(factories, expanded));
+    fbox.appendChild(factoryProductionSection(factories, expanded, recipes));
   }
   if (data.farms?.length) {
     const plots = [...data.farms].sort((a, b) => a.plot.localeCompare(b.plot, 'zh-CN', { numeric: true }));
@@ -1657,9 +1675,11 @@ function renderWorld(data) {
       } else if (plot.productId) {
         status = '成熟时间未同步';
       }
-      return [plot.displayName || plot.plot, plot.level == null ? '未同步' : 'lv' + plot.level,
-        plot.productName || plot.productId || '—', status];
-    }), '');
+      const recipe = recipes.get(plot.productId);
+      const crop = recipe ? planMaterialList([{ id: plot.productId, name: plot.productName, num: recipe.output }], recipes)
+        : plot.productName || plot.productId || '—';
+      return [plot.displayName || plot.plot, plot.level == null ? '未同步' : 'lv' + plot.level, crop, status];
+    }), 'sea-records');
     fbox.appendChild(buildingListSection('农田', 'world-farm-section', farmTable, collapsed));
   }
   // 空位：没盖的（待建）与正在盖的（施工中）。计划器只会建「待建」那些，
@@ -1670,7 +1690,7 @@ function renderWorld(data) {
       { cell: b.icon, text: b.displayName || b.buildingId },
       b.typeName || b.type || '未知类型',
       b.building ? chip('waiting', '施工中') : b.awaitingFinish ? chip('ready', '待竣工') : chip('ready', '待建'),
-    ]));
+    ]), 'sea-records');
     fbox.appendChild(buildingListSection('空位', 'world-slot-section', slotTable, collapsed));
   }
   if (focusedFactory || focusedGroup) {
@@ -1684,7 +1704,7 @@ function renderWorld(data) {
     const ordersTable = table(['订单', '居民', '需求', '挂机交付', '手动操作'], data.orders.map((o) => [
       '#' + o.index,
       { cell: o.workerIcon, text: (o.workerName || '未知居民') + (o.isSpecial ? '（特殊）' : '') },
-      o.requirements.length && o.decision?.status !== 'refreshing' ? { cells: o.requirements } : '—',
+      o.requirements.length && o.decision?.status !== 'refreshing' ? planMaterialList(o.requirements, recipes, 'resident-order-products-' + o.index) : '—',
       orderState(o, data),
       residentOrderActions(o),
     ]), 'sea-records');

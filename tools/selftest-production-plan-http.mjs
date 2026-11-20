@@ -144,6 +144,20 @@ try {
       assert.deepEqual(f.state.sends, []);
     } finally { await f.close(); }
   });
+  await test('打开建筑一览即可读取订单、工厂与农田的嵌套配方', async () => {
+    const f = await fixture();
+    try {
+      const [factory, farm] = f.state.responses.OnWaterRequest.building;
+      factory.factory.factoryQ.push({ idx: 1, productId: '面包', finishTime: f.state.now + 60 });
+      farm.farm = { productId: '小麦', ripeTime: f.state.now + 30 };
+      await f.api('connect', {});
+      const world = await f.api('world');
+      assert.equal(world.factories[0].jobs[0].productId, '面包');
+      assert.equal(world.farms[0].productId, '小麦');
+      assert.deepEqual(world.recipes.map(recipe => [recipe.productId, recipe.output, recipe.inputs[0].id, recipe.inputs[0].num]),
+        [['面包', 1, '小麦', 5], ['小麦', 5, '小麦种子', 1]]);
+    } finally { await f.close(); }
+  });
   await test('真实HTTP保留全部当前订单与完整库存并保持零游戏写入', async () => {
     const f = await fixture();
     try {

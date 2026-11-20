@@ -97,7 +97,7 @@ function fixture() {
   };
   newStateFunction('env', `
     const $ = env.node, el = env.element, clear = env.clear, table = env.table;
-    const document = env.document, Date = { now: () => env.now };
+    const document = env.document, Date = class extends globalThis.Date { static now() { return env.now; } };
     const chip = (state, label) => el('span', state, label);
     const component = id => {
       if (id !== 'ui-building-card') return el('button');
@@ -276,13 +276,28 @@ test('六个游戏格只展示已投产队列，工具拟投产物及估时单�
   assert.match(slots[1].textContent, /格子 2.*排队 #1.*饼干/);
   const [game, plan] = descendants(detail).filter(node => node.tagName === 'section');
   assert.doesNotMatch(game.textContent, /蛋糕|08:02:10/);
-  assert.equal(plan.children[0].textContent, '排产计划');
-  assert.match(plan.textContent, /蛋糕.*预计完成.*08:03:05/);
+  assert.match(plan.children[0].textContent, /排产计划.*预计完成/);
+  assert.match(plan.textContent, /蛋糕.*08:03:05/);
   assert.doesNotMatch(plan.textContent, /面包|饼干/);
   assert(slots.slice(2).every(slot => slot.textContent.includes('空闲')));
   button.onclick();
   assert.equal(detail.hidden, true);
   assert.equal(button.attributes['aria-expanded'], 'false');
+});
+
+test('相邻同产物只显示整批最晚完成时间，跨日和部分时间未知时仍正确', () => {
+  const env = fixture();
+  const midnight = 1767283200;
+  const plannedJobs = [
+    ['面包', midnight - 5], ['面包', midnight + 5], ['面包', midnight], ['面条', null], ['面包', midnight + 10], ['面包', null],
+  ].map(([productId, estimatedFinishTime]) => ({ productId, estimatedFinishTime }));
+  env.render(worldData(env, { factories: [factory([], { plannedJobs })] }));
+  const button = productionButton(env);
+  button.onclick();
+  const groups = descendants(detailRow(button)).filter(node => node.className === 'factory-planned-group');
+  assert.deepEqual(groups.map(group => group.children[0].textContent), ['面包 ×3', '面条 ×1', '面包 ×2']);
+  assert.deepEqual(groups.map(group => group.children.slice(1).map(node => node.textContent)),
+    [['01/02 00:00:05'], ['时间待定'], ['时间待定']]);
 });
 
 test('多个在产位均展示剩余时间，排队摘要显示首项和总数', () => {
@@ -345,7 +360,7 @@ test('当前产物区分等待开工、已完成和空闲，缺少队列显示�
   const env = fixture();
   const now = env.now / 1000 + 5;
   const cases = [
-    { value: factory([{ index: 5, productId: '饼干', name: '饼干', finishTime: null }]), current: /待开工/, next: '饼干' },
+    { value: factory([{ index: 5, productId: '饼干', name: '饼干', finishTime: null }]), current: /待开工/, next: '饼干 ×1' },
     { value: factory([{ index: 5, productId: '面包', name: '面包', finishTime: now - 1 }]), current: /面包.*已完成.*待收取/, next: '—' },
     { value: factory(), current: /空闲/, next: '—' },
     { value: factory([], { queueKnown: false }), current: /未同步/, next: '未同步' },

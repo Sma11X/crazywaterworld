@@ -40,6 +40,13 @@ function requirements(value) {
   return [...result].map(([id, num]) => ({ id, num }));
 }
 
+const factoryMaterials = row => ({ productId: row.itemId, costs: requirements(row.costItem), output: 1 });
+const cropMaterials = row => ({ productId: row.id, costs: requirements([row.material]), output: amount(row.produceNum) });
+
+export function configuredMaterialRecipes(config) {
+  return [...rows(config, 'BuildingProduceCfg').map(factoryMaterials), ...rows(config, 'FarmlandPlantCfg').map(cropMaterials)];
+}
+
 /** Build a JSON-safe, fixed set of currently observed production demands. No I/O. */
 export function buildProductionSnapshot(raw, config, settings = {}) {
   const merchantEnabled = activityProductionEnabled(settings, 'merchant');
@@ -247,12 +254,12 @@ export function buildProductionSnapshot(raw, config, settings = {}) {
   const recipes = rows(config, 'BuildingProduceCfg').map(recipe => {
     const gate = factoryRecipeAvailability(recipe, raw.festivals, serverNow);
     const available = factories.some(factory => factory.type === recipe.buildType && factory.level >= recipe.unlockLevel && factory.enabled) && gate.allowed;
-    return { id: recipe.itemId, productId: recipe.itemId, facilityType: recipe.buildType,
-      costs: requirements(recipe.costItem), output: 1, durationSeconds: amount(recipe.produceTime), unlockLevel: recipe.unlockLevel,
+    return { id: recipe.itemId, ...factoryMaterials(recipe), facilityType: recipe.buildType,
+      durationSeconds: amount(recipe.produceTime), unlockLevel: recipe.unlockLevel,
       available, reason: available ? null : gate.reason || '所需工厂等级未达到或已禁用', timingSource: 'estimated' };
   });
-  for (const crop of cropRecipes.values()) recipes.push({ id: crop.id, productId: crop.id, facilityType: '农田',
-    costs: requirements([crop.material]), output: amount(crop.produceNum), durationSeconds: amount(crop.time), unlockLevel: 1,
+  for (const crop of cropRecipes.values()) recipes.push({ id: crop.id, ...cropMaterials(crop), facilityType: '农田',
+    durationSeconds: amount(crop.time), unlockLevel: 1,
     available: farms.some(farm => farm.enabled), reason: farms.some(farm => farm.enabled) ? null : '没有可用农田', timingSource: 'estimated' });
   if (recipes.some(recipe => !recipe.costs || !(recipe.output > 0) || !(recipe.durationSeconds > 0))) incomplete('productionRecipes', '部分配方成本、产量或配置耗时无效');
   if (!Array.isArray(raw.effects?.effects)) incomplete('GameEffectRequest', '生产效果未完整返回');

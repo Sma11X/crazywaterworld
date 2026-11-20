@@ -12,7 +12,24 @@ const sourceNames = { resident: '居民订单', merchant: '不差钱商人', car
 const timingNames = { observed: '会话实测', server: '服务器完成时刻', 'effects-estimate': '加成公式估算', 'config-estimate': '配置耗时估算' };
 const unique = values => [...new Set(values)];
 
-function dependencyItems(orders, recipes) {
+function describeProductionBlocks(blocks, name) {
+  const labels = {
+    '所需工厂等级未达到或已禁用': '工厂等级不足或已停用',
+    '订单已超过硬截止时间': '订单已过期',
+    '单个订单齐套数量超过该产物可达仓存上限': '仓库放不下这项需求的全部材料',
+    '需保留的订单产物总量超过可达仓存上限': '仓库放不下所有订单要预留的材料',
+    '外部原料不足，快照中没有确定到货': '原料不足，到货时间未知',
+  };
+  const groups = new Map();
+  for (const block of blocks) {
+    const label = labels[block.reason] ?? block.reason;
+    if (!groups.has(label)) groups.set(label, new Set());
+    if (block.itemId) groups.get(label).add(name(block.itemId));
+  }
+  return [...groups].map(([label, items]) => items.size ? label + '（' + [...items].join('、') + '）' : label).join('；');
+}
+
+function dependencyItems(orders, recipes, products = []) {
   const byItem = new Map(recipes.map(recipe => [recipe.productId, recipe]));
   const found = new Set();
   const visit = id => {
@@ -21,7 +38,15 @@ function dependencyItems(orders, recipes) {
     for (const input of byItem.get(id)?.costs ?? []) visit(input.id);
   };
   for (const order of orders) for (const item of order.requirements) visit(item.id);
+  for (const id of products) visit(id);
   return found;
+}
+
+export function materialTreeRecipes(orders, recipes, products, name) {
+  const materials = dependencyItems(orders, recipes, products);
+  return recipes.filter(recipe => materials.has(recipe.productId) && recipe.output > 0 && recipe.costs?.length)
+    .map(recipe => ({ productId: recipe.productId, output: recipe.output,
+      inputs: recipe.costs.map(item => ({ ...item, name: name(item.id) })) }));
 }
 
 /** Convert a complete read into a fixed scheduling model without changing it. */
@@ -201,6 +226,7 @@ export function planProduction(snapshot, config, settings, options = {}) {
     objectiveUpperBound: refreshUncertain.size ? null : result.objectiveUpperBound,
     completionAt: result.upperBound === null || refreshUncertain.size || allSkipped ? null : snapshot.serverNow + result.upperBound,
     missingReads: model.input.missingReads,
+    recipes: materialTreeRecipes(model.orderRows, snapshot.recipes, timeline.map(job => job.itemId), name),
     priorityPolicy: '在原料、设备和截止约束内，按用户配置逐级最小化齐套时间，同级优化共同工期，独立生产位并行安排',
     priorityBounds: (result.priorityBounds ?? []).map(bound => ({ ...bound,
       label: '第' + (bound.priority + 1) + '级 · ' + (model.priorityLabels.get(bound.priority) || '需求备料'),
@@ -227,10 +253,8 @@ export function planProduction(snapshot, config, settings, options = {}) {
       skipped: model.skippedOrders.has(order.id),
       statusLabel: model.skippedOrders.has(order.id) ? '已跳过排产'
         : completions.has(order.id) && !refreshUncertain.has(order.id) ? '联合方案已齐套' : '待确认',
-      reason: model.skippedOrders.has(order.id)
-        ? '已跳过排产，' + unique(model.skippedOrders.get(order.id).map(block => name(block.itemId) + ' · ' + block.reason)).join('，')
-        : refreshUncertain.has(order.id) ? '预计完成越过订单刷新边界，需求待重新确认'
-        : unique((blocks.get(order.id) ?? []).map(block => (block.itemId ? name(block.itemId) + ' · ' : '') + block.reason)).join('，'),
+      reason: refreshUncertain.has(order.id) ? '备齐前订单会刷新，请在刷新后重新生成计划'
+        : describeProductionBlocks(model.skippedOrders.get(order.id) ?? blocks.get(order.id) ?? [], name),
     })),
     timeline,
   };

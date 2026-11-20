@@ -203,6 +203,43 @@ html:has(.world-map-detail:modal) { overflow:hidden }
 .world-fuel-summary strong { margin-left:6px; font-weight:500; font-variant-numeric:tabular-nums }
 .world-journey { font-variant-numeric:tabular-nums }
 /* ---- 建筑一览 ---- */
+#production-plan-result:not(:empty) { display:grid; gap:12px; min-width:0 }
+.production-plan-summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 12px; margin:0; padding:10px 14px; border-inline-start:3px solid var(--primary); background:var(--muted); border-radius:0 6px 6px 0; font-size:13px }
+.production-plan-summary strong { font-size:18px; font-weight:600; font-variant-numeric:tabular-nums }
+#production-plan-result > details { border-top:1px solid var(--border); padding-top:8px }
+#production-plan-result > details > summary { font-size:13px; font-weight:500 }
+#production-plan-result > details[open] > summary { margin-bottom:8px }
+:is(#world-factories,#world-orders,#production-plan-result) [data-slot=table-container] { border:1px solid var(--border); border-radius:8px }
+:is(#world-factories,#world-orders,#production-plan-result) thead { background:var(--muted); font-size:12px }
+.plan-demand-table table { table-layout:fixed }
+.plan-demand-table th:first-child { width:20% }
+.plan-demand-table th:last-child { width:10rem }
+.plan-demand-table td { overflow-wrap:anywhere }
+.plan-demand-materials { font-size:13px; line-height:1.65 }
+.plan-demand-eta { white-space:nowrap; font-variant-numeric:tabular-nums }
+.plan-demand-reason { margin:2px 0 0; font-size:12px; color:var(--muted-foreground) }
+.plan-material-roots,.plan-material-branches { list-style:none; margin:0; padding:0 }
+.plan-material-roots { display:flex; flex-wrap:wrap; align-items:flex-start; gap:2px 10px; min-width:0; max-width:100%; font-size:13px; font-weight:400; text-align:start }
+.plan-material-roots li { min-width:0; max-width:100% }
+.plan-material-label { display:inline-flex; width:fit-content; max-width:100%; align-items:center; gap:4px; min-height:24px; padding:1px 4px; font-size:13px; overflow-wrap:anywhere }
+summary.plan-material-label { font-weight:500 }
+.plan-material-roots details[open] > summary,.plan-material-roots summary:hover { background:var(--muted) }
+summary.plan-material-label::after { width:12px; height:12px }
+.plan-material-branches { margin-left:10px }
+.plan-material-branches > li { position:relative; padding:5px 0 0 12px }
+.plan-material-branches > li::before,.plan-material-branches > li::after { content:""; position:absolute; left:0; border-color:var(--border); border-style:solid }
+.plan-material-branches > li::before { top:0; bottom:0; border-left-width:1px }
+.plan-material-branches > li:last-child::before { bottom:auto; height:18px }
+.plan-material-branches > li::after { top:18px; width:12px; border-top-width:1px }
+@container main (max-width:600px) {
+  .plan-demand-table table,.plan-demand-table tbody { display:block }
+  .plan-demand-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%) }
+  .plan-demand-table tbody tr { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:2px 8px; padding:6px 10px }
+  .plan-demand-table td { display:block; min-width:0 }
+  .plan-demand-table td:nth-child(2) { grid-column:1 / -1; grid-row:2 }
+  .plan-demand-table td:last-child { grid-column:2; grid-row:1; font-size:12px }
+  .plan-demand-eta::before { content:"预计 "; color:var(--muted-foreground) }
+}
 #world-view:empty,#world-factories:empty,.world-orders-panel:has(#world-orders:empty) { display:none }
 #world-factories { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:12px }
 #world-factories h2 { margin:0; font:inherit }
@@ -218,9 +255,10 @@ html:has(.world-map-detail:modal) { overflow:hidden }
 .factory-queue { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,145px),1fr)); gap:8px }
 .factory-planned-section { padding-block-start:10px; border-block-start:1px solid var(--border) }
 .factory-planned-section p,.factory-planned-list { margin:0; font-size:12px }
-.factory-planned-list { list-style:decimal; padding-inline-start:22px; max-width:44ch }
-.factory-planned-list li::marker { color:var(--muted-foreground); font-variant-numeric:tabular-nums }
-.factory-planned-line { display:flex; justify-content:space-between; align-items:baseline; gap:2px 12px; flex-wrap:wrap; padding:3px 0; font-variant-numeric:tabular-nums }
+.factory-planned-caption { margin-inline-start:8px; font-weight:400; font-size:12px }
+.factory-planned-list { display:flex; flex-wrap:wrap; gap:5px 8px; list-style:none; padding:0 }
+.factory-planned-group { display:flex; flex-wrap:wrap; max-width:100%; align-items:baseline; gap:2px 8px; padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-variant-numeric:tabular-nums }
+.factory-planned-time { white-space:nowrap; color:var(--muted-foreground) }
 .factory-slot { display:grid; align-content:start; gap:8px; min-width:0; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--card); font-size:12px }
 .factory-slot-header,.factory-product,.factory-finish { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px }
 .factory-slot-header { justify-content:space-between; font-variant-numeric:tabular-nums }
