@@ -480,7 +480,7 @@ try {
     const editor = source.slice(source.indexOf('function configMultiselect('), source.indexOf('function configCropEditor('));
     const render = newStateFunction('spec', 'draft', 'catalog', 'el', 'clear', 'configButton', `
       const configEditor = { data: { catalog } };
-      const configPlacePanel = () => {};
+      const configOpenSearchPanel = () => {};
       const configGet = key => key.split('.').reduce((value, part) => value[part], draft);
       const configSet = (key, value) => { const [group, field] = key.split('.'); draft[group][field] = value; };
       ${editor}

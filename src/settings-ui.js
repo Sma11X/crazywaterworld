@@ -24,6 +24,11 @@ const treasureMatchOptions = [['all', '全部命中'], ['any', '任一命中'], 
 const treasureMinHitsHelp = '按同一艘货轮命中的勾选项计数，每项最多计一次。勾选项少于门槛时，没有货轮能通过；留空表示不筛选奖励。';
 const mediumFallbackVisible = d => d.treasure.fallbackEnabled && d.treasure.fallbackQualities.includes('PURPLE');
 const smallFallbackVisible = d => d.treasure.fallbackEnabled && d.treasure.fallbackQualities.includes('BLUE');
+function configOpenSearchPanel(root, panel, search) {
+  configPlacePanel(root, panel);
+  // 触屏先浏览列表，点搜索框时再唤起输入法。
+  if (root.open && !window.matchMedia('(any-pointer: coarse)').matches) search.focus({ preventScroll: true });
+}
 function configPlacePanel(root, panel) {
   if (!root.open || !panel || !root.isConnected) return;
   const summary = root.querySelector('summary');
@@ -1549,7 +1554,7 @@ function configPlayerPicker(spec, id) {
   }
   search.oninput = paintList;
   details.ontoggle = () => {
-    if (details.open) { paintList(); configPlacePanel(details, panel); if (!configEditor.playerData) void configRefreshPlayers(); search.focus({ preventScroll: true }); }
+    if (details.open) { paintList(); configOpenSearchPanel(details, panel, search); if (!configEditor.playerData) void configRefreshPlayers(); }
     else details.classList.remove('open-up');
   };
   details.onkeydown = event => { if (event.key === 'Escape') { details.open = false; summary.focus(); event.stopPropagation(); } };
@@ -1728,7 +1733,7 @@ function configMultiselect(spec, id, options = {}) {
   }
   search.oninput = () => { limit = 120; paintList(); };
   root.ontoggle = () => {
-    if (root.open) { paintList(); configPlacePanel(root, panel); search.focus({ preventScroll: true }); }
+    if (root.open) { paintList(); configOpenSearchPanel(root, panel, search); }
     else root.classList.remove('open-up');
   };
   root.onkeydown = event => { if (event.key === 'Escape') { root.open = false; summary.focus(); event.stopPropagation(); } };

@@ -881,7 +881,7 @@ await test('攻守目标控件独立显示、校验和自动保存，刷新及�
     querySelectorAll() { return []; }, focus() {}, scrollIntoView() {},
   });
   const clear = element => { element.childNodes = []; return element; };
-  const renderer = newStateFunction('configEditor', 'configSet', 'el', 'clear', 'makeHelpTip', 'configPlacePanel', `
+  const renderer = newStateFunction('configEditor', 'configSet', 'el', 'clear', 'makeHelpTip', 'configOpenSearchPanel', `
     const configGet = key => key.split('.').reduce((value, part) => value[part], configEditor.draft);
     ${section('function configUpdateVisibility(', 'function configRender(')}
     ${section('function configRenderField(', 'function configRenderUsage(')}
