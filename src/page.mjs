@@ -1719,7 +1719,8 @@ function refreshManualWorld(force = false) {
   const account = current;
   const available = account && !snapshot.paused && !disconnected.has(account);
   if (displayedWorldAccount !== account || !available) {
-    $('inventory-status').textContent='正在读取库存';
+    $('inventory-status').textContent = available ? '正在读取库存' : !account ? '请先选择账号'
+      : snapshot.paused ? '账号已暂停' : '账号已断开连接';
     displayedWorldAccount = account;
     resetInventory();
     worldVersion++;

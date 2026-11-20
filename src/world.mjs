@@ -50,6 +50,38 @@ function rowsOf(config, name) {
   return config?.tables?.[name]?.data ?? [];
 }
 
+export function inventoryStockRows(survey, config) {
+  const stock = new Map(survey.stock);
+  const categories = new Map(rowsOf(config, 'ResourceCfg').map(row => [row.id, '基础资源']));
+  for (const row of rowsOf(config, 'ItemCfg')) categories.set(row.id, row.type);
+  const caps = new Map();
+  if (Number.isSafeInteger(survey.stockCap) && survey.stockCap > 0) {
+    const availableProducts = new Set();
+    const recordProduct = (id, cap, unlocked) => {
+      caps.set(id, cap);
+      if (unlocked) {
+        availableProducts.add(id);
+        // A complete bag omits depleted items. Never infer zero from a failed read.
+        if (survey.stockKnown && !stock.has(id)) stock.set(id, 0);
+      }
+    };
+    for (const recipe of rowsOf(config, 'BuildingProduceCfg')) {
+      const unlocked = survey.factories.some(b => b.type === recipe.buildType && b.level > 0 && b.level >= recipe.unlockLevel)
+        && factoryRecipeAvailability(recipe, survey.festivals, survey.serverNow).allowed;
+      recordProduct(recipe.itemId, survey.stockCap, unlocked);
+    }
+    const hasFarm = survey.buildings.some(b => b.type === '农田' && b.level > 0);
+    for (const crop of rowsOf(config, 'FarmlandPlantCfg')) {
+      const seed = crop.material?.[0];
+      recordProduct(crop.id, survey.stockCap * 5, hasFarm && (availableProducts.has(seed) || stock.get(seed) > 0));
+    }
+  }
+  return Array.from(stock, ([id, num]) => ({
+    id, num, category: categories.get(id) || '其他', ...(caps.has(id) ? { cap: caps.get(id) } : {}),
+  })).filter(row => row.num > 0 || (row.cap && row.num === 0 && survey.stockKnown))
+    .sort((a, b) => b.num - a.num);
+}
+
 // 这些常量散在几张 param 表里（人口/存量在 GameParamCfg，制造位在 BuildingProduceParamCfg），
 // 名字不重复，所以统一按名字查。
 function paramOf(config, name) {
@@ -359,6 +391,7 @@ export async function surveyWorld(client, protocol, { config = null, player = nu
   const resFieldInfo = resFields?.info ?? null;
   const vip = rowsOf(config, 'VipLevelCfg').find(row => row.level === player?.vip?.vipLevel);
   const stockBonus = Number(vip?.effects?.find(([effect]) => effect === '加工品存量上限')?.[1] ?? 0);
+  const baseStockCap = paramOf(config, STOCK_PARAM);
 
   return {
     now: Math.floor(Date.now() / 1000),
@@ -390,7 +423,7 @@ export async function surveyWorld(client, protocol, { config = null, player = nu
     fishingLevel: water.fishingLevel ?? null,
     salvageLevel: water.salvageLevel ?? null,
     divingLevel: water.divingLevel ?? null,
-    stockCap: paramOf(config, STOCK_PARAM) + stockBonus,
+    stockCap: baseStockCap > 0 ? baseStockCap + stockBonus : 0,
     factorySlots: slots,
     productionTiming: { monthCards, effects, observedDurations: observedProductionDurations(client) },
     resFields: resFieldInfo ? normalize(resFieldInfo) : null,

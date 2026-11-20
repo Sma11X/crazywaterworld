@@ -393,7 +393,7 @@ function Switch({
 }
 
 // src/ui/pages.tsx
-import { MessageCircle, Music2, Plus, QrCode, Smartphone, X as X2 } from "lucide-react";
+import { Backpack, Gem, Gift, LayoutGrid, MessageCircle, Music2, Plus, QrCode, Shirt, Smartphone, Sprout, X as X2 } from "lucide-react";
 function Panel({ title, help, titleAfter, children }) {
   return /* @__PURE__ */ React11.createElement(Card, null, /* @__PURE__ */ React11.createElement(CardHeader, null, /* @__PURE__ */ React11.createElement(CardTitle, { className: "title-with-help" }, title, help && /* @__PURE__ */ React11.createElement(HelpTip, { title }, help)), titleAfter && /* @__PURE__ */ React11.createElement(CardAction, { className: "row-span-1 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-start-2 max-md:justify-self-start" }, titleAfter)), /* @__PURE__ */ React11.createElement(CardContent, null, children));
 }
@@ -410,7 +410,30 @@ function manualPage() {
   return renderToStaticMarkup2(/* @__PURE__ */ React11.createElement("div", { className: "grid gap-3" }, /* @__PURE__ */ React11.createElement("div", { id: "world-view", className: "dim", role: "status", "aria-label": "\u6D77\u9762" }), /* @__PURE__ */ React11.createElement("div", { id: "world-factories" }), /* @__PURE__ */ React11.createElement("div", { className: "world-orders-panel" }, /* @__PURE__ */ React11.createElement(Panel, { title: "\u5C45\u6C11\u8BA2\u5355", help: "\u6750\u6599\u5DF2\u9F50\u65F6\u53EF\u624B\u52A8\u63D0\u4EA4\uFF0C\u7ED3\u679C\u89C1\u8FD0\u884C\u65E5\u5FD7\u3002\u300C\u9700\u300D\u4E3A\u8BA2\u5355\u9700\u6C42\uFF0C\u300C\u7F3A\u300D\u4E3A\u4ECD\u6B20\u7684\u6570\u91CF\uFF0C\u300C\u7559\u300D\u4E3A\u5E93\u5B58\u4E2D\u5DF2\u9884\u7559\u6216\u88AB\u672C\u8F6E\u5176\u4ED6\u64CD\u4F5C\u5360\u7528\u7684\u6570\u91CF\u3002" }, /* @__PURE__ */ React11.createElement("div", { id: "world-orders" }))), /* @__PURE__ */ React11.createElement(Panel, { title: "\u667A\u80FD\u6392\u4EA7\u89C4\u5212", help: "\u6309\u9700\u6C42\u4F18\u5148\u7EA7\u4F30\u7B97\u5907\u9F50\u65F6\u95F4\u3002\u70B9\u51FB\u5E26\u7BAD\u5934\u7684\u4EA7\u7269\u53EF\u9010\u5C42\u67E5\u770B\u539F\u6599\uFF0C\u6570\u91CF\u6309\u4ECE\u5934\u5236\u4F5C\u6240\u9700\u7684\u6574\u6279\u7528\u91CF\u8BA1\u7B97\u3002\u8BA1\u5212\u4EC5\u4F9B\u67E5\u770B\u3002" }, /* @__PURE__ */ React11.createElement("div", { className: "bar" }, /* @__PURE__ */ React11.createElement(Button, { id: "production-plan-refresh", variant: "outline" }, "\u751F\u6210\u8BA1\u5212"), /* @__PURE__ */ React11.createElement("span", { id: "production-plan-status", className: "dim", role: "status" }, "\u8FDE\u63A5\u8D26\u53F7\u540E\u53EF\u751F\u6210\u8BA1\u5212")), /* @__PURE__ */ React11.createElement("div", { id: "production-plan-result", "aria-live": "polite" }))));
 }
 function inventoryPage() {
-  return renderToStaticMarkup2(/* @__PURE__ */ React11.createElement("div", { className: "grid gap-3" }, /* @__PURE__ */ React11.createElement(Panel, { title: "\u4ED3\u5E93" }, /* @__PURE__ */ React11.createElement("div", { className: "bar" }, /* @__PURE__ */ React11.createElement(Button, { id: "inventory-refresh", variant: "outline" }, "\u5237\u65B0\u5E93\u5B58"), /* @__PURE__ */ React11.createElement("span", { id: "inventory-status", className: "dim", role: "status" }, "\u5C1A\u672A\u8BFB\u53D6")), /* @__PURE__ */ React11.createElement("div", { className: "bar inventory-search" }, /* @__PURE__ */ React11.createElement("label", { htmlFor: "inventory-query" }, "\u8D44\u6E90\u540D\u79F0"), /* @__PURE__ */ React11.createElement(Input, { id: "inventory-query", type: "search", placeholder: "\u641C\u7D22\u8D44\u6E90\u540D\u79F0" }), /* @__PURE__ */ React11.createElement("span", { id: "inventory-match-count", className: "dim" })), /* @__PURE__ */ React11.createElement("details", { id: "world-stock-panel" }, /* @__PURE__ */ React11.createElement("summary", null, "\u5C55\u5F00\u5206\u7C7B\u5E93\u5B58"), /* @__PURE__ */ React11.createElement("div", { id: "world-stock" })))));
+  const families = [
+    ["production", "\u751F\u4EA7\u7269\u8D44", Sprout],
+    ["growth", "\u517B\u6210\u6750\u6599", Gem],
+    ["supplies", "\u793C\u5305\u8865\u7ED9", Gift],
+    ["appearance", "\u5916\u89C2\u88C5\u626E", Shirt],
+    ["general", "\u901A\u7528\u9053\u5177", Backpack],
+    ["all", "\u5168\u90E8\u7269\u54C1", LayoutGrid]
+  ];
+  return renderToStaticMarkup2(/* @__PURE__ */ React11.createElement(Card, { className: "gap-3 py-4 max-md:gap-3" }, /* @__PURE__ */ React11.createElement(CardHeader, null, /* @__PURE__ */ React11.createElement(CardTitle, null, "\u4ED3\u5E93"), /* @__PURE__ */ React11.createElement(CardAction, null, /* @__PURE__ */ React11.createElement(Button, { id: "inventory-refresh", variant: "outline", size: "sm" }, "\u5237\u65B0\u5E93\u5B58")), /* @__PURE__ */ React11.createElement("span", { id: "inventory-status", className: "dim", role: "status" }, "\u5C1A\u672A\u8BFB\u53D6")), /* @__PURE__ */ React11.createElement(CardContent, { className: "inventory-browser" }, /* @__PURE__ */ React11.createElement("div", { id: "inventory-tabs", role: "tablist", "aria-label": "\u4ED3\u5E93\u5206\u7C7B" }, families.map(([key, label, Icon]) => /* @__PURE__ */ React11.createElement(
+    "button",
+    {
+      key,
+      id: "inventory-tab-" + key,
+      type: "button",
+      role: "tab",
+      "data-family": key,
+      "aria-selected": key === "production",
+      "aria-controls": "inventory-panel",
+      tabIndex: key === "production" ? 0 : -1
+    },
+    /* @__PURE__ */ React11.createElement(Icon, { "aria-hidden": "true" }),
+    /* @__PURE__ */ React11.createElement("span", null, label),
+    /* @__PURE__ */ React11.createElement("small", { "data-stock-count": "" })
+  ))), /* @__PURE__ */ React11.createElement("section", { id: "inventory-panel", role: "tabpanel", "aria-labelledby": "inventory-tab-production" }, /* @__PURE__ */ React11.createElement("div", { className: "inventory-toolbar" }, /* @__PURE__ */ React11.createElement(Input, { id: "inventory-query", type: "search", "aria-label": "\u641C\u7D22\u751F\u4EA7\u7269\u8D44", placeholder: "\u641C\u7D22\u751F\u4EA7\u7269\u8D44" }), /* @__PURE__ */ React11.createElement("select", { id: "inventory-category", "aria-label": "\u7269\u54C1\u7EC6\u7C7B", hidden: true }, /* @__PURE__ */ React11.createElement("option", { value: "" }, "\u5168\u90E8\u7EC6\u7C7B")), /* @__PURE__ */ React11.createElement("select", { id: "inventory-sort", "aria-label": "\u5E93\u5B58\u6392\u5E8F" }, /* @__PURE__ */ React11.createElement("option", { value: "scarcity" }, "\u7D27\u7F3A\u4F18\u5148"), /* @__PURE__ */ React11.createElement("option", { value: "quantity" }, "\u6570\u91CF\u4ECE\u591A\u5230\u5C11"), /* @__PURE__ */ React11.createElement("option", { value: "name" }, "\u540D\u79F0\u62FC\u97F3"))), /* @__PURE__ */ React11.createElement("div", { id: "inventory-match-count", className: "dim", role: "status" }), /* @__PURE__ */ React11.createElement("div", { id: "world-stock", role: "region", "aria-label": "\u5E93\u5B58\u7269\u54C1", tabIndex: 0 })))));
 }
 function heroesPage() {
   return renderToStaticMarkup2(/* @__PURE__ */ React11.createElement("div", { className: "grid gap-3" }, /* @__PURE__ */ React11.createElement(Panel, { title: "\u88C5\u5907\u5236\u9020" }, /* @__PURE__ */ React11.createElement("div", { className: "bar" }, /* @__PURE__ */ React11.createElement(Button, { id: "crafting-refresh", variant: "outline" }, "\u5237\u65B0\u88C5\u5907\u5382")), /* @__PURE__ */ React11.createElement("div", { id: "crafting-view", className: "progression-view", "aria-live": "polite" }))));

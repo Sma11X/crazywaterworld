@@ -7,7 +7,7 @@ import { Switch } from "./switch"
 import { HelpTip } from "./help-tip"
 import { Badge } from "./badge"
 import { DialogFooter, DialogHeader, DialogTitle } from "./dialog"
-import { MessageCircle, Music2, Plus, QrCode, Smartphone, X } from "lucide-react"
+import { Backpack, Gem, Gift, LayoutGrid, MessageCircle, Music2, Plus, QrCode, Shirt, Smartphone, Sprout, X } from "lucide-react"
 
 function Panel({title, help, titleAfter, children}: {title: string; help?: string; titleAfter?: React.ReactNode; children: React.ReactNode}) {
   return <Card><CardHeader><CardTitle className="title-with-help">{title}{help && <HelpTip title={title}>{help}</HelpTip>}</CardTitle>{titleAfter && <CardAction className="row-span-1 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-start-2 max-md:justify-self-start">{titleAfter}</CardAction>}</CardHeader><CardContent>{children}</CardContent></Card>
@@ -192,11 +192,33 @@ export function manualPage() {
 }
 
 export function inventoryPage() {
-  return renderToStaticMarkup(<div className="grid gap-3"><Panel title="仓库">
-    <div className="bar"><Button id="inventory-refresh" variant="outline">刷新库存</Button><span id="inventory-status" className="dim" role="status">尚未读取</span></div>
-    <div className="bar inventory-search"><label htmlFor="inventory-query">资源名称</label><Input id="inventory-query" type="search" placeholder="搜索资源名称" /><span id="inventory-match-count" className="dim" /></div>
-    <details id="world-stock-panel"><summary>展开分类库存</summary><div id="world-stock" /></details>
-  </Panel></div>)
+  const families = [
+    ["production", "生产物资", Sprout], ["growth", "养成材料", Gem], ["supplies", "礼包补给", Gift],
+    ["appearance", "外观装扮", Shirt], ["general", "通用道具", Backpack], ["all", "全部物品", LayoutGrid],
+  ] as const
+  return renderToStaticMarkup(<Card className="gap-3 py-4 max-md:gap-3">
+    <CardHeader><CardTitle>仓库</CardTitle><CardAction><Button id="inventory-refresh" variant="outline" size="sm">刷新库存</Button></CardAction>
+      <span id="inventory-status" className="dim" role="status">尚未读取</span>
+    </CardHeader>
+    <CardContent className="inventory-browser">
+      <div id="inventory-tabs" role="tablist" aria-label="仓库分类">
+        {families.map(([key, label, Icon]) => <button key={key} id={'inventory-tab-' + key} type="button" role="tab"
+          data-family={key} aria-selected={key === 'production'} aria-controls="inventory-panel" tabIndex={key === 'production' ? 0 : -1}>
+          <Icon aria-hidden="true" /><span>{label}</span><small data-stock-count="" /></button>)}
+      </div>
+      <section id="inventory-panel" role="tabpanel" aria-labelledby="inventory-tab-production">
+        <div className="inventory-toolbar">
+          <Input id="inventory-query" type="search" aria-label="搜索生产物资" placeholder="搜索生产物资" />
+          <select id="inventory-category" aria-label="物品细类" hidden><option value="">全部细类</option></select>
+          <select id="inventory-sort" aria-label="库存排序">
+            <option value="scarcity">紧缺优先</option><option value="quantity">数量从多到少</option><option value="name">名称拼音</option>
+          </select>
+        </div>
+        <div id="inventory-match-count" className="dim" role="status" />
+        <div id="world-stock" role="region" aria-label="库存物品" tabIndex={0} />
+      </section>
+    </CardContent>
+  </Card>)
 }
 
 export function heroesPage() {

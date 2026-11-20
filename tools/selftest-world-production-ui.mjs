@@ -1,6 +1,7 @@
 import { newStateFunction } from './fixtures/console-state.mjs';
 import assert from 'node:assert/strict';
 import { PAGE } from '../src/page.mjs';
+import { inventoryStockRows } from '../src/world.mjs';
 
 const script = [...PAGE.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
   .map(match => match[1]).find(value => value.includes('function renderWorld('));
@@ -440,6 +441,27 @@ test('农田施工使用建造倒计时，重新读取后清理旧倒计时', ()
   assert.equal(env.document.querySelectorAll('[data-production-finish-at]').length, 0);
   assert.match(env.node('world-factories').textContent, /空闲/);
   assert.doesNotMatch(env.node('world-factories').textContent, /待竣工/);
+});
+
+test('仓库仅给工厂产物和作物附上限，完整库存才补已解锁的零库存', () => {
+  const config = { tables: {
+    BuildingProduceCfg: { data: [
+      { buildType: '种子厂', itemId: '小麦种子', unlockLevel: 1 },
+      { buildType: '种子厂', itemId: '南瓜种子', unlockLevel: 3 },
+    ] },
+    FarmlandPlantCfg: { data: [{ id: '小麦', material: ['小麦种子', 1] }] },
+  } };
+  const survey = { stock: new Map([['木材', 1]]), stockCap: 55, stockKnown: true,
+    factories: [{ type: '种子厂', level: 1 }], buildings: [{ type: '农田', level: 1 }] };
+  const rows = inventoryStockRows(survey, config);
+  assert.deepEqual(rows.map(row => [row.id, row.num, row.cap]), [
+    ['木材', 1, undefined], ['小麦种子', 0, 55], ['小麦', 0, 275],
+  ]);
+  assert.equal(survey.stock.size, 1);
+  assert.deepEqual(inventoryStockRows({ ...survey, stockKnown: false }, config), [rows[0]]);
+  survey.stock.set('小麦种子', 60);
+  assert.equal(inventoryStockRows(survey, config)[0].num, 60);
+  assert(inventoryStockRows({ ...survey, stockCap: 0 }, config).every(row => !('cap' in row)));
 });
 
 console.log('海面生产界面测试 ' + passed + '/' + passed + ' 通过');

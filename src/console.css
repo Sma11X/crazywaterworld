@@ -289,11 +289,50 @@ summary.plan-material-label::after { width:12px; height:12px }
 .stock-fold-hint { margin-inline-start:12px }
 .stock-panel[open] .stock-fold-hint { display:none }
 .stock-panel>[data-slot=card-content] { margin-top:12px }
-.inventory-search { margin-block:12px }
-.inventory-search label { color:var(--muted-foreground); font-weight:400 }
-.inventory-search input { width:240px }
-.inventory-category .icons { margin-bottom:12px }
-#world-stock-panel>summary { width:fit-content }
+.inventory-browser { display:grid; grid-template-columns:154px minmax(0,1fr); align-items:start; gap:16px }
+#inventory-tabs { display:grid; gap:3px; padding:4px; background:var(--muted); border-radius:8px }
+#inventory-tabs button { display:flex; align-items:center; gap:8px; min-width:0; padding:9px 10px; border-radius:5px; font-weight:500; color:var(--muted-foreground); cursor:pointer }
+#inventory-tabs button:hover { color:var(--foreground); background:var(--accent) }
+#inventory-tabs button[aria-selected=true] { color:var(--primary-foreground); background:var(--primary) }
+#inventory-tabs svg { width:16px; height:16px; flex:none }
+#inventory-tabs small { margin-inline-start:auto; font-size:11px; font-variant-numeric:tabular-nums }
+#inventory-panel { min-width:0 }
+.inventory-toolbar { display:flex; align-items:center; gap:8px; padding-bottom:10px; border-bottom:1px solid var(--border) }
+.inventory-toolbar input { flex:1; min-width:0; max-width:360px; margin-right:auto }
+#inventory-status,#inventory-match-count { font-size:12px; font-variant-numeric:tabular-nums }
+#inventory-match-count:not(:empty) { margin-top:6px }
+#world-stock { margin-top:8px; max-height:min(54dvh,26rem); overflow:auto; scrollbar-width:thin }
+.inventory-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,185px),1fr)); gap:6px; margin:0; list-style:none; padding:0 }
+.inventory-item { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; align-content:start; gap:1px 8px; padding:8px 10px; min-width:0; background:color-mix(in oklab,var(--muted) 60%,var(--card)); border-radius:5px; font-size:13px }
+.inventory-item > .ico { grid-row:span 2 }
+.inventory-name { overflow-wrap:anywhere; line-height:1.35; font-weight:500 }
+.inventory-values { grid-column:2; display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:0 4px }
+.inventory-kind { color:var(--muted-foreground); font-size:11px; overflow-wrap:anywhere }
+.inventory-amount { font-variant-numeric:tabular-nums; font-size:12px; overflow-wrap:anywhere }
+.inventory-item[data-level=low] { --stock-tone:var(--destructive) }
+.inventory-item[data-level=mid] { --stock-tone:var(--warning) }
+.inventory-item[data-level=high] { --stock-tone:var(--success) }
+.inventory-gauge { grid-column:1 / -1; display:flex; align-items:center; gap:8px; margin-top:3px; color:var(--stock-tone) }
+.inventory-track { flex:1; height:4px; border-radius:4px; overflow:hidden; background:var(--border) }
+.inventory-track > span { display:block; height:100%; background:currentColor }
+.inventory-level { font-size:11px; line-height:1.25 }
+.inventory-empty { padding-block:12px }
+@media (max-width:760px) {
+  .inventory-browser { grid-template-columns:minmax(0,1fr); gap:10px }
+  #inventory-tabs { grid-template-columns:repeat(3,minmax(0,1fr)) }
+  #inventory-tabs button { justify-content:center; gap:4px; padding:7px 2px; font-size:12px }
+  #inventory-tabs small { margin-inline-start:0; font-size:10px }
+  #inventory-tabs svg { display:none }
+}
+@container main (max-width:500px) {
+  .inventory-toolbar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px }
+  .inventory-toolbar input { grid-column:1 / -1; width:100%; max-width:none }
+  .inventory-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px }
+  .inventory-item { grid-template-columns:20px minmax(0,1fr); padding:6px; column-gap:5px }
+  .inventory-item > .ico { max-width:20px; max-height:20px; grid-row:1 }
+  .inventory-values { grid-column:1 / -1 }
+  #world-stock { max-height:min(45dvh,360px) }
+}
 /* ---- 礼包码 ---- */
 .gift-library-toolbar { flex-wrap:wrap }
 .gift-library-toolbar label { display:flex; align-items:center; gap:6px; font-weight:400 }
