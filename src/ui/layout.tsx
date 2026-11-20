@@ -179,23 +179,23 @@ export function templates() {
       </Button>
     </template>
     <template id="ui-account-card">
-      <Card className="account-card">
-        <CardHeader>
+      <Card className="account-card gap-3 py-4 max-md:gap-3">
+        <CardHeader className="grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0 px-4">
           <div className="account-card-heading">
-            <div className="account-card-badges"><Badge data-account-field="current" variant="secondary" hidden>当前</Badge></div>
-            <details className="account-card-menu">
-              <summary aria-label="更多账号操作"><MoreHorizontal aria-hidden="true" /></summary>
-              <div className="account-menu-content">
-                <Button type="button" variant="ghost" size="sm" className="w-full justify-start" data-account-action="rename">修改备注</Button>
-                <Button type="button" variant="ghost" size="sm" className="w-full justify-start" data-account-action="export">导出账号</Button>
-                <Button type="button" variant="ghost" size="sm" className="w-full justify-start text-destructive" data-account-action="remove">移除账号</Button>
-              </div>
-            </details>
+            <CardTitle className="leading-normal" data-account-field="title" />
+            <Badge data-account-field="current" variant="secondary" hidden>当前</Badge>
           </div>
-          <CardTitle className="leading-normal" data-account-field="title" />
+          <details className="account-card-menu col-start-2 row-span-2 row-start-1">
+            <summary aria-label="更多账号操作"><MoreHorizontal aria-hidden="true" /></summary>
+            <div className="account-menu-content">
+              <Button type="button" variant="ghost" size="sm" className="h-7 w-full justify-start px-2.5" data-account-action="rename">修改备注</Button>
+              <Button type="button" variant="ghost" size="sm" className="h-7 w-full justify-start px-2.5" data-account-action="export">导出账号</Button>
+              <Button type="button" variant="ghost" size="sm" className="h-7 w-full justify-start px-2.5 text-destructive" data-account-action="remove">移除账号</Button>
+            </div>
+          </details>
           <p className="dim" data-account-field="channel" />
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4">
           <dl className="account-card-data">
             <div><dt>角色</dt><dd data-account-field="role" /></div>
             <div><dt>区服</dt><dd className="account-card-world"><span data-account-field="world" /><Badge data-account-field="status" className="chip rounded-md max-w-full whitespace-normal text-left" variant="outline" /></dd></div>
@@ -203,7 +203,7 @@ export function templates() {
             <div><dt>战力</dt><dd data-account-field="power" /></div>
           </dl>
         </CardContent>
-        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="loop">开始挂机</Button></div></CardFooter>
+        <CardFooter className="account-card-footer items-stretch px-4"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="loop">开始挂机</Button></div></CardFooter>
       </Card>
     </template>
   </>)

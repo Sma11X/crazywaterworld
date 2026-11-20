@@ -1817,6 +1817,20 @@ function table(headers, rows, mobileLayout = headers.length >= 4 ? 'table-stack'
 
 // ---- 账号页 ----------------------------------------------------------------
 ${accountBackupScript}
+document.addEventListener('click', event => {
+  for (const menu of document.querySelectorAll('.account-card-menu[open]')) {
+    if (!menu.contains(event.target)) menu.open = false;
+  }
+}, true);
+$('accounts').addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const menu = event.target.closest('.account-card-menu[open]');
+  if (!menu) return;
+  event.preventDefault();
+  menu.open = false;
+  menu.querySelector('summary').focus();
+});
+
 function accountChannel(source) {
   return { alipay: '支付宝', phone: '益世界 APP', douyin: '抖音小游戏', 'douyin-mitm': '抖音小游戏', mitm: '微信小游戏', wechat: '微信小游戏' }[source] || '已导入账号';
 }

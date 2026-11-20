@@ -383,26 +383,24 @@ summary.plan-material-label::after { width:12px; height:12px }
 .account-page-actions { margin-inline-start:auto; flex-wrap:wrap; justify-content:flex-end }
 .account-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); align-items:start; gap:16px }
 .account-card { min-width:0 }
-.account-card-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:4px }
-.account-card-badges { display:flex; align-items:center; flex-wrap:wrap; gap:6px }
+.account-card-heading { display:flex; align-items:center; flex-wrap:wrap; gap:2px 6px }
 .account-card [data-account-field=title] { line-height:1.5; overflow-wrap:anywhere }
-.account-card-data { display:grid; grid-template-columns:1fr 1fr; gap:16px 24px }
+.account-card-data { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px }
 .account-card-data>div { min-width:0 }
-.account-card-data dt { margin-bottom:4px; font-size:12px }
+.account-card-data dt { margin-bottom:2px; font-size:12px }
 .account-card-data dd { margin:0; overflow-wrap:anywhere; font-size:14px; font-weight:500 }
 .account-card-data>div:nth-child(-n+2) { grid-column:1 / -1 }
 .account-card-world { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px }
 .account-card-world>[data-account-field=world] { min-width:0 }
-.account-card-footer { flex-direction:column; align-items:stretch; gap:16px; margin-top:auto }
+.account-card-footer { flex-direction:column; align-items:stretch; gap:8px; margin-top:auto }
 .account-card-footer [data-account-field=seen] { font-size:12px; overflow-wrap:anywhere }
 .account-card-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:4px }
 .account-card-menu { position:relative }
 .account-card-menu>summary { width:32px; height:32px; justify-content:center }
 .account-card-menu>summary::after { display:none }
 .account-card-menu>summary svg { width:18px; height:18px }
-.account-menu-content { position:absolute; top:calc(100% + 6px); right:0; z-index:10; min-width:160px; display:grid; gap:2px; padding:4px }
+.account-menu-content { position:absolute; top:calc(100% + 2px); right:0; z-index:10; width:max-content; display:grid; padding:3px }
 .account-menu-content>button { width:100%; justify-content:flex-start }
-.account-menu-content>p { width:180px; padding:6px 8px; font-size:12px; line-height:1.5 }
 .account-grid>.account-empty { grid-column:1 / -1 }
 .account-empty { display:grid; justify-items:center; gap:12px; padding:56px 24px; text-align:center }
 #account-add-dialog,#account-info-dialog { width:min(680px,calc(100vw - 32px)); max-width:none; padding:24px }
