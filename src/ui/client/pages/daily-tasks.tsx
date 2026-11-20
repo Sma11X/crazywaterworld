@@ -1,7 +1,24 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useStore } from "zustand";
+import { Badge } from "../../badge";
 import { Button } from "../../button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../table";
 import {
   type DailyTask,
   parseDailyOutcome,
@@ -9,7 +26,6 @@ import {
 } from "../contracts/daily-tasks";
 import { createAccountRequest } from "../lib/api";
 import { type ConsoleState, getConsoleStore } from "../lib/console-store";
-import styles from "./daily-tasks.module.css";
 
 // A submitted action can outlive this view. Wait for it before rereading the same account.
 const pending = new Map<string, Promise<string>>();
@@ -115,70 +131,91 @@ function TaskList({ account }: { account: string }) {
     (t) => t.rewardClaimed || t.progress >= t.targetProgress,
   ).length;
   return (
-    <>
-      <div className="page-heading">
-        <div className={styles.heading}>
+    <Card>
+      <CardHeader>
+        <CardTitle>
           <h2>日常任务</h2>
-          {tasks && (
-            <span>
-              已完成 {completed} / {tasks.length}
-            </span>
-          )}
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            setNotice("");
-            refresh();
-          }}
-        >
-          刷新进度
-        </Button>
-      </div>
-      <p role="status" className={styles.notice}>
-        {notice || (busy ? "正在读取任务进度…" : "")}
-      </p>
-      {error && <p role="alert">{error}</p>}
-      {tasks &&
-        (tasks.length === 0 ? (
-          <p>当前账号暂无日常任务</p>
-        ) : (
-          <ul className={styles.list} aria-label="任务进度" aria-busy={busy}>
-            {tasks.map((task) => (
-              <li key={task.id} className={styles.row}>
-                <div className={styles.task}>
-                  <strong>{task.title}</strong>
-                  <span className={styles.state}>{statusLabel(task)}</span>
-                  {task.detail && <p>{task.detail}</p>}
-                </div>
-                <span className={styles.progress}>
-                  {task.progress} / {task.targetProgress}
-                  <progress
-                    aria-label={`${task.title}进度`}
-                    value={task.progress}
-                    max={task.targetProgress || 1}
-                  />
-                </span>
-                {task.action && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void execute(task)}
-                  >
-                    {task.action.label}
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        ))}
-    </>
+        </CardTitle>
+        {tasks && (
+          <CardDescription>
+            已完成 {completed} / {tasks.length}
+          </CardDescription>
+        )}
+        <CardAction>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setNotice("");
+              refresh();
+            }}
+          >
+            刷新进度
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <p role="status" className="dim mb-2 empty:hidden">
+          {notice || (busy ? "正在读取任务进度…" : "")}
+        </p>
+        {error && <p role="alert">{error}</p>}
+        {tasks?.length === 0 && <p className="dim">当前账号暂无日常任务</p>}
+        {tasks && tasks.length > 0 && (
+          <div className="table-stack">
+            <Table aria-label="日常任务进度" aria-busy={busy}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">任务</TableHead>
+                  <TableHead scope="col">进度</TableHead>
+                  <TableHead scope="col">状态</TableHead>
+                  <TableHead scope="col">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tasks.map((task) => (
+                  <TableRow key={task.id}>
+                    <TableCell>
+                      <span className="font-medium">{task.title}</span>
+                      {task.detail && (
+                        <p className="text-xs text-muted-foreground">
+                          {task.detail}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell
+                      data-label="进度"
+                      className="whitespace-nowrap tabular-nums"
+                    >
+                      {task.progress} / {task.targetProgress}
+                    </TableCell>
+                    <TableCell data-label="状态">
+                      <Badge variant={task.action ? "secondary" : "outline"}>
+                        {statusLabel(task)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell data-label="操作">
+                      {task.action && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void execute(task)}
+                        >
+                          {task.action.label}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
-
 function DailyTasksPage() {
   const store = getConsoleStore();
   const active = useStore(store, (state) => state.view.page === "dailies");
@@ -187,12 +224,14 @@ function DailyTasksPage() {
   if (!active) return null;
   if (hint || !account)
     return (
-      <>
-        <div className="page-heading">
-          <h2>日常任务</h2>
-        </div>
-        <p>{hint}</p>
-      </>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>日常任务</h2>
+          </CardTitle>
+          <CardDescription>{hint}</CardDescription>
+        </CardHeader>
+      </Card>
     );
   return <TaskList key={account} account={account} />;
 }

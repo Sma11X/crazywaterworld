@@ -485,6 +485,16 @@ try {
           tasks: [
             {
               task: {
+                id: 1001,
+                title: "登录游戏",
+                progress: 1,
+                targetProgress: 1,
+              },
+              status: "done",
+              manual: { token: "login", ruby: 0, label: "领取奖励" },
+            },
+            {
+              task: {
                 id: 1004,
                 title: "领取挂机收益",
                 progress: +claimed,
@@ -516,14 +526,23 @@ try {
         .getState()
         .actions.patchStatus("a", { paused: false }),
     );
-    await panel.getByText("已完成 0 / 2").waitFor();
+    await panel.getByText("已完成 1 / 3").waitFor();
+    const table = panel.getByRole("table", { name: "日常任务进度" });
+    const names = table.locator("tbody tr td:first-child > span");
+    const order = ["登录游戏", "领取挂机收益", "折扣商店购买"];
+    assert.deepEqual(await names.allTextContents(), order);
+    await table.getByRole("button", { name: "领取奖励" }).waitFor();
     const paid = panel.getByRole("button", { name: "完成 · 16 钻石" });
     page.once("dialog", (dialog) => dialog.dismiss());
     await paid.click();
     assert.deepEqual(writes, []);
     await panel.getByRole("button", { name: "完成此项" }).click();
-    await panel.getByText("已完成 1 / 2").waitFor();
-    await panel.getByText("已领取", { exact: true }).waitFor();
+    await panel.getByText("已完成 2 / 3").waitFor();
+    await table
+      .getByRole("row", { name: /领取挂机收益/ })
+      .getByText("已领取")
+      .waitFor();
+    assert.deepEqual(await names.allTextContents(), order);
     assert.deepEqual(writes, [{ confirm: true, token: "afk", paid: false }]);
     for (const width of [1440, 360]) {
       await page.setViewportSize({ width, height: 880 });
