@@ -41,7 +41,6 @@ h1 { font-size:16px; font-weight:600; line-height:1.2; letter-spacing:-.01em; wh
 .console-quick-option svg { width:16px; height:16px; flex:none }
 .console-quick-option strong { min-width:0; overflow-wrap:anywhere }
 .console-quick-option span { max-width:42%; margin-inline-start:auto; color:var(--muted-foreground); font-size:12px; text-align:end; overflow-wrap:anywhere }
-.console-quick-highlight { outline:2px solid var(--ring); outline-offset:3px }
 
 #tabs { display:flex; gap:4px; padding-bottom:8px; overflow-x:auto; scrollbar-width:none }
 #tabs::-webkit-scrollbar { display:none }

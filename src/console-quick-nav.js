@@ -124,9 +124,6 @@ function quickContentEntries(nav) {
   return entries;
 }
 
-let quickHighlight;
-let quickHighlightTimer;
-
 function chooseQuickEntry(index) {
   const entry = quickEntries[index];
   if (!entry) return;
@@ -144,16 +141,6 @@ function chooseQuickEntry(index) {
     const location = target.closest('.config-row') || (target.matches(':disabled') ? target.parentElement : target);
     const destination = location.getClientRects().length ? location : document.querySelector('main > section:not(.hidden)');
     if (!destination) return;
-    quickHighlight?.classList.remove('console-quick-highlight');
-    clearTimeout(quickHighlightTimer);
-    quickHighlight = destination;
-    destination.classList.add('console-quick-highlight');
-    quickHighlightTimer = setTimeout(() => destination.classList.remove('console-quick-highlight'), 2200);
-    if (!destination.matches('button,input,select,a[href],[tabindex]')) {
-      destination.tabIndex = -1;
-      destination.addEventListener('blur', () => destination.removeAttribute('tabindex'), { once: true });
-    }
-    destination.focus({ preventScroll: true });
     const header = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 0;
     const toolbar = destination.closest('#config-form') && document.querySelector('.config-toolbar');
     const offset = header + (toolbar && getComputedStyle(toolbar).position === 'sticky' ? toolbar.offsetHeight : 0);

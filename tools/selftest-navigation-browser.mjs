@@ -84,7 +84,14 @@ try {
     await dialog.getByRole('option', { selected: true }).filter({ hasText: '自动激活藏品' }).waitFor();
     await query.press('Enter');
     await config('antique', 'antique');
-    await page.locator('.console-quick-highlight #config-field-antique-activate').waitFor();
+    await page.waitForFunction(() => {
+      const bounds = document.getElementById('config-field-antique-activate').getBoundingClientRect();
+      return bounds.height > 0 && bounds.top >= 0 && bounds.bottom <= innerHeight;
+    });
+    assert(await page.locator('#config-field-antique-activate').evaluate(field => {
+      const row = field.closest('.config-row');
+      return !row.matches(':focus-within') && getComputedStyle(row).outlineStyle === 'none';
+    }), '配置项应滚入视口，不获得焦点或显示外框');
     await page.keyboard.press('Control+k');
     await query.fill('无此功能xyz');
     await dialog.getByRole('status').filter({ hasText: '没有找到匹配的结果' }).waitFor();
@@ -95,6 +102,14 @@ try {
     await dialog.getByRole('option').filter({ hasText: '养成材料' }).click();
     await tab('resources', 'inventory');
     await page.locator('#inventory-tab-growth[aria-selected="true"]').waitFor();
+    await search.click();
+    await query.fill('总览');
+    await dialog.getByRole('option', { selected: true }).click();
+    await tab('overview');
+    assert(await page.locator('#tab-overview').evaluate(async section => {
+      await new Promise(requestAnimationFrame);
+      return !section.matches(':focus-within') && getComputedStyle(section).outlineStyle === 'none';
+    }), '跳回总览后整页不获得焦点或显示外框');
     await search.click();
     await query.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
@@ -205,7 +220,7 @@ try {
     await tab('overview');
     assert.equal(new URL(page.url()).hash, '');
     await context.close();
-    console.log('通过：' + name + ' 页头搜索位置、快捷键、配置项高亮与仓库分类跳转，导航刷新恢复、深链与无效状态回退');
+    console.log('通过：' + name + ' 页头搜索位置、快捷键、配置项滚动定位、总览与仓库分类跳转，导航刷新恢复、深链与无效状态回退');
   }
   assert.deepEqual(errors, []);
   assert.equal(settingsWrites, 0, '导航不保存配置');
