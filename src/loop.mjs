@@ -249,8 +249,15 @@ export async function runLoop(client, protocol, {
     let extraDemand = [];
     let diveCompleted = false;
     const groupEnabled = group => automationTasks.some(task => task.group === group && enabled(task.key));
+    const observeStep = (key, entry) => {
+      const text = entry.reason || entry.error || entry.note || (entry.ok ? '执行成功 · ' + (entry.title || entry.label || '本次动作') : entry.title || entry.label || '已检查');
+      const state = ['unknown', 'pending'].includes(entry.status) ? 'pending' : entry.skipped ? 'waiting' : entry.ok ? 'ok' : 'error';
+      rewards?.observe(key, text, state);
+      rewards?.expect(key, rewards.now() + Math.ceil(getEveryMs() / 1000));
+    };
     const stepLog = phase => entry => {
       const key=entry.taskKey||entry.key||entry.step?.setting||(entry.step?.kind?worldTaskKey(entry.step.kind):null);
+      if (key) observeStep(key, entry);
       if (entry.skipped && entry.reason) {
         const waitKey = phase + ':' + (key || entry.id || entry.title || entry.label || 'unknown');
         if (dailyWaitReasons.get(waitKey) === entry.reason) return;
@@ -258,7 +265,6 @@ export async function runLoop(client, protocol, {
       } else if (key) {
         dailyWaitReasons.delete(phase + ':' + key);
       }
-      if(key){rewards?.observe(key,entry.reason||entry.error||entry.note||(entry.ok?'执行成功 · '+(entry.title||entry.label||'本次动作'):entry.title||entry.label||'已检查'),entry.status==='unknown'||entry.status==='pending'?'pending':entry.skipped?'waiting':entry.ok?'ok':'error');rewards?.expect(key,rewards.now()+Math.ceil(getEveryMs()/1000));}
       onStep?.({ round, phase, ...entry,taskKey:key||entry.taskKey });
     };
     async function observed(keys,work){
@@ -749,7 +755,22 @@ export async function runLoop(client, protocol, {
         for(const [key,service] of [['vipDailyGift',claimVipDaily],['guildTitleReward',claimGuildTitleReward],['limitedFreeGifts',claimLimitedFree],['weekHeroStar',claimWeekHeroStar],['pirateRankRewards',(c,f,o)=>claimOpenRank(c,f,o,3)],['warRankRewards',(c,f,o)=>claimOpenRank(c,f,o,4)],['festivalActiveRewards',claimFestivalActive],['battleReportRewards',claimReportRewards],['leagueCollect',claimLeagueCollect],['leaguePassRewards',claimLeaguePass],['weekSupplyFree',claimWeekSupply],['worldBossRewards',claimWorldBossDamage],['comicDrama',claimComicDrama],['tournamentDailyGift',claimTournamentDaily]]) {
           await checkFactoryDue({ checkpoint: true });
           if (!settings && key === 'weekHeroStar') continue;
-          if(serviceEnabled(key))try{let reports=0;await service(client,config,{player,getSettings,allLevels:active('vipDaily'),enabled:()=>serviceActive(key),ledger:usageLedger,scheduler:rewards,report:entry=>{reports++;extraReport({...entry,taskKey:key});}});if(!reports)extraReport({taskKey:key,label:automationTasks.find(t=>t.key===key).label,skipped:true,reason:'已检查，当前没有新增可执行的领取动作'});}catch(error){extraReport({taskKey:key,label:automationTasks.find(t=>t.key===key).label,ok:false,error:error.message});}
+          if (!serviceEnabled(key)) continue;
+          const allLevels = key === 'vipDailyGift' && active('vipDaily');
+          // 这两个开关共享一次检查。只给本次实际覆盖的兼容项回填状态，不重复记任务或发领奖请求。
+          const checkCampaignReports = key === 'battleReportRewards' && active('campaignReports');
+          let reported = false;
+          const report = entry => {
+            reported = true;
+            if (settings && allLevels) observeStep('vipDaily', entry);
+            if (checkCampaignReports) observeStep('campaignReports', entry);
+            extraReport({ ...entry, taskKey: key });
+          };
+          const label = automationTasks.find(task => task.key === key).label;
+          try {
+            await service(client, config, { player, getSettings, allLevels, enabled: () => serviceActive(key), ledger: usageLedger, scheduler: rewards, report });
+            if (!reported) report({ label, skipped: true, reason: '已检查，当前没有新增可执行的领取动作' });
+          } catch (error) { report({ label, ok: false, error: error.message }); }
         }
         const activityServices = { armsRaceRewards:militaryRewards, riverScore:riverActivity, riverPass:riverActivity, edictPass:edictPassActivity, seasonChest:openSeasonChests,
           riverHelp:riverActivity, compassDaily:compassActivity, compassAdGift:compassActivity, compassSpin:compassActivity, compassReward:compassActivity,
