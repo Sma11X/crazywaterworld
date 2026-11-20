@@ -202,26 +202,49 @@ html:has(.world-map-detail:modal) { overflow:hidden }
 .world-fuel-summary { display:flex; gap:8px 20px; flex-wrap:wrap; padding:8px 0 }
 .world-fuel-summary strong { margin-left:6px; font-weight:500; font-variant-numeric:tabular-nums }
 .world-journey { font-variant-numeric:tabular-nums }
-#world-view:empty { display:none }
-
 /* ---- 建筑一览 ---- */
-#world-factories { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:16px 24px }
-#world-factories > section { min-width:0 }
-#world-factories h2,#world-orders h2 { margin:0 0 4px }
-#world-factories:not(:empty) + #world-orders:not(:empty) { margin-top:16px }
+#world-view:empty,#world-factories:empty,.world-orders-panel:has(#world-orders:empty) { display:none }
+#world-factories { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:12px }
+#world-factories h2 { margin:0; font:inherit }
+#world-factories [data-slot=card]:has([data-building-list][hidden]) > [data-slot=card-content] { display:none }
 @container main (min-width:720px) {
   #world-factories:has(.world-farm-section):has(.world-slot-section) { grid-template-columns:minmax(0,3fr) minmax(0,2fr) }
   .world-factory-section { grid-column:1 / -1 }
 }
-.factory-queue { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:16px }
-.factory-slot { display:grid; align-content:start; gap:2px; min-width:0; font-size:12px }
-.factory-product { font-size:14px; overflow-wrap:anywhere }
+.factory-toggle[aria-expanded="false"] svg { transform:rotate(-90deg) }
+.factory-queue-preview { display:inline-flex; align-items:baseline; gap:6px; flex-wrap:wrap }
+.factory-detail-sections { width:calc(100% - 9px); min-width:0; display:grid; gap:14px; margin:4px 0 10px 9px; padding-inline-start:14px; border-inline-start:2px solid var(--border) }
+.factory-detail-sections h3 { font-size:13px; font-weight:600; margin:0 0 6px }
+.factory-queue { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,145px),1fr)); gap:8px }
+.factory-planned-section { padding-block-start:10px; border-block-start:1px solid var(--border) }
+.factory-planned-section p,.factory-planned-list { margin:0; font-size:12px }
+.factory-planned-list { list-style:decimal; padding-inline-start:22px; max-width:44ch }
+.factory-planned-list li::marker { color:var(--muted-foreground); font-variant-numeric:tabular-nums }
+.factory-planned-line { display:flex; justify-content:space-between; align-items:baseline; gap:2px 12px; flex-wrap:wrap; padding:3px 0; font-variant-numeric:tabular-nums }
+.factory-slot { display:grid; align-content:start; gap:8px; min-width:0; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--card); font-size:12px }
+.factory-slot-header,.factory-product,.factory-finish { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px }
+.factory-slot-header { justify-content:space-between; font-variant-numeric:tabular-nums }
+.factory-product { min-height:24px; font-size:14px; overflow-wrap:anywhere }
+.factory-finish { align-items:baseline; font-variant-numeric:tabular-nums }
+.factory-empty { border-style:dashed; background:transparent }
+@container main (max-width:600px) {
+  .factory-detail-sections { padding-inline-start:8px }
+  .factory-queue { grid-template-columns:repeat(auto-fill,minmax(min(100%,114px),1fr)); gap:6px }
+  .factory-slot { padding:8px; gap:6px }
+  .factory-finish { flex-direction:column; align-items:flex-start; gap:0 }
+}
 .factory-current,.factory-current-product { display:flex; align-items:center; flex-wrap:wrap; gap:2px 8px; min-width:0 }
 .factory-current-product { align-items:baseline; column-gap:4px }
-#factory-production-dialog { grid-template-rows:auto minmax(0,1fr) auto }
-#factory-production-body { min-height:0; overflow-y:auto }
 .production-time { color:var(--muted-foreground); font-variant-numeric:tabular-nums; overflow-wrap:anywhere }
 .order-state { display:grid; justify-items:start; gap:4px; max-width:40ch; white-space:normal }
+.order-state-tags { display:flex; flex-wrap:wrap; gap:4px }
+.order-material-list { display:grid; grid-template-columns:minmax(0,1fr) repeat(3,max-content); gap:2px 8px; margin:0; padding:0; list-style:none; font-size:12px; font-variant-numeric:tabular-nums; color:var(--muted-foreground) }
+.order-material-list li { grid-column:1 / -1; display:grid; grid-template-columns:subgrid; align-items:baseline }
+.order-material-name { color:var(--foreground); overflow-wrap:anywhere }
+.order-material-missing { color:var(--warning) }
+@container main (max-width:600px) {
+  #world-orders .order-state { flex-basis:100%; min-width:0 }
+}
 .order-manual-actions { display:flex; flex-wrap:wrap; gap:6px }
 .order-refresh-time { display:block; font-variant-numeric:tabular-nums; font-size:12px; color:var(--muted-foreground) }
 .stock-panel>summary { padding-inline:24px }

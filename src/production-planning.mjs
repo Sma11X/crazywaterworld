@@ -3,6 +3,7 @@ import { createProductionTiming } from './production-timing.mjs';
 import { resourceReserve, worldPreferenceEnabled } from './automation-policy.mjs';
 import { activityProductionEnabled } from './activity-automation.mjs';
 import { createProductionEligibility } from './production-eligibility.mjs';
+import { displayBuilding } from './world.mjs';
 
 const rows = (config, key) => config?.tables?.[key]?.data ?? [];
 const sourceNames = { resident: '居民订单', merchant: '不差钱商人', cargo: '贸易港', guildRecruit: '联盟募兵',
@@ -58,27 +59,28 @@ export function buildProductionModel(snapshot, config, settings, { pendingMateri
   };
   for (const factory of snapshot.factories) {
     const building = snapshot.buildings.find(row => row.id === factory.id);
+    const name = displayBuilding(config, { buildingId: factory.id, type: factory.type });
     const { lanes, finishes, jobs, missing } = timing.factoryQueue(building, factory.queue);
-    missingReads.push(...missing.map(reason => factory.id + reason));
+    missingReads.push(...missing.map(reason => name + reason));
     capacityEstimated ||= lanes.estimated || lanes.count > 1 && lanes.expiresAt !== null;
     const facilityMachines = Array.from({ length: lanes.count }, (_, index) => ({
       id: factory.id + ':' + (index + 1), availableAt: relative(finishes[index]),
       ...(index > 0 && lanes.expiresAt !== null ? { availableUntil: relative(lanes.expiresAt) } : {}),
     }));
     for (const [index, machine] of facilityMachines.entries()) {
-      machineNames.set(machine.id, factory.id + (facilityMachines.length > 1 ? ' 第' + (index + 1) + '生产位' : ''));
+      machineNames.set(machine.id, name + (facilityMachines.length > 1 ? ' 第' + (index + 1) + '生产位' : ''));
     }
     factoryMachines.set(factory.id, facilityMachines);
     for (const { job, index, start, finish, basis } of jobs) addFixed(facilityMachines[index], job, start, finish, basis);
     machines.push(...facilityMachines);
     for (const item of factory.finished) addIncoming(factory.id + ':finished:' + item.id, item.id, item.num, now);
-    if (factory.nativeAutoActive) missingReads.push(factory.id + '原生自动生产正在追加任务，未来占用尚未固定');
-    if (lanes.estimated || lanes.expiresAt !== null) notes.push(factory.id + ' · ' + lanes.reasons.join('，'));
+    if (factory.nativeAutoActive) missingReads.push(name + '原生自动生产正在追加任务，未来占用尚未固定');
+    if (lanes.estimated || lanes.expiresAt !== null) notes.push(name + ' · ' + lanes.reasons.join('，'));
   }
   for (const farm of snapshot.farms) {
     const machine = { id: farm.id, availableAt: Math.max(relative(farm.upgradingUntil), relative(farm.ripeTime)) };
     machines.push(machine);
-    machineNames.set(machine.id, farm.id);
+    machineNames.set(machine.id, displayBuilding(config, { buildingId: farm.id, type: '农田' }));
     if (farm.productId && farm.ripeTime) addFixed(machine,
       { id: farm.id + ':crop', productId: farm.productId, num: farm.num }, now, Math.max(now, farm.ripeTime), { source: 'server', estimated: false });
   }

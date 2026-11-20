@@ -88,7 +88,7 @@ import { APPOINTMENT_PRIORITIES } from './appointment-priorities.mjs';
 import { surveyDailies, runDailies, formatSurvey } from './dailies.mjs';
 import { dailySingleState, addDailyOptions, runDailySingle } from './daily-single.mjs';
 import { surveyTasks, runTasks, formatTaskPlan, selectTaskSettings } from './tasks.mjs';
-import { makeTypeResolver, weekFactoryInfo, surveyWorld, planWorld, runWorldRound, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
+import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, planWorld, runWorldRound, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
 import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
 import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
@@ -111,7 +111,7 @@ import { watchBasePushes, surveyBaseAutomation, planBaseAutomation, baseDemands,
 import { reconcileManualProduction } from './manual-production-sync.mjs';
 import { readProductionSnapshot } from './production-snapshot.mjs';
 import { planProduction } from './production-planning.mjs';
-import { watchProductionTimings } from './production-timing.mjs';
+import { createProductionTiming, watchProductionTimings } from './production-timing.mjs';
 import { captureManualProductionMaterialState } from './order-reservations.mjs';
 import { createStageTask } from './stages.mjs';
 import { createChallengeRun } from './challenge-automation.mjs';
@@ -1791,6 +1791,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const fields = { ...survey.resFields, text: formatFieldReport(survey, map, mapError), rows:resourceFieldRows(config,session.player,survey.resFields,guilds) };
     fields.totals=resourceFieldTotals(survey.resFields,fields.rows);
     const typeNames = new Map(config?.tables?.BuildingCfg?.data.map(row => [row.buildingType, row.name]));
+    const timing = createProductionTiming({ config, ...survey.productionTiming, serverNow: survey.serverNow });
     const now = Date.now() / 1000;
     return {
       serverNow:survey.serverNow,
@@ -1810,19 +1811,40 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           if (ripeTime) state = ripeTime <= survey.serverNow ? 'ready' : 'growing';
           status = productName + ' · ' + ({ ready: '已成熟', growing: '生长中', unknown: '成熟时间未同步' })[state];
         }
-        return { plot: b.buildingId, level: b.level, productId, productName, ripeTime, finishTime, state, status };
+        return { plot: b.buildingId, displayName: displayBuilding(config, b), level: b.level, productId, productName, ripeTime, finishTime, state, status };
       }),
       factories: survey.factories.map(b => {
         const queueKnown = Array.isArray(b.factory.factoryQ);
-        const jobs = queueKnown ? b.factory.factoryQ.map((job, index) => ({
-          index: Number.isSafeInteger(job?.idx) && job.idx >= 0 ? job.idx : index,
-          productId: job?.productId || null,
-          name: job?.productId ? displayMaterial(config, job.productId) : '产物未同步',
-          finishTime: Number.isFinite(job?.finishTime) && job.finishTime > 0 ? job.finishTime : null,
-        })) : [];
+        const queue = queueKnown ? b.factory.factoryQ : [];
+        const planned = plan.actions.filter(step => step.request === 'StartFactoryProduceRequest'
+          && step.body.buildingId === b.buildingId);
+        // The timing simulation uses the submitted queue first, then the proposed
+        // inputs in dispatch order. The game snapshot itself stays unchanged.
+        const schedule = queueKnown && queue.every(job => job?.productId)
+          ? timing.factoryQueue(b, [...queue, ...planned.map(step => step.body)]).jobs : [];
+        const finishes = new Map(schedule.map(entry => [entry.job, entry.finish]));
+        let canEstimate = queueKnown && (!queue.length || queue.some(job => job?.finishTime > 0));
+        const jobs = queue.map((job, index) => {
+          const finishTime = Number.isFinite(job?.finishTime) && job.finishTime > 0 ? job.finishTime : null;
+          if (!finishTime && !finishes.has(job)) canEstimate = false;
+          return {
+            index: Number.isSafeInteger(job?.idx) && job.idx >= 0 ? job.idx : index,
+            productId: job?.productId || null,
+            name: job?.productId ? displayMaterial(config, job.productId) : '产物未同步',
+            icon: job?.productId ? materialIcon(job.productId) : null,
+            finishTime,
+            estimatedFinishTime: !finishTime && canEstimate ? finishes.get(job) : null,
+          };
+        });
+        const plannedJobs = queueKnown ? planned.map(step => {
+          const { productId } = step.body;
+          if (step.needsConfirmedBorrow || !finishes.has(step.body)) canEstimate = false;
+          return { productId, name: step.displayProduct || displayMaterial(config, productId),
+            estimatedFinishTime: canEstimate ? finishes.get(step.body) : null };
+        }) : null;
         return {
-          buildingId: b.buildingId, type: b.type, typeName: typeNames.get(b.type), level: b.level,
-          queue: jobs.length, queueKnown, jobs,
+          buildingId: b.buildingId, displayName: displayBuilding(config, b), type: b.type, typeName: typeNames.get(b.type), level: b.level,
+          queue: jobs.length, queueKnown, jobs, plannedJobs,
           capacity: Number.isSafeInteger(survey.factorySlots) && survey.factorySlots > 0 ? survey.factorySlots : null,
           auto: b.factory.autoProductId ? displayMaterial(config, b.factory.autoProductId) : null,
           autoEnabled: !!b.factory.autoProductId && (survey.autoProduceForever || survey.autoProduceEndTime > survey.serverNow),
@@ -1842,7 +1864,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       })),
       // 建筑全表：level=0 的是空位（正在盖或还没盖），界面靠它解释「为什么没在建造」。
       buildings: survey.buildings.map((b) => ({
-        buildingId: b.buildingId, type: b.type ?? null, level: b.level,
+        buildingId: b.buildingId, displayName: displayBuilding(config, b), type: b.type ?? null, level: b.level,
         typeName: typeNames.get(b.type),
         building: b.buildFinishTime > now,
         awaitingFinish: b.buildFinishTime > 0 && b.buildFinishTime <= now,

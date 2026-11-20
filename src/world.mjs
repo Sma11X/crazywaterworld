@@ -85,10 +85,10 @@ export function makeTypeResolver(config) {
 export function displayBuilding(config, building) {
   const { buildingId, type } = building;
   const name = rowsOf(config, 'BuildingCfg').find(row => row.buildingType === type)?.name || type;
-  if (!name) return buildingId;
-  const prefix = buildingId.endsWith(type) ? buildingId.slice(0, -type.length) : '';
-  const hasPeers = rowsOf(config, 'BuildingUnlockCfg').some(row => row.buildingType === type && row.buildingId !== buildingId);
-  return hasPeers && /^\d+$/.test(prefix) ? `${name}（${prefix} 号）` : name;
+  const match = /^(\d+)(\D.*)$/.exec(buildingId ?? '');
+  if (!match) return name || buildingId;
+  const [, number, rawType] = match;
+  return (rawType === type ? name : rawType) + '-' + number;
 }
 
 function durationText(seconds) {

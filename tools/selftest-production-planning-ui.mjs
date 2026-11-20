@@ -196,7 +196,10 @@ await test('分层未验证状态保留未知上下界，并识别已排队和�
   assert.deepEqual(env.tables[0].rows[0], ['第1级', '0秒', '待确认']);
   assert.equal(env.tables[1].rows[0][2], '已排队');
   assert.equal(env.tables[1].rows[0][3], '已投料');
-  assert.equal(env.tables[1].rows[1][2], '腾仓辅助');
+  assert.match(text, /游戏已投产 · 1 批/);
+  assert.match(text, /排产计划 · 1 批/);
+  assert.equal(env.tables[1].rows.length, 1);
+  assert.equal(env.tables[2].rows[0][2], '腾仓辅助');
   assert.doesNotMatch(text, /全部订单预计齐套/);
 });
 

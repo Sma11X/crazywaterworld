@@ -76,10 +76,15 @@ function renderProductionPlan(data) {
       order.reason || order.statusLabel,
     ])));
   }
-  if (data.timeline?.length) {
+  const timeline = data.timeline || [];
+  for (const [title, jobs] of [
+    ['游戏已投产', timeline.filter(job => job.kind === 'existing')],
+    ['排产计划', timeline.filter(job => job.kind !== 'existing')],
+  ]) {
+    if (!jobs.length) continue;
     const details = el('details');
-    details.appendChild(el('summary', null, '生产顺序，共 ' + data.timeline.length + ' 批'));
-    details.appendChild(table(['设施', '产物', '优先级', '投料', '开始', '完成', '时长依据'], data.timeline.map(job => [
+    details.appendChild(el('summary', null, title + ' · ' + jobs.length + ' 批'));
+    details.appendChild(table(['设施', '产物', '优先级', '投料', '开始', '完成', '时长依据'], jobs.map(job => [
       job.machineName || job.machineId,
       (job.productName || job.itemId) + ' ×' + job.quantity,
       (job.priorityLabel || (job.kind === 'existing' ? '已排队' : '同级'))
