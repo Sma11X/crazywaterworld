@@ -527,8 +527,8 @@ const configGroups = [
   { id:'worldBoss',title:'世界Boss',category:'world',fields:[
     configField('worldBoss.enabled','每日首战自动派遣'),
     configField('schedule.worldBossRewards','自动领取伤害达标奖励','switch',{help:'随挂机领取已达到伤害档位的奖励。独立于每日首战自动派遣，关闭首战派遣后仍可领奖；开启领奖不会派出舰队。'}),
-    configField('worldBoss.fleetIds','首战参与舰队','multi',{catalog:'expeditionFleets',selectAll:true,empty:'未选择，自动选一支空闲舰队',help:'勾选多支时一起派出符合条件的舰队；未选择时自动选一队。遵守统一任务顺序和在途保护。'}),
-    configField('worldBoss.fleetPresets','各舰队出战阵容','fleetLineups',{parent:'worldBoss.fleetIds',wide:true,help:'为已勾选的舰队选择保存的阵容；未指定时使用该舰队当前阵容。只切换英雄与阵型，英雄不得与其他舰队重复。战斗结束并返航后恢复原阵容。'}),
+    configField('worldBoss.fleetIds','首战参与舰队','multi',{catalog:'expeditionFleets',selectAll:true,empty:'未选择，自动选一支空闲舰队',help:'勾选多支时一起派出符合条件的舰队，未选择时自动选一队。遵守统一任务顺序和在途保护。各队默认使用当前阵容，也可指定已保存的阵容。只切换英雄与阵型，各队英雄不能重复，返航后恢复原阵容。'}),
+    configField('worldBoss.fleetPresets','各舰队出战阵容','fleetLineups',{parent:'worldBoss.fleetIds',wide:true}),
     configField('worldBoss.minDurabilityPercent','最低耐久','number',{unit:'%',help:'0表示不设百分比门槛，仍须有耐久。'}),
   ]},
   { id:'fleet-dispatch',title:'舰队调度',category:'world',fields:[configField('fleetDispatch.priority','任务优先顺序','sortableOrder',{
@@ -1149,7 +1149,7 @@ function configRenderField(spec) {
   if (spec.moduleControl) row.classList.add('config-module-control');
   const id = 'config-field-' + spec.key.replaceAll('.', '-');
   const name = el('div', 'config-label-line'); const label = el('label', 'config-label', spec.label); label.htmlFor = id; name.append(label);
-  name.hidden = spec.kind === 'cityWarRoles';
+  name.hidden = spec.kind === 'cityWarRoles' || spec.kind === 'fleetLineups';
   label.id = id + '-label';
   if (spec.help) { const help = el('span', '', spec.help); help.id = id + '-help'; help.hidden = true; name.append(makeHelpTip(spec.label, spec.help), help); }
   const box = el('div', 'config-control'); const error = el('div', 'config-field-error'); error.id = id + '-error'; error.hidden = true;
@@ -1316,16 +1316,17 @@ function configLineupPicker(spec, id) {
     : [{ raidId: null, label: spec.label }];
   const controls = [];
   for (const entry of entries) {
-    const line = el('div', 'config-add');
+    const line = el('div', fleetPicker ? 'config-fleet-lineup' : 'config-add');
     const select = el('select', 'config-select'); select.id = id + (entry.raidId ? '-' + entry.raidId : '-select');
     select.dataset.lineupBinding = entry.raidId ? (fleetPicker ? 'fleet:' : 'trial:') + entry.raidId : 'mainline';
     select.setAttribute('aria-label', entry.label + (fleetPicker ? '世界Boss出战阵容' : entry.raidId ? '自动挑战阵容' : ''));
-    const empty = el('option', '', fleetPicker ? '使用舰队当前阵容' : '使用游戏当前阵容'); empty.value = ''; select.append(empty);
+    const empty = el('option', '', fleetPicker ? '当前阵容' : '使用游戏当前阵容'); empty.value = ''; select.append(empty);
     for (const preset of presets) {
       const option = el('option', '', preset.name); option.value = preset.id; select.append(option);
     }
     const view = configButton('查看', () => {
       if (select.value) void openSavedLineupViewer(current, select.value);
+      else if (fleetPicker) void openLineupViewer(current, { buildingId: entry.raidId, fleetName: entry.label });
     });
     view.dataset.lineupView = select.dataset.lineupBinding;
     view.setAttribute('aria-label', '查看' + entry.label + (entry.raidId ? '阵容' : ''));
@@ -1338,21 +1339,21 @@ function configLineupPicker(spec, id) {
       }
       root.refresh();
     };
-    let label;
     if (entry.raidId) {
-      label = el('label', 'config-label', entry.label); label.htmlFor = select.id; root.append(label);
+      const label = el('label', 'config-label', entry.label); label.htmlFor = select.id;
+      (fleetPicker ? line : root).append(label);
     }
     line.append(select, view); root.append(line);
-    controls.push({ ...entry, select, view, line, label });
+    controls.push({ ...entry, select, view, line });
   }
   const hint = el('p', 'config-help', fleetPicker ? '请先勾选参与舰队以逐队指定阵容。' : '副本列表暂未载入，请刷新挂机配置。');
   if (fleetPicker || !entries.length) root.append(hint);
   root.refresh = () => {
     let visible = 0;
-    for (const { raidId, select, view, label, line } of controls) {
+    for (const { raidId, select, view, line } of controls) {
       select.value = raidId === null ? configGet(spec.key) : configGet(spec.key).find(binding => binding[bindingField] === raidId)?.presetId ?? '';
-      view.disabled = !select.value;
-      if (fleetPicker) { label.hidden = line.hidden = !configGet('worldBoss.fleetIds').includes(raidId); if (!line.hidden) visible++; }
+      view.disabled = !fleetPicker && !select.value;
+      if (fleetPicker) { line.hidden = !configGet('worldBoss.fleetIds').includes(raidId); if (!line.hidden) visible++; }
     }
     if (fleetPicker) hint.hidden = visible > 0;
   };

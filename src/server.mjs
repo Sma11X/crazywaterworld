@@ -64,7 +64,7 @@ import { readTrialSweeps, executeTrialSweep } from './trial-sweeps.mjs';
 import { readHeroEquipment, equipHeroEmptySlots, enhanceHeroEquipment, uidText } from './hero-equipment.mjs';
 import { readEquipmentCrafting, startEquipmentCraft, collectEquipmentCraft } from './equipment-crafting.mjs';
 import { readLineups, applyLineup, editorLineupRecommendations } from './lineups.mjs';
-import { getLineupCatalog, readLineupEditor, validateLineupSettings } from './saved-lineups.mjs';
+import { getLineupCatalog, normalizeFormation, readLineupEditor, validateLineupSettings } from './saved-lineups.mjs';
 import { readLineupRuntime, recoverLineup } from './lineup-runtime.mjs';
 import { createLineupExecutor, lineupRole, selectedSavedLineup } from './lineup-execution.mjs';
 import { lineupArt } from './lineup-art.mjs';
@@ -3494,6 +3494,22 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           emit(session, 'info', result.label);
           return result;
         }));
+        return;
+      }
+      if (route === 'GET /api/fleets/current-formation') {
+        const { session, account } = scoped_(parsed);
+        const buildingId = parsed.searchParams.get('buildingId');
+        if (!/^[1-9]\d*远征船$/.test(buildingId)) throw new Error('舰队编号无效');
+        json(await readJob(session, async () => {
+          const client = await ensureConnected(session, account, { allowLineupPending: true });
+          const { building } = await client.request('OnWaterRequest', {}, 'OnWaterResponse');
+          if (!Array.isArray(building)) throw new Error('舰队数据尚未同步，请稍后再试');
+          const dock = building.find(row => row.buildingId === buildingId && row.level > 0);
+          if (!dock) throw new Error('未找到这支舰队，请刷新舰队列表');
+          const formation = dock.fleet?.formation;
+          if (!formation || (Array.isArray(formation.heroPositions) && !formation.heroPositions.length)) return { formation: null };
+          return { formation: normalizeFormation(formation), catalog: getLineupCatalog(loadConfigSafe()) };
+        }, { recoverFormation: false }));
         return;
       }
       if (route === 'GET /api/lineup-presets') {

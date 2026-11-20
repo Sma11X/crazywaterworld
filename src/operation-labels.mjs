@@ -71,6 +71,7 @@ export const operationLabels = {
   '/api/guild/mutual/start': '开启单次联盟互助', '/api/guild/mutual/stop': '停止单次联盟互助',
   '/api/dailies/single': '完成单项日常',
   '/api/fleets/formation': '远征舰队编队',
+  '/api/fleets/current-formation': '查看舰队当前阵容',
   '/api/world': '查看海面', '/api/world/run': '执行海面经营', '/api/worlds': '查看海域',
   '/api/world/order/submit': '手动提交居民订单',
   '/api/worlds/enter': '进入海域', '/api/worlds/save-role': '添加区服角色', '/api/trials/challenge': '挑战试炼副本',

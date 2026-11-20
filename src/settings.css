@@ -100,6 +100,8 @@
 .config-order-tools .config-option:hover { background:transparent }
 .config-add { display:flex; gap:8px; align-items:center; padding:8px 0 4px }
 .config-add select { flex:1; min-width:0; width:auto }
+.config-fleet-lineup { display:grid; grid-template-columns:max-content minmax(0,300px) max-content; align-items:center; gap:8px; padding:2px 0 }
+.config-fleet-lineup select { min-width:0 }
 .config-crop-quantity { display:flex; align-items:center; gap:8px }
 .config-crop-quantity input { width:88px }
 .config-empty { padding:16px 24px; color:var(--muted-foreground) }

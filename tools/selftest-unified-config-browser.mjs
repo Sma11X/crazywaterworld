@@ -265,11 +265,53 @@ try {
   await bossFleets.locator('summary').click(); await saved();
   assert.deepEqual(loadAutomationSettings('config-a').settings.worldBoss.fleetIds, ['1远征船', '2远征船', '3远征船']);
   assert.equal(await bossLineups.locator('select:visible').count(), 3);
+  assert.equal(await page.getByText('各舰队出战阵容', { exact: true }).isVisible(), false);
+  for (const width of [320, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const rowsFit = await bossLineups.locator('.config-fleet-lineup:visible').evaluateAll(rows => rows.every(row => {
+      const [label, select, view] = [...row.children].map(node => node.getBoundingClientRect());
+      const center = rect => rect.top + rect.height / 2;
+      return label.left >= 0 && label.right <= select.left && select.right <= view.left && view.right <= innerWidth
+        && Math.abs(center(label) - center(select)) <= 1 && Math.abs(center(select) - center(view)) <= 1;
+    }));
+    assert(rowsFit, width + 'px 每支舰队的名称、阵容和查看按钮均在同一行');
+  }
   await fleetLineup(1).selectOption('boss-first');
   await fleetLineup(2).selectOption('boss-second'); await saved();
   assert.equal(await fleetLineup(3).inputValue(), '', '未指定的舰队沿用当前阵容');
   const expectedFleetPresets = [{ buildingId: '1远征船', presetId: 'boss-first' }, { buildingId: '2远征船', presetId: 'boss-second' }];
   assert.deepEqual(loadAutomationSettings('config-a').settings.worldBoss.fleetPresets, expectedFleetPresets);
+  const fleetView = id => bossLineups.getByRole('button', { name: '查看远征舰队 ' + id + ' 队阵容' });
+  const viewer = page.getByRole('dialog');
+  const closeViewer = () => viewer.getByRole('button', { name: '关闭阵容查看' }).click();
+  const previousClient = bossSession.client, previousPause = bossSession.paused;
+  const water = [{ buildingId: '1远征船', level: 1 }, { buildingId: '3远征船', level: 1, fleet: {
+    formation: { presetId: 7, heroPositions: [{ heroId: '瑞文', pos: { x: 2, y: 5 } }] },
+  } }];
+  let waterReads = 0;
+  try {
+    bossSession.paused = false;
+    bossSession.client = { connected: true, async request(name) {
+      assert.equal(name, 'OnWaterRequest'); waterReads++;
+      return { building: water };
+    } };
+    await fleetView(3).click();
+    await viewer.getByRole('heading', { name: '远征舰队 3 队 · 当前阵容' }).waitFor();
+    await viewer.getByRole('img', { name: '站位 2，5，骑士瑞文' }).waitFor();
+    assert.equal(await viewer.getByText('阵型 7', { exact: true }).isVisible(), true);
+    await closeViewer();
+    water[1].fleet = {};
+    await fleetView(3).click();
+    await viewer.getByText('这支舰队尚未编入英雄。').waitFor();
+    await closeViewer();
+    await fleetView(2).click();
+    await viewer.getByRole('heading', { name: '世界Boss二队' }).waitFor();
+    await viewer.getByRole('img', { name: '站位 4，4，波奇' }).waitFor();
+    await closeViewer();
+    assert.equal(waterReads, 2);
+  } finally {
+    bossSession.client = previousClient; bossSession.paused = previousPause;
+  }
   const beforeCollapse = loadAutomationSettings('config-a');
   await bossDisclosure.click();
   assert.equal(await bossDisclosure.getAttribute('aria-expanded'), 'false');

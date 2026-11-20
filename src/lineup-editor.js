@@ -385,19 +385,34 @@ async function loadLineupEditorData(account) {
   }
 }
 
-async function openSavedLineupViewer(account, presetId) {
-  if (account !== current || !presetId) return;
+function openSavedLineupViewer(account, presetId) {
+  if (presetId) return openLineupViewer(account, { presetId });
+}
+
+async function openLineupViewer(account, { presetId, buildingId, fleetName }) {
+  if (account !== current) return;
   const modal = openLineupDialog(account, 'viewer', presetId);
   const loading = el('section', 'lineup-editor lineup-viewer');
-  const heading = el('div', 'lineup-editor-heading'), title = el('h3', '', '查看阵容');
+  const titleText = buildingId ? fleetName + ' · 当前阵容' : '查看阵容';
+  const heading = el('div', 'lineup-editor-heading'), title = el('h3', '', titleText);
   title.id = 'lineup-dialog-title';
   heading.append(title, lineupDialogCloseButton('viewer'));
-  loading.append(heading, el('p', 'lineup-viewer-message', '正在读取已保存阵容…'));
+  const message = el('p', 'lineup-viewer-message', buildingId ? '正在读取舰队当前阵容…' : '正在读取已保存阵容…');
+  message.setAttribute('role', 'status');
+  loading.append(heading, message);
   modal.body.append(loading); modal.dialog.showModal();
   try {
-    const data = await lineupRequest('/api/lineup-presets', account);
+    const data = buildingId
+      ? await call('/api/fleets/current-formation?' + new URLSearchParams({ account, buildingId }))
+      : await lineupRequest('/api/lineup-presets', account);
     if (lineupModal !== modal || account !== current) return;
     const state = savedLineupState(account);
+    if (buildingId) {
+      if (!data.formation) { message.textContent = '这支舰队尚未编入英雄。'; return; }
+      renderLineupViewer(clear(modal.body), { saved: { catalog: data.catalog }, editor: state.editor },
+        { id: buildingId, name: titleText, formation: data.formation }, account, { showPet: false });
+      return;
+    }
     adoptSavedLineups(state, data);
     renderSavedLineups(account); updateManualLineupSelects(account);
     const preset = state.saved.presets.find(item => item.id === presetId);
@@ -405,11 +420,11 @@ async function openSavedLineupViewer(account, presetId) {
     clear(modal.body); renderLineupViewer(modal.body, state, preset, account);
   } catch (error) {
     if (lineupModal !== modal || account !== current) return;
-    loading.lastElementChild.textContent = error.message;
+    message.textContent = error.message;
   }
 }
 
-function renderLineupViewer(host, state, preset, account) {
+function renderLineupViewer(host, state, preset, account, { showPet = true } = {}) {
   const catalog = state.saved?.catalog || { heroes: [], formations: [] };
   const formation = preset.formation;
   const root = el('section', 'lineup-editor lineup-viewer'); root.id = 'saved-lineup-viewer';
@@ -418,7 +433,7 @@ function renderLineupViewer(host, state, preset, account) {
   const workspace = el('div', 'lineup-workspace'), battlefield = el('div', 'lineup-battlefield');
   const count = el('div', 'lineup-board-heading');
   count.append(el('span', '', '已上阵 ' + formation.heroPositions.length), el('span', '', '敌方 →'));
-  const board = el('div', 'lineup-board'); board.setAttribute('aria-label', '已保存的英雄站位');
+  const board = el('div', 'lineup-board'); board.setAttribute('aria-label', '英雄站位');
   battlefield.append(count, board);
   const details = el('div', 'lineup-viewer-details');
   const type = catalog.formations?.find(item => item.presetId === formation.presetId);
@@ -433,12 +448,14 @@ function renderLineupViewer(host, state, preset, account) {
     const item = el('li'); item.append(lineupPortrait(hero, 40), el('span', '', hero.name)); heroes.append(item);
   }
   details.append(heroes); workspace.append(battlefield, details); root.append(workspace);
-  const petField = el('div', 'lineup-pet-field'); petField.append(el('span', '', '出战海兽'));
-  const petUid = String(formation.petUid || '0');
-  const pet = state.editor?.pets?.find(item => String(item.uid) === petUid);
-  if (pet) petField.append(iconEl(pet.icon, 44, pet.name));
-  petField.append(el('span', '', pet ? pet.name : petUid === '0' ? '不携带海兽' : '海兽 UID ' + petUid));
-  root.append(petField);
+  if (showPet) {
+    const petField = el('div', 'lineup-pet-field'); petField.append(el('span', '', '出战海兽'));
+    const petUid = String(formation.petUid || '0');
+    const pet = state.editor?.pets?.find(item => String(item.uid) === petUid);
+    if (pet) petField.append(iconEl(pet.icon, 44, pet.name));
+    petField.append(el('span', '', pet ? pet.name : petUid === '0' ? '不携带海兽' : '海兽 UID ' + petUid));
+    root.append(petField);
+  }
   const footer = el('div', 'lineup-viewer-footer'), close = smallButton('关闭');
   close.onclick = () => closeLineupDialog(); footer.append(close); root.append(footer);
   const viewerState = { editor: state.editor || catalog, saved: state.saved,
