@@ -1,4 +1,5 @@
 import { automationTasks, retiredAutomationTasks } from './automation.mjs';
+import { activityTaskBlocker } from './activity-automation.mjs';
 
 // 模块总开关与细项分别保存，暂停模块不改动细项选择。
 const controls = [];
@@ -40,7 +41,7 @@ add('antique.enabled','藏品自动养成','藏品',{
 });
 add('appointments.enabled','自动英雄委任','英雄',{help:'在杂项 → 英雄与装备中设置开关和委任优先级，挂机按保存顺序调用游戏一键委任。'});
 add('resourceFields.enabled','自动占领资源田','世界与挑战',{help:'按比例或配额占领本盟城市内的资源田，每次检查最多派一队。名额已满时，可放弃超过目标块数的田地来补足其他资源，也会把同类低级田换成可占的高级田。'});
-add('trials.paid','试炼钻石扫荡','世界与挑战');
+add('trials.paid','试炼钻石扫荡','世界与挑战',{gates:['resources.allowDiamonds']});
 add('trials.ads','试炼免广告扫荡','世界与挑战');
 for (const [key,label,group,gates] of [
  ['alliance.enabled','联盟自动化','世界与挑战',[]],['guildShip.enabled','联盟商船','活动',[]],
@@ -88,7 +89,18 @@ export const automationControls = controls;
 export const automationControlFields = controls.flatMap(c=>c.fields);
 const get = (settings,path) => path.split('.').reduce((obj,key)=>obj?.[key],settings);
 export function automationControlView(settings) {
- return controls.map(c=>({ ...c, enabled:c.fields.every(path=>get(settings,path)===true), configurationNote:c.configuredFields && get(settings,c.key) === true && !c.configuredFields.some(path=>get(settings,path)===true) ? '尚未选择执行动作，请在对应配置中设置。' : '', blockedBy:(c.gates??[]).filter(path=>get(settings,path)!==true).map(path=>controls.find(x=>x.key===path)?.label??path) }));
+ return controls.map(c => {
+   const blockedBy = (c.gates ?? []).filter(path => get(settings, path) !== true)
+     .map(path => controls.find(x => x.key === path)?.label ?? path);
+   const activity = c.taskKey && activityTaskBlocker(settings, c.taskKey);
+   if (activity) blockedBy.push(activity);
+   if (c.taskKey === 'guildWelfare' && settings.alliance?.enabled && !settings.alliance.collectGifts)
+     blockedBy.push('联盟自动化的福利礼包领取已关闭');
+   const enabled = c.fields.every(path => get(settings, path) === true);
+   const configurationNote = enabled && c.configuredFields && !c.configuredFields.some(path => get(settings, path) === true)
+     ? '尚未选择执行动作，请在对应配置中设置。' : '';
+   return { ...c, enabled, configurationNote, blockedBy };
+ });
 }
 export function setAutomationControl(settings,key,enabled) {
  const control=controls.find(c=>c.key===key);

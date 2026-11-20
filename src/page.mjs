@@ -51,6 +51,7 @@ ${chrome()}
 <div class="deck"><main>
   <nav id="resource-tabs" class="resource-tabs" aria-label="杂项分类" hidden>
     <button type="button" data-resource-tab="guild">联盟</button><button type="button" data-resource-tab="inventory">仓库</button><button type="button" data-resource-tab="heroes">英雄与装备</button><button type="button" data-resource-tab="giftcodes">礼包兑换</button>
+    <button type="button" data-resource-tab="dailies">日常任务</button>
   </nav>
   <section id="tab-overview">
     ${overviewPage()}
@@ -85,6 +86,7 @@ ${chrome()}
   </section>
 
   <section id="tab-guild" class="hidden">${guildPage()}</section>
+  <section id="tab-dailies" class="hidden" aria-label="日常任务"><div id="daily-tasks-root"></div></section>
 
   <section id="tab-giftcodes" class="hidden">
     ${giftCodesPage()}

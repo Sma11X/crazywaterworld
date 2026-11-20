@@ -19,7 +19,7 @@ import { giftCodeStatus, giftCodeSummary, startGiftCodes, startGiftCodeBatch } f
 import { publicGiftCodes } from './gift-code-library.mjs';
 import { createGiftCodeAutomation } from './gift-code-automation.mjs';
 import { paginateGiftRecords, giftRecordsCsv, canRetryGiftRecord, canRetryGiftCode } from './gift-code-records.mjs';
-import {runtimeProgress, museumRuntimeStatus} from './runtime-progress.mjs';
+import {runtimeProgress, museumRuntimeStatus, stepObservation} from './runtime-progress.mjs';
 import {watchTreasureTravel} from './treasure-follow.mjs';
 import { watchGuildShipPushes } from './guild-ships.mjs';
 import { watchHeroRaidPushes } from './hero-raid-automation.mjs';
@@ -3611,7 +3611,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if (route === 'GET /api/dailies') {
         const { account, session } = scoped_(parsed);
-        json(await dailies(session, account));
+        json(await readJob(session, () => dailies(session, account)));
         return;
       }
       if (route === 'GET /api/tasks') {
@@ -4692,8 +4692,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             const statusKey = (entry.step?.request==='SetFactoryAutoProduceRequest'?'nativeProduce':null) || entry.taskKey || (['万吨巨轮','城战接续','装备锻造','藏品养成','联盟情报'].includes(entry.category)?entry.category:null) || (entry.step?.kind ? worldTaskKey(entry.step.kind) : null) || entry.category || entry.title || entry.label;
             loop.controlStatus ??= new Map();
             const previous=loop.controlStatus.get(statusKey);
-            const text=entry.reason||entry.error||entry.note||(entry.ok?'最近执行成功':'等待检查');
-            loop.controlStatus.set(statusKey,{text,state:entry.status==='unknown'||entry.status==='pending'?'pending':entry.skipped?'waiting':entry.ok?'ok':'error',checkedAt:Math.floor(Date.now()/1000)});
+            const {text,state} = stepObservation(entry);
+            loop.controlStatus.set(statusKey,{text,state,checkedAt:Math.floor(Date.now()/1000)});
             if(previous?.state==='error'&&(entry.ok||entry.skipped)&&!['pending','unknown'].includes(entry.status)) emit(session,'info',(entry.title||entry.label||entry.step?.label||'任务')+'已恢复');
             const production = entry.ok && !entry.skipped && entry.step?.request === 'StartFactoryProduceRequest';
             const batch = production ? JSON.stringify([entry.round, entry.step.body.buildingId, entry.step.body.productId]) : undefined;
@@ -4810,22 +4810,26 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const displayUsage=usageFor(session).snapshot();
     const observedReward = session.client?.connected ? treasureRewards.get(session.client) : null;
     const treasureReward = observedReward && observedReward.day === displayUsage.day ? observedReward.text : '今日奖励未同步';
+    const settings = settingsView(session).settings;
     return {
       runVersion: RUN_VERSION,
-      fleetMaintenance:{...(loop.fleetMaintenance??{rows:[],reason:'等待首次检查'}),enabled:loop.running&&!!session.client?.connected&&fleetMaintenanceEnabled(settingsView(session).settings)},
+      fleetMaintenance:{...(loop.fleetMaintenance??{rows:[],reason:'等待首次检查'}),enabled:loop.running&&!!session.client?.connected&&fleetMaintenanceEnabled(settings)},
       singleTasks: {pirate:session.pirateAdvance.view(), stages:session.stages?.view?.(), mutual:session.mutualAid?.view?.()},
       challenges: { mainline: loop.challengeRun?.mainline ?? {}, trials: loop.challengeRun?.trials ?? {}, pirate: loop.challengeRun?.pirate?.state ?? {} },
       pirateAdvance: session.pirateAdvance.view(),
-      controls: automationControlView(settingsView(session).settings).filter(control => !control.taskKey || isActivityTaskAvailable(control.taskKey, session.client)).map(control=>{
+      controls: automationControlView(settings).filter(control => !control.taskKey || isActivityTaskAvailable(control.taskKey, session.client)).map(control=>{
         const aliases={'factory.produce':'startProduce','factory.cooperateNative':'nativeProduce','factory.gain':'collect','factory.speedUp':'speedUp','building.build':'build','building.upgrade':'upgrade','building.finish':'finishUpgrade','resident.enabled':'finishOrder','resident.reroll':'denyOrder','farm.enabled':'farm','radar.enabled':'联盟情报','treasure.enabled':'万吨巨轮','cityWar.enabled':'城战接续','forge.enabled':'装备锻造','antique.enabled':'藏品养成','dailies.claimTasks':'dailyRewards','dailies.claimDailyChest':'chests','dailies.claimWeeklyChest':'chests','dailies.claimGift':'gift','resident.rewards':'orderDaily','trials.paid':'trialPaidSweep','trials.ads':'trialAdSweep'};
-        const key=control.taskKey||aliases[control.key]||({'worldBoss.enabled':'worldBoss','gather.fishing':'autoFish','gather.upgradeFishing':'fishEnhance','gather.diving':'autoDive','gather.salvage':'autoSalvage','gather.upgradeDiving':'diveEnhance','gather.upgradeSalvage':'salvageEnhance','gather.floaters':'floaters','gather.antiqueFloaters':'antiqueFloaters','cargo.enabled':'cargo','building.collect':'collect','building.supply':'buildSupply','building.speedUp':'speedUp'})[control.key]||control.key;
-        const challengeKeys=control.key==='progression.mainline'?['stageAuto']:control.key==='pirateHunt.enabled'?['pirateAuto']:control.key==='progression.trials'?settingsView(session).settings.progression.raidIds.map(id=>'trialAuto:'+id):[key];
+        const sharedKey = {'schedule.worldOnline':'worldOnlineRewards','schedule.tradeTasks':'merchantRewards',
+          'guildShip.enabled':'guildShip','guildFort.enabled':'guildFort','heroRaid.enabled':'heroRaid'}[control.key];
+        const key=sharedKey||control.taskKey||aliases[control.key]||({'worldBoss.enabled':'worldBoss','gather.fishing':'autoFish','gather.upgradeFishing':'fishEnhance','gather.diving':'autoDive','gather.salvage':'autoSalvage','gather.upgradeDiving':'diveEnhance','gather.upgradeSalvage':'salvageEnhance','gather.floaters':'floaters','gather.antiqueFloaters':'antiqueFloaters','cargo.enabled':'cargo','building.collect':'collect','building.supply':'buildSupply','building.speedUp':'speedUp'})[control.key]||control.key;
+        const challengeKeys=control.key==='progression.mainline'?['stageAuto']:control.key==='pirateHunt.enabled'?['pirateAuto']:control.key==='progression.trials'?settings.progression.raidIds.map(id=>'trialAuto:'+id):[key];
         const recorded=challengeKeys.map(k=>loop.controlStatus?.get(k)).filter(Boolean).sort((a,b)=>(b.checkedAt??0)-(a.checkedAt??0))[0],observed=rewards?.status(key);
         let state=(observed?.checkedAt??0)>(recorded?.checkedAt??0)?observed:recorded||observed;
         if(state?.checkedAt && beijingDay(state.checkedAt*1000)!==displayUsage.day)state=null;
+        if (state && control.taskKey === 'tradeTasks') state = { ...state, text: '海商王统一领奖的最近记录：' + state.text };
         let nextCheck = rewards?.nextCheck(key) ?? null;
         if (control.key === 'museum.runEnabled') {
-          const museum = museumRuntimeStatus(settingsView(session).settings, {
+          const museum = museumRuntimeStatus(settings, {
             status(taskKey) {
               const saved = loop.controlStatus?.get(taskKey), current = rewards?.status(taskKey);
               const observation = (current?.checkedAt ?? 0) > (saved?.checkedAt ?? 0) ? current : saved || current;
@@ -4836,7 +4840,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           state = museum.observation;
           nextCheck = museum.nextCheck;
         }
-        state??={text:control.group==='总控制'?'控制项，不单独执行':control.key.endsWith('.enabled')&&['building','factory','heroes','pet','gather','progression'].includes(control.key.split('.')[0])?'分组控制，具体动作状态见下方子项':'本次连接尚无检查结果',state:'unseen',checkedAt:null};
+        state??={text:control.group==='总控制'?'控制项，不单独执行':control.key==='radar.runEnabled'||control.key.endsWith('.enabled')&&['building','factory','heroes','pet','gather','progression'].includes(control.key.split('.')[0])?'分组控制，具体动作状态见下方子项':'等待首次检查',state:'unseen',checkedAt:null};
         if(control.key==='events.enabled'&&session.client){const events=watchBasePushes(session.client);state={text:events.choiceObserved?'已同步 '+events.choices.size+' 条事件（等待匹配可处理选项）':'未同步：本次连接尚未收到随机事件状态',state:events.choiceObserved?'waiting':'pending'};}
         return {...control,observation:state,...runtimeProgress(control,state,displayUsage,{running:loop.running,connected:!!session.client?.connected,treasureReward,freeTimes:session.client?.freeRecruitTimes,now:Date.now()+(session.client?.serverClockOffsetMs||0)}),nextCheck:loop.running&&session.client?.connected&&control.enabled&&!control.blockedBy.length?nextCheck:null,stale:!loop.running||!session.client?.connected};
       }),
