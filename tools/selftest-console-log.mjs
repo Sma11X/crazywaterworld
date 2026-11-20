@@ -169,6 +169,7 @@ try {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
+      APPDATA: path.join(dir, 'empty-wechat-cache'),
       CW_DATA_DIR: dir, CW_CONFIG_PACK: configFile,
       CW_PROTO_BUNDLE: protocolFile,
       CW_NO_BROWSER: '1', CW_QUIET_START: '1', CW_PORT: '0',
@@ -181,6 +182,7 @@ try {
   child.stderr.on('data', text => { stderr += text; });
   const started = /\[\d{2}:\d{2}:\d{2}\] \[系统\] \[系统与连接\] \[信息\] 控制台已启动 (http:\/\/127\.0\.0\.1:([1-9]\d*))/;
   const guidance = '关闭网页后挂机会继续，运行日志显示在此窗口。请保持此窗口打开；Ctrl+C 或关闭此窗口会结束后台进程。';
+  const artFailure = '[艺术资源] 同步失败：没找到微信小游戏缓存目录';
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => finish(new Error('CLI 启动输出超时：' + stderr)), 10000);
     const finish = error => {
@@ -194,7 +196,7 @@ try {
     const onClose = (code, signal) => finish(new Error(`CLI 提前退出：code=${code} signal=${signal}\n${stderr}`));
     const onData = text => {
       stdout += text;
-      if (started.test(stdout) && stdout.includes(guidance)) finish();
+      if (started.test(stdout) && stdout.includes(guidance) && stdout.includes(artFailure)) finish();
     };
     child.once('error', onError);
     child.once('close', onClose);
@@ -211,7 +213,7 @@ try {
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).accounts, [], '子进程只读取隔离目录的空账号库');
   passed++;
-  console.log('通过：真实 CLI 在无浏览器和空账号下保持运行，输出实际地址及启动窗口保留提示');
+  console.log('通过：真实 CLI 输出实际地址及启动提示，缺少艺术资源缓存时仍可访问账号接口');
 } finally {
   if (child && closed) {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');

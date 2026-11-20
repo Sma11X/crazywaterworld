@@ -2,7 +2,9 @@ import { shutdownSignals } from './platform/terminal.mjs';
 import { consoleHost } from './console-address.mjs';
 import fs from 'node:fs';
 import readline from 'node:readline';
-import { parseArgs } from 'node:util';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { parseArgs, promisify } from 'node:util';
 import { GameClient } from './client.mjs';
 import { getProtocol as loadProtocol } from './proto.mjs';
 import { createConsole, openBrowser } from './server.mjs';
@@ -30,6 +32,23 @@ import { createConsoleOutput } from './console-output.mjs';
 import { createResourceUpdater } from './resource-updater.mjs';
 
 let consoleOutput = null;
+
+async function syncConsoleArt(output) {
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once('exit', stop);
+  try {
+    const script = fileURLToPath(new URL('../tools/sync-art.mjs', import.meta.url));
+    const { stdout } = await promisify(execFile)(process.execPath, [script, '--fetch'], {
+      windowsHide: true, signal: controller.signal,
+    });
+    output.write('[艺术资源] ' + stdout.trim().split('\n', 1)[0]);
+  } catch (error) {
+    output.write('[艺术资源] 同步失败：' + (error.stderr?.trim() || error.message) + '。可运行 npm run sync-art -- --fetch 重试。');
+  } finally {
+    process.off('exit', stop);
+  }
+}
 
 const READ_ONLY_PROBES = [
   'AllResourceRequest',
@@ -1064,6 +1083,7 @@ async function main() {
   const console_ = createConsole({ host: consoleHost(), port, onLog: entry => output.log(entry), resourceUpdates: true });
   const url = await console_.listen();
   output.start(url);
+  void syncConsoleArt(output);
   let shuttingDown = false;
   const shutdown = async signal => {
     if (shuttingDown) return;
