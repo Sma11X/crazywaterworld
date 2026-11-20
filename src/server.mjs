@@ -3029,6 +3029,19 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
       // ---- 只读视图 ----
       if (parsed.pathname.startsWith('/api/gift-codes')) res.setHeader('cache-control', 'no-store');
+      if (route === 'POST /api/gift-codes/channels/preview') {
+        const payload = jsonBody(); needConfirm(payload);
+        json({ codes: await publicGiftCodes.previewChannel(payload) });
+        return;
+      }
+      if (route === 'POST /api/gift-codes/channels/save' || route === 'POST /api/gift-codes/channels/toggle' || route === 'POST /api/gift-codes/channels/delete') {
+        const payload = jsonBody(); needConfirm(payload);
+        if (route.endsWith('/save')) publicGiftCodes.saveChannel(payload);
+        else if (route.endsWith('/toggle')) publicGiftCodes.setChannelEnabled(payload.id, payload.enabled);
+        else publicGiftCodes.removeChannel(payload.id);
+        json({ channels: publicGiftCodes.channels() });
+        return;
+      }
       if (route === 'GET /api/gift-codes/initial' || route === 'POST /api/gift-codes/load') {
         const payload = req.method === 'POST' ? jsonBody() : null;
         if (payload) needConfirm(payload);
@@ -3049,7 +3062,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           eligible: !selected.length || available.has(entry.code),
         }));
         const tryCodes = displayRows.filter(row => row.eligible).map(row => row.code);
-        json({ ...publicGiftCodes.view(), displayRows, tryCodes, available: tryCodes.length });
+        json({ ...publicGiftCodes.view(), channels: publicGiftCodes.channels(), displayRows, tryCodes, available: tryCodes.length });
         if (payload) void giftAutomation.check();
         return;
       }
