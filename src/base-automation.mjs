@@ -667,7 +667,7 @@ export async function runBaseAutomation(client, protocol, config, plan, { player
   }
   const pref = getSettings();
   const cleanup = await cleanupAfterClaim(client, config, pref, ledger, 'pet',
-    () => enabled() && client.connected && getSettings() === pref && pref.loop.world && pref.pet.enabled);
+    () => enabled() && client.connected && getSettings() === pref && pref.loop.world && pref.pet.enabled, player);
   if (cleanup) {
     const row = { ...cleanup, step: { kind: 'petRelease', label: cleanup.label } };
     results.push(row);

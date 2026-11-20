@@ -730,8 +730,9 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 
 ## 15. 装备分解、海兽放生与城战选城（v76）
 
-- `DispEquip.star` 是锻造随机得到的装备星级，自动分解要求 `level <= 1`、`refineLv == 0` 且没有属性洗练记录。蓝、紫、橙海兽的 0–5 星由 `PetBreedLevelCfg` 按培育等级随机获得，天然高星可参与所选品质的自动放生。红色海兽出生为 0 星，`star > 0` 时保留。海兽还须满足 `level <= 1`、`grade == 0`、无附加属性、洗练或进阶投喂记录，并完成值守与编队占用检查。
-- 分解和放生在对应模块每轮检查中扫描库存。上次结果待确认时，完整库存中已消失的 UID 自动核销，已确认 UID 保留标记以避免旧库存回显后重复发送。在场 UID 经过两次占用、品质和养成复核后可重试同一 UID，已穿戴、上阵或养成的对象会保留并解除旧待确认记录。账号连接、设置变化或暂停会中止发送前检查。
+- `DispEquip.star` 是锻造随机得到的装备星级，自动分解要求 `level <= 1`、`refineLv == 0` 且没有属性洗练记录。
+- 自动放生处理所选品质的海兽，包括已升级、升星、进阶或洗练的海兽。值守、主队、舰队、远征、极限试炼和积分赛编队中的海兽会跳过。巅峰擂台赛开放且本人取得参赛资格时，还会核对 `TournamentFormationResponse.team[].formation.petUid`。批量放生被拒时会回读占用和库存，确认有海兽刚被占用后，仅重试原批次中仍符合条件的 UID。
+- 分解和放生在对应模块每轮检查中扫描库存。上次结果待确认时，完整库存中已消失的 UID 自动核销，已确认 UID 保留标记以避免旧库存回显后重复发送。在场 UID 连续两次符合对应的分解或放生条件时可重试，否则解除旧待确认记录。账号连接、设置变化或暂停会中止发送前检查。
 - 当前协议没有 `LeagueFormationRequest`；本人的积分赛编队从 `LeagueInfoResponse.ownFormations`（字段 5，重复 `LeagueFormation`）读取，`LeagueFormationResponse` 只用于保存编队。
 - `WorldCity` 的本盟现场数量由 `attackFleetNum + priorityAtkFleetNum` 加上 `battlePoints` 中左侧非 NPC 且属于本盟的交战点组成；已同步在途舰队从 `WorldInfoResponse.fleets` 读取：`state == 2`、`targetCityId` 为目标城、`owner.guildId` 为本盟，并按 `owner.playerId` 排除 MyFleets 已统计的本人舰队。归属或数量无法确认时不当作 0。
 - `SetFleetAutoFightRequest { buildingIds[], isOn }` 没有配套响应；关闭后回读 `MyFleetsResponse.fleets[].autoFight.isOn` 确认。城战原生委任设置 -1 按 VIP 额度等待，0 关闭后接管，N 表示原生先用 N 次再关闭。

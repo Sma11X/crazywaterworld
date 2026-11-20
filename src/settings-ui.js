@@ -290,7 +290,7 @@ const configGroups = [
   { id: 'pet', title: '海兽培育室', category: 'base', fields: [
     configField('pet.enabled', '总开关'), configField('pet.claim', '自动领取'), configField('pet.breed', '自动培育'),
     configField('pet.species', '培育种类', 'multi', { parent: 'pet.breed', catalog: 'petSpecies', empty: '未选择品种，不自动培育', when: d => d.pet.breed }),
-    configField('pet.release','自动放生','switch',{help:'每轮核对全部库存及上阵、值守、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
+    configField('pet.release','自动放生','switch',{help:'放生所选品质的海兽，包括已养成的海兽。已编队或值守的海兽会跳过。工具无法读取游戏客户端的本地锁定名单。'}),
     configField('pet.releaseQualities','处理品质','multi',{ parent: 'pet.release',catalog:'petQualities',empty:'未选择，不处理',when:d=>d.pet.release}),
     configField('pet.quality', '培育品质上限', 'choice', { parent: 'pet.breed', options: [['BLUE', '蓝色'], ['PURPLE', '紫色'], ['ORANGE', '橙色'], ['RED', '红色']], when: d => d.pet.breed, help: '在所选品质及以下，从材料足够的低品质开始尝试。' }),
     configField('pet.universal', '允许消耗万能基因', 'switch', { parent: 'pet.breed', help: '仅在普通基因不足时，用对应的已有自选基因补足。', when: d => d.pet.breed }),
