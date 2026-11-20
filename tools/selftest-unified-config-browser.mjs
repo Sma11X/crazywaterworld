@@ -13,7 +13,9 @@ fs.writeFileSync(process.env.CW_CONFIG_PACK, JSON.stringify([[1, 'HeroCfg', { da
   { id: '瑞文', name: '骑士瑞文', quality: 'PURPLE', type: '英雄' },
   { id: '波奇', name: '波奇', quality: 'PURPLE', type: '英雄' },
   { id: '训练目标', name: '训练木人', quality: 'PURPLE', type: 'NPC' },
-] }], [2, 'BuildingUnlockCfg', { data: [1, 2, 3].map(id => ({ buildingType: '远征船', buildingId: id + '远征船' })) }]]));
+] }], [2, 'BuildingUnlockCfg', { data: [1, 2, 3].map(id => ({ buildingType: '远征船', buildingId: id + '远征船' })) }],
+  [3, 'ItemCfg', { data: ['耐火砖','高温合金','木板'].map(id => ({ id })) }],
+]));
 const { saveStore } = await import('../src/accounts.mjs');
 const { defaultSettings, saveAutomationSettings, loadAutomationSettings, settingsUiRules } = await import('../src/automation-settings.mjs');
 const { GameClient } = await import('../src/client.mjs');
@@ -140,6 +142,38 @@ try {
   assert.equal(await page.locator('#config-root').getByRole('button', { name: /重新载入/ }).count(), 0);
   assert.equal(await page.locator('#config-root').getByText(/上次保存/).count(), 0);
   console.log('通过：模块开关各自归位，旧导航与跨页跳转移除');
+
+  await group('guildFort');
+  for (const [key, empty] of [['materials','任意可捐物料'], ['blockedMaterials','未排除物料']]) {
+    const picker = page.locator('#config-field-guildFort-' + key);
+    assert.equal(await picker.locator('summary').textContent(), empty);
+    await picker.locator('summary').click();
+    await picker.getByText(/显示全部物资/).waitFor();
+    assert.deepEqual(await picker.locator('.config-option').allTextContents(), ['耐火砖','高温合金','木板']);
+    await picker.getByRole('checkbox', { name: '木板' }).check();
+    await picker.locator('summary').click(); await saved();
+  }
+  await page.reload(); await openConfig(); await group('guildFort');
+  const fortRoute = '**/api/settings/guild-fort-materials?account=config-a';
+  let needed = ['高温合金'];
+  await page.route(fortRoute, route => route.fulfill({ json: { itemIds: needed } }));
+  for (const key of ['materials', 'blockedMaterials']) {
+    const picker = page.locator('#config-field-guildFort-' + key);
+    assert.equal(await picker.locator('summary').textContent(), '木板');
+    await picker.locator('summary').click();
+    await picker.getByRole('checkbox', { name: '高温合金' }).check();
+    assert.deepEqual(await picker.locator('.config-option').allTextContents(), ['高温合金']);
+    await picker.locator('summary').click(); await saved();
+    assert.deepEqual(loadAutomationSettings('config-a').settings.guildFort[key], ['木板','高温合金']);
+  }
+  needed = [];
+  const donations = page.locator('#config-field-guildFort-materials');
+  await donations.locator('summary').click();
+  await donations.getByText('当前没有待捐物料。').waitFor();
+  assert.equal(await donations.getByRole('checkbox').count(), 0);
+  await donations.locator('summary').click();
+  await page.unroute(fortRoute);
+  console.log('通过：工事进度筛选和零缺口、离线全部物资、两份名单跨进度保存');
 
   await group('radar');
   assert.equal(await page.locator('[data-config-key="radar.monthCardSweep"]').count(), 0);

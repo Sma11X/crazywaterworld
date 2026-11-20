@@ -70,6 +70,7 @@ import { createLineupExecutor, lineupRole, selectedSavedLineup } from './lineup-
 import { lineupArt } from './lineup-art.mjs';
 import { pirateBoard } from './pirate-board.mjs';
 import { readGuild, readGuildMembers, claimGuildWelfare, claimMyGuildAid } from './guild.mjs';
+import { readGuildForts } from './guild-forts.mjs';
 import { createGuildMutualTask, readMutualOptions, mutualOptions, loadMutualPreset, saveMutualPreset } from './guild-mutual.mjs';
 import { readFleetFormations, initializeFleetFormation } from './fleet-formation.mjs';
 import { getProtocol, getProtocolSource } from './proto.mjs';
@@ -2334,6 +2335,22 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           return readGuildMembers(client, loadConfigSafe(), session.player);
         });
         json(members);
+        return;
+      }
+      if (route === 'GET /api/settings/guild-fort-materials') {
+        const { session } = scoped_(parsed);
+        const { client, player, generation } = session;
+        res.setHeader('cache-control', 'no-store');
+        if (!client?.connected || session.paused) {
+          json({ itemIds: null, reason: '账号未连接或已暂停' });
+          return;
+        }
+        const enabled = () => session.client === client && client.connected && !session.paused
+          && session.generation === generation && session.player === player;
+        const view = await enqueue(session, () => readGuildForts(client, protocolFor(client), loadConfigSafe(),
+          { player, enabled, inventory: false }), undefined, { recoverFormation: false });
+        const itemIds = view.state === 'blocked' ? null : [...new Set(view.candidates.map(item => item.id))];
+        json({ itemIds, reason: view.reason });
         return;
       }
       if (route === 'GET /api/settings/history' || route === 'POST /api/settings/history') {

@@ -169,7 +169,8 @@ const configGroups = [
   ]},
   {id:'guildFort',title:'联盟 · 工事捐赠',category:'world',fields:[
     configField('guildFort.enabled','自动捐赠工事','switch',{gates:['alliance.enabled'],help:'同时需要联盟自动化总开关。只捐现有库存；不购买、不兑换，不创建或拆除工事。'}),
-    configField('guildFort.materials','捐赠物料','multi',{catalog:'materials',empty:'未选择，使用联盟互助允许物料；两处均为空则不捐赠'}),
+    configField('guildFort.materials','捐赠物料','multi',{catalog:'materials',fortNeeds:true,empty:'任意可捐物料',help:'留空时可捐任意工事所需物料，选择后只捐所选物料。'}),
+    configField('guildFort.blockedMaterials','排除物料','multi',{catalog:'materials',fortNeeds:true,empty:'未排除物料',help:'即使同时选为捐赠物料，也会跳过这里选中的物料。'}),
     configField('guildFort.reserve','捐赠后库存保留','number'),configField('guildFort.dailyLimit','每日捐赠上限','number',{help:'0 表示不额外限制，仍遵守游戏日上限。'}),
   ]},
   {id:'resourceFields',title:'资源田',category:'world',fields:[
@@ -1734,51 +1735,75 @@ function configMultiselect(spec, id, options = {}) {
   const search = el('input', 'config-input'); search.type = 'search'; search.placeholder = '搜索' + spec.label; search.setAttribute('aria-label', '搜索' + spec.label);
   const list = el('div', 'config-option-list'); const foot = el('div', 'config-select-foot');
   const count = el('span'); let limit = 120;
+  let fortItemIds = null, fortNotice = '', requestNumber = 0;
   const more = configButton('显示更多选项', () => { limit += 120; paintList(); });
   const all = () => {
     const options = (catalog[spec.catalog] ?? []).filter(item =>
       spec.key !== 'heroes.heroIds' || !item.hidden || read().includes(item.value));
-    if (spec.catalog!=='expeditionFleets') for (const value of read()) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
+    if (spec.catalog!=='expeditionFleets' && !spec.fortNeeds) for (const value of read()) if (!options.some(item => item.value === value)) options.unshift({ value, label: value + '（当前配置中未找到）' });
     return options;
   };
   function paintSummary() {
     const options = all(), values = read().filter(value=>spec.catalog!=='expeditionFleets'||options.some(item=>item.value===value));
-    const names = values.map(value => options.find(item => item.value === value)?.label || value);
+    const names = values.map(value => options.find(item => item.value === value)?.label || value + '（已失效）');
     const empty = spec.key === 'heroes.heroIds' && configGet('heroes.needsSelection')
       ? '旧配置曾允许培养全部英雄，请重新选择' : spec.empty || '请选择';
     summary.textContent = names.length ? names.slice(0, 2).join('、') + (names.length > 2 ? ' 等 ' + names.length + ' 项' : '') : empty;
   }
   function paintFooter(available, matchCount, selected) {
     const selectedCount = available.filter(item => selected.has(item.value)).length;
-    count.textContent = '已选 ' + selectedCount + ' 项 · 匹配 ' + matchCount + ' 项';
+    count.textContent = '已选 ' + (spec.fortNeeds ? selected.size : selectedCount) + ' 项 · 匹配 ' + matchCount + ' 项';
     reset.disabled = disabled || selected.size === 0;
     if (selectAll) selectAll.disabled = disabled || selectedCount === available.length;
   }
   function paintList() {
     const oldScroll = list.scrollTop; clear(list);
     const query = search.value.trim().toLocaleLowerCase();
-    const available = all();
+    const materialOptions = all();
+    const available = fortItemIds ? materialOptions.filter(item => fortItemIds.has(item.value)) : materialOptions;
     const matches = available.filter(item => (item.label + ' ' + item.value).toLocaleLowerCase().includes(query));
     const selected = new Set(read());
+    if (fortNotice) list.append(el('p', 'config-help', fortNotice));
     for (const item of matches.slice(0, limit)) {
       const label = el('label', 'config-option'); const input = el('input'); input.type = 'checkbox'; input.checked = selected.has(item.value); input.disabled = disabled;
       input.onchange = () => {
         if (disabled) return;
-        const values = read();
+        const values = spec.fortNeeds ? read().filter(value => materialOptions.some(item => item.value === value)) : read();
         write(input.checked ? [...values, item.value] : values.filter(value => value !== item.value));
         if (spec.key === 'heroes.heroIds' && item.hidden && !input.checked) { paintSummary(); paintList(); return; }
         paintSummary(); paintFooter(available, matches.length, new Set(read()));
       };
       label.append(input, el('span', '', item.label)); list.append(label);
     }
-    if (!matches.length) list.append(el('p', 'config-help', '没有匹配项，试试其他名称。'));
+    if (!matches.length && (!fortNotice || available.length)) list.append(el('p', 'config-help', '没有匹配项，试试其他名称。'));
     paintFooter(available, matches.length, selected);
     more.hidden = matches.length <= limit; list.scrollTop = oldScroll;
   }
   search.oninput = () => { limit = 120; paintList(); };
+  async function loadFortNeeds(request) {
+    const account = configEditor.owner;
+    let result;
+    try { result = await call('/api/settings/guild-fort-materials?account=' + encodeURIComponent(account)); }
+    catch (error) { result = { reason: error.message }; }
+    if (request !== requestNumber || !root.open || !root.isConnected || account !== current || account !== configEditor.owner) return;
+    if (Array.isArray(result.itemIds)) {
+      fortItemIds = new Set(result.itemIds);
+      fortNotice = fortItemIds.size ? '' : result.reason || '当前没有待捐物料。';
+    } else {
+      fortItemIds = null;
+      fortNotice = (result.reason || '暂时无法读取工事进度') + '，显示全部物资。';
+    }
+    paintList();
+  }
   root.ontoggle = () => {
-    if (root.open) { paintList(); configOpenSearchPanel(root, panel, search); }
-    else root.classList.remove('open-up');
+    requestNumber++;
+    if (!root.open) { root.classList.remove('open-up'); return; }
+    if (spec.fortNeeds) {
+      fortItemIds = new Set();
+      fortNotice = '正在读取当前联盟的工事进度…';
+      void loadFortNeeds(requestNumber);
+    }
+    paintList(); configOpenSearchPanel(root, panel, search);
   };
   root.onkeydown = event => { if (event.key === 'Escape') { root.open = false; summary.focus(); event.stopPropagation(); } };
   const actions = el('div', 'config-select-foot-actions');

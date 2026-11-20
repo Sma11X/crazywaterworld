@@ -517,8 +517,20 @@ try {
     assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 28, settings: old }), expected);
     assert.deepEqual(saveAutomationSettings('old', old, { file, revision: 1 }).settings, expected);
   });
+  test('版本30工事捐赠配置保留捐赠选择并补齐排除名单', () => {
+    for (const materials of [[], ['耐火砖']]) {
+      const expected = defaultSettings();
+      Object.assign(expected.guildFort, { enabled: true, materials, reserve: 3, dailyLimit: 15 });
+      expected.alliance.allowedMaterials = ['木板'];
+      const old = structuredClone(expected);
+      delete old.guildFort.blockedMaterials;
+      fs.writeFileSync(file, JSON.stringify({ version: 30, accounts: { old: { settingsVersion: 30, revision: 1, settings: old } } }));
+      assert.deepEqual(loadAutomationSettings('old', { file }).settings, expected);
+      assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 30, settings: old }), expected);
+    }
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 30);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 31);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
