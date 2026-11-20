@@ -1,4 +1,4 @@
-import {fleetRecordReason,fleetStateName,legacyFleetReservationReason,reserveDispatch} from './fleet-availability.mjs';
+import { isMiningSilicon, fleetRecordReason,fleetStateName,legacyFleetReservationReason,reserveDispatch} from './fleet-availability.mjs';
 import { recordsInWorld, settleFleetSnapshot } from './fleet-settlement.mjs';
 // 按原生委任策略接管后的城战攻守。只移动本人舰队和正常维修，不宣战。
 import { exactAutomationId } from './automation-policy.mjs';
@@ -274,6 +274,7 @@ export function planCityWar(snapshot, settings, { keys = {}, pendingPetrol = 0 }
   const p = settings?.cityWar;
   const plan = { actions: [], notes: [], reservedFleetIds: [], fleets: [], targets: snapshot.targets, nativeLimit: snapshot.nativeLimit,
     nativeCommissionLimit: p?.nativeCommissionLimit ?? -1, nativeOffFleetIds: [],
+    miningFleetIds: snapshot.fleets.filter(isMiningSilicon).map(f => f.buildingId),
     startTime: snapshot.startTime, endTime: snapshot.endTime, fuel: snapshot.fuel, inWindow: snapshot.inWindow, reason: snapshot.reason };
   const currentKeys = Object.entries(keys).filter(([key, value]) => key.startsWith('cityWar:' + snapshot.worldId + ':') && !value.expired);
   for (const [, record] of currentKeys) if (!record.confirmed && record.details?.buildingId) plan.reservedFleetIds.push(record.details.buildingId);

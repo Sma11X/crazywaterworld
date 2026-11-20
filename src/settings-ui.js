@@ -199,7 +199,6 @@ const configGroups = [
     configField('silicon.enabled','硅矿自动化总开关','switch',{help:'按真实赛季与功能解锁条件运行。奖励由服务器自动结算；一般每10分钟检查，追击或追杀每2分钟，相关推送提前唤醒。'}),
     configField('silicon.dailyRewardLimit','每日奖励结算次数上限','number',{help:'0 表示不额外限制；同时遵守服务端周期上限。达限停止派遣并在游戏允许撤回时撤回；首次缺少当日基线时按当前周期累计次数保守计数。'}),
     configField('silicon.windows','占矿时段','names',{placeholder:'08:00-12:00\n18:00-23:00',help:'北京时间，每行 HH:mm-HH:mm；允许跨午夜，空表示全天。'}),
-    configField('silicon.dailyDiamondLimit','每日加速钻石预算','number',{help:'0 禁止加速花钻。还需开启全局钻石消费并满足全局日预算。'}),
     configField('silicon.pursuitMinutes','三日奖励周期重置后追击窗口','number',{unit:'分钟',help:'按服务器三日奖励周期起点计算。只追击黑名单中已在本账号确认击败的对手，不换空矿或新对手；低等矿与只占空位时不追击。'}),
     ...[0,1,2].flatMap(i=>{
       const key='silicon.fleets.'+i+'.',label='舰队'+(i+1)+' · ',when=d=>d.silicon.fleets[i].enabled;
@@ -215,8 +214,13 @@ const configGroups = [
         configField(key+'huntRetreat',label+'追杀撤退策略','choice',{parent:key+'huntEnabled',options:[['never','持续采集'],['afterReward','采一次矿就撤回'],['onTarget','发现名单目标先撤再打']],when:d=>when(d)&&d.silicon.fleets[i].huntEnabled,help:'采一次后撤回：每次占矿首次产奖后撤回，下轮重新寻找名单目标或空位。发现目标后撤回：仅有符合限制的名单目标时撤回，回港确认后重新核对再攻打。游戏要求首轮15分钟产矿完成后才能撤回；返航期间不强行出征。'}),
         configField(key+'safePlayers',label+'安全玩家','names',{parent:key+'enabled',when,help:'完整昵称，每行一个，忽略大小写；不主动攻击这些玩家。'}),configField(key+'safeGuilds',label+'安全联盟编号','names',{parent:key+'enabled',when,help:'游戏显示的联盟数字编号，每行一个；矿位协议不包含联盟名称。'}),
         configField(key+'minDurabilityPercent',label+'最低耐久','number',{unit:'%',parent:key+'enabled',when}),configField(key+'autoRepair',label+'自动维修','switch',{parent:key+'enabled',when}),
-        configField(key+'repairSpeedUp',label+'允许加速维修','switch',{parent:key+'enabled',when}),
-        configField(key+'marchSpeedUp',label+'允许行军加速','switch',{parent:key+'enabled',when}),configField(key+'marchTargetSeconds',label+'行军剩余目标','number',{unit:'秒',parent:key+'marchSpeedUp',when})].map(field=>({...field,fleetIndex:i,fleetGroup:'silicon'}));
+        ...[['march','去程'],['return','回城']].flatMap(([mode,title])=>{
+          const toggle = mode+'SpeedUp', parent = key+toggle;
+          const visible = d=>when(d) && d.silicon.fleets[i][toggle];
+          return [configField(parent,label+title+'加速','switch',{parent:key+'enabled',when}),
+            configField(key+mode+'TargetSeconds',label+title+'剩余目标','number',{unit:'秒',parent,when:visible,help:'剩余时间超过此值时才加速。'}),
+            configField(key+mode+'DailyDiamonds',label+title+'每日钻石预算','number',{unit:'钻石',parent,when:visible,help:'仅用于本队此项加速。0 禁止花钻，同时遵守全局每日预算和钻石保留量。'})];
+        })].map(field=>({...field,fleetIndex:i,fleetGroup:'silicon'}));
     }),
   ]},
   {id:'league',title:'积分赛',category:'daily',fields:[
@@ -395,12 +399,18 @@ const configGroups = [
     configField('treasure.allowHostile', '允许争夺其他联盟货轮', 'switch', { help: '默认关闭，只参与无人占领或本联盟货轮。开启后可能与其他联盟交战，跟随名单也受此开关约束。' }),
     configField('treasure.minDurabilityPercent', '最低舰队耐久', 'number', { unit: '%', help: '低于此比例时先维修；关闭自动维修则跳过。0 不设比例阈值，但零耐久仍需维修。未知耐久上限不会自动维修或出征。' }),
     configField('treasure.autoRepair', '耐久不足自动维修', 'switch', { help: '有符合条件的货轮时，按服务器报价普通维修至满耐久，完成后重新检查目标再派。不会使用钻石或加速维修。' }),
-    configField('treasure.marchSpeedUp', '允许行军加速', 'switch', { help: '默认关闭。仅加速本工具已确认派出的巨轮舰队，缩短出征航程。每次钻石费用读取游戏配置，还需开启全局钻石消费，并满足全局每日预算和钻石保留量。' }),
-    configField('treasure.marchTargetSeconds', '行军剩余目标', 'number', { parent: 'treasure.marchSpeedUp', when: d => d.treasure.marchSpeedUp, unit: '秒', help: '默认60秒。剩余航程超过此值时才加速，每次缩短时间以游戏为准。0表示在航程结束前持续按预算检查加速。' }),
-    configField('treasure.dailyDiamondLimit', '每日行军加速钻石预算', 'number', { parent: 'treasure.marchSpeedUp', when: d => d.treasure.marchSpeedUp, unit: '钻石', help: '默认0，0禁止加速花钻。与全局每日钻石预算同时生效，结果未确认的加速继续占用预算。' }),
+    configField('treasure.marchSpeedUp', '允许行军加速', 'switch', { help: '默认关闭。仅加速本工具已确认派出的巨轮舰队。展开后可分别设置去程和回城。每次钻石费用读取游戏配置，还需开启全局钻石消费，并满足全局每日预算和钻石保留量。' }),
+    configField('treasure.outboundSpeedUp', '去程加速', 'switch', { parent: 'treasure.marchSpeedUp', when: d => d.treasure.marchSpeedUp, help: '舰队前往符合参与条件的货轮时，按去程剩余时间决定是否加速。' }),
+    configField('treasure.marchTargetSeconds', '去程剩余目标', 'number', { parent: 'treasure.outboundSpeedUp', when: d => d.treasure.marchSpeedUp && d.treasure.outboundSpeedUp, unit: '秒', help: '默认60秒。剩余航程超过此值时才加速，每次缩短时间以游戏为准。0表示在航程结束前持续按预算检查加速。' }),
+    configField('treasure.dailyDiamondLimit', '去程每日钻石预算', 'number', { parent: 'treasure.outboundSpeedUp', when: d => d.treasure.marchSpeedUp && d.treasure.outboundSpeedUp, unit: '钻石', help: '仅用于去程加速。0 禁止花钻，同时遵守全局每日预算和钻石保留量。' }),
+    configField('treasure.returnSpeedUp', '回城加速', 'switch', { parent: 'treasure.marchSpeedUp', when: d => d.treasure.marchSpeedUp, help: '舰队从已参加的货轮返回所属城池时生效。货轮结算后仍可加速回城。' }),
+    configField('treasure.returnTargetSeconds', '回城剩余目标', 'number', { parent: 'treasure.returnSpeedUp', when: d => d.treasure.marchSpeedUp && d.treasure.returnSpeedUp, unit: '秒', help: '默认60秒。回城剩余时间超过此值时才加速，0表示直到归队前都可按预算加速。' }),
+    configField('treasure.returnDailyDiamondLimit', '回城每日钻石预算', 'number', { parent: 'treasure.returnSpeedUp', when: d => d.treasure.marchSpeedUp && d.treasure.returnSpeedUp, unit: '钻石', help: '仅用于回城加速。0 禁止花钻，同时遵守全局每日预算和钻石保留量。' }),
     configField('treasure.maxProgress', '巨轮整体进度阈值', 'number', { unit: '%', help: '货轮达到此占领进度后不再派遣，减少临近结束时白跑。' }),
     configField('treasure.personalProgressLimit', '个人进度上限', 'number', { unit: '%', help: '本人在单艘货轮的实际占领进度达到上限后，不再新派遣或为该货轮备战维修，反复攻占也不例外。0表示禁止新派遣。只读取实际个人进度，查询失败先等待核对；已出发、排队或驻守的舰队不会被强制召回。' }),
     configField('treasure.dailyDispatchLimit', '每日舰队出征上限', 'number', { unit: '次', help: '每次派遣一支舰队计 1 次，重复参与也计数；0 表示不限制工具次数，仍遵守参与模式。北京时间零点换日。' }),
+    configField('treasure.recallSilicon', '货轮刷新前召回硅矿舰队', 'switch', { help: '按服务器货轮刷新时间召回本玩法选中且正在采矿的舰队。首次采集完成后可撤回，提前窗口内暂停这些舰队自动占矿。' }),
+    configField('treasure.recallLeadMinutes', '提前召回时间', 'number', { parent: 'treasure.recallSilicon', when: d => d.treasure.recallSilicon, unit: '分钟', help: '默认提前5分钟，可设置1–1440分钟。舰队实际到城时间取决于返航航程。' }),
     configField('treasure.checkEverySeconds', '检查间隔', 'number', { unit: '秒', help: '挂机运行时每 5–300 秒检查一次。保存配置不会开始挂机。' }),
   ] },
   { id:'radar',title:'联盟情报',category:'world',fields:[
@@ -450,6 +460,8 @@ const configGroups = [
     configField('cityWar.defenceCityRefs', '指定防守城市', 'multi', { parent: 'cityWar.defenceTargetMode', catalog: 'cityTargets', empty: '请选择当前场景的防守城市', when: d => d.cityWar.defenceTargetMode === 'selected', help: '防守队在本名单内选择有效目标。启用队数与距离优先时按上述规则排序，勾选顺序用于同条件时的次序。场景不匹配、未受宣战或城市归属不符合防守职责时跳过，没有有效目标时等待。' }),
     configField('cityWar.autoRepair', '耐久不足时维修', 'switch', { help: '仅正常维修；按服务器返回的完整维修报价核对实际汽油库存，维修完成后再出战。' }),
     configField('cityWar.repairBelowPercent', '低于此耐久比例先维修', 'number', { unit: '%', help: '还须达到游戏配置的城战基础耐久门槛；实际扣除随交战对象变化，不保证每场只扣基础值。已在行军、战斗、维修、驻外或其他任务中的舰队不被抢占。' }),
+    configField('cityWar.recallSilicon', '城战开战前召回硅矿舰队', 'switch', { help: '按服务器城战开战时间召回本玩法选中且正在采矿的舰队。首次采集完成后可撤回，提前窗口内暂停这些舰队自动占矿。' }),
+    configField('cityWar.recallLeadMinutes', '提前召回时间', 'number', { parent: 'cityWar.recallSilicon', when: d => d.cityWar.recallSilicon, unit: '分钟', help: '默认提前5分钟，可设置1–1440分钟。舰队实际到城时间取决于返航航程。' }),
     configField('cityWar.reserveDuringWar', '城战期间为所选舰队保留任务', 'switch', { help: '城战时段存在符合舰队职责的有效目标时，为对应舰队保留任务；没有防守目标时不预留防守队，没有进攻目标时不预留进攻队。已在执行巨轮或其他任务的舰队等待空闲，不主动召回。' }),
     configField('cityWar.checkEverySeconds', '城战检查间隔', 'number', { unit: '秒' }),
 

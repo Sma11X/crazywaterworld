@@ -23,7 +23,7 @@ import {runtimeProgress, museumRuntimeStatus, stepObservation} from './runtime-p
 import {watchTreasureTravel} from './treasure-follow.mjs';
 import { watchGuildShipPushes } from './guild-ships.mjs';
 import { watchHeroRaidPushes } from './hero-raid-automation.mjs';
-import { watchSiliconMining, previewSiliconShortcut, runSiliconShortcut } from './silicon-mining.mjs';
+import { watchSiliconMining, previewSiliconEventRecall, previewSiliconShortcut, runSiliconShortcut } from './silicon-mining.mjs';
 import { readSiliconOverview } from './silicon-overview.mjs';
 import { previewExtended } from './extended-preview.mjs';
 import {watchFleetMaintenance,fleetMaintenanceEnabled} from './fleet-maintenance.mjs';
@@ -2504,6 +2504,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             const state = await readCityWar(client, protocolFor(client), config, session.player, settings.cityWar);
             const ledger = usageFor(session), pending = ledger.pendingCounters();
             const plan = planCityWar(state, settings, { keys: ledger.keyRecords(), pendingPetrol: (pending.cityWarPetrol ?? 0) + (pending.treasurePetrol ?? 0) + (pending.piratePetrol ?? 0) + (pending.radarPetrol ?? 0) + (pending.worldBossPetrol ?? 0) + (pending.siliconPetrol ?? 0) + (pending.resourceFieldPetrol ?? 0) });
+            if (!state.reason && settings.cityWar.recallSilicon) {
+              const recall = await previewSiliconEventRecall(client, protocolFor(client), config, session.player, settings, ledger, 'cityWar', state.startTime, state.fleets);
+              plan.actions.push(...recall.actions); plan.notes.push(...recall.notes);
+            }
             const online = await readWorldOnlineReward(client, config, session.player);
             if (!settings.schedule.worldOnlineRewards) plan.notes.push('城战在线奖励自动领取未开启');
             else if (online.ready && worldOnlineRewardKey(session.player, online)) {
@@ -2554,6 +2558,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               dispatchReservationReason(client, settings, task, id, { ignoreOwners: ['cityWar'] })]));
             const plan = planTreasureLoot(snapshot, config, settings, { usage, keys: ledger.keyRecords(), pendingFuel,
               pendingDiamonds: ledger.pendingCounters().diamonds ?? 0, reservedFleetIds, unavailableFleets });
+            if (!snapshot.reason && treasureAutomationEnabled(settings) && settings.treasure.recallSilicon) {
+              const recall = await previewSiliconEventRecall(client, protocolFor(client), config, session.player, settings, ledger, 'treasure', snapshot.nextRefreshTime, snapshot.fleets);
+              plan.actions.push(...recall.actions); plan.notes.push(...recall.notes);
+            }
             return { ...output(plan, plan.counts, '万吨巨轮'), treasure: { targets: plan.targets, fleets: plan.fleets, fuel: snapshot.fuel,
               fuelPerFleet: snapshot.fuelPerFleet, todayRewardTimes: snapshot.todayRewardTimes, rewardLimit: snapshot.rewardLimit,
               participationMode: settings.treasure.participationMode, nextRefreshTime: snapshot.nextRefreshTime } };

@@ -141,8 +141,8 @@ try {
     Object.assign(expected.cityWar, { enabled: true, fleetIds: ['1远征船'], autoRepair: true, nativeCommissionLimit: 2, repairBelowPercent: 65 });
     Object.assign(expected.treasure, { autoRepair: true, dailyDispatchLimit: 12, dailyDiamondLimit: 321 });
     Object.assign(expected.pirateHunt, { enabled: true, fleetIds: ['1远征船'], maxFailures: 4 });
-    Object.assign(expected.silicon, { dailyRewardLimit: 5, dailyDiamondLimit: 200 });
-    Object.assign(expected.silicon.fleets[0], { autoRepair: true, dailyAttackLimit: 11 });
+    Object.assign(expected.silicon, { dailyRewardLimit: 5 });
+    Object.assign(expected.silicon.fleets[0], { autoRepair: true, dailyAttackLimit: 11, marchDailyDiamonds: 200 });
     const legacy = structuredClone(expected);
     const retired = {
       worldBoss: { petrolReserve: 999999 },
@@ -448,8 +448,66 @@ try {
     const unknown = document(); unknown.settings.factory.removedField = true;
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
+  test('版本24保留巨轮去程开关、阈值和预算，回城需主动启用', () => {
+    for (const enabled of [true, false]) {
+      const old = defaultSettings();
+      Object.assign(old.treasure, { marchSpeedUp: enabled, marchTargetSeconds: 95, dailyDiamondLimit: 120 });
+      for (const field of ['outboundSpeedUp', 'returnSpeedUp', 'returnTargetSeconds']) delete old.treasure[field];
+      const { treasure } = importAutomationSettings({ format: SETTINGS_FORMAT, version: 24, settings: old });
+      assert.deepEqual(treasure, { ...old.treasure, outboundSpeedUp: true, returnSpeedUp: false, returnTargetSeconds: 60 });
+      Object.assign(treasure, { outboundSpeedUp: false, returnSpeedUp: true, returnTargetSeconds: 11 });
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings({ ...old, treasure })).treasure, treasure);
+    }
+  });
+  test('版本25共享预算按原启用项分配，往返导入保留新额度', () => {
+    const old = defaultSettings();
+    delete old.treasure.returnDailyDiamondLimit;
+    Object.assign(old.treasure, { returnSpeedUp: true, dailyDiamondLimit: 91 });
+    old.silicon.dailyDiamondLimit = 101;
+    for (const fleet of old.silicon.fleets) {
+      for (const key of ['repairDailyDiamonds','marchDailyDiamonds','returnSpeedUp','returnTargetSeconds','returnDailyDiamonds','repairTargetSeconds']) delete fleet[key];
+    }
+    Object.assign(old.silicon.fleets[0], { enabled: true, repairSpeedUp: true, marchSpeedUp: true });
+    Object.assign(old.silicon.fleets[1], { enabled: true, marchSpeedUp: true });
+    const migrated = importAutomationSettings({ format: SETTINGS_FORMAT, version: 25, settings: old });
+    assert.equal(migrated.treasure.dailyDiamondLimit, 46); assert.equal(migrated.treasure.returnDailyDiamondLimit, 45);
+    assert.deepEqual(migrated.silicon.fleets.map(f => [f.repairDailyDiamonds, f.marchDailyDiamonds, f.returnDailyDiamonds]),
+      [[undefined,34,0],[undefined,33,0],[undefined,0,0]]);
+    assert.equal(migrated.silicon.fleets[0].returnSpeedUp, false);
+    assert.equal(migrated.silicon.dailyDiamondLimit, undefined);
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(migrated)), migrated);
+    old.treasure.outboundSpeedUp = false;
+    assert.equal(importAutomationSettings({ format: SETTINGS_FORMAT, version: 25, settings: old }).treasure.returnDailyDiamondLimit, 91);
+  });
+  test('版本26已存设置、导入及旧页面保存均移除硅矿维修加速，保留去回程与普通维修', () => {
+    const expected = defaultSettings();
+    Object.assign(expected.silicon.fleets[0], { enabled: true, autoRepair: true, marchSpeedUp: true,
+      marchTargetSeconds: 80, marchDailyDiamonds: 70, returnSpeedUp: true, returnTargetSeconds: 45, returnDailyDiamonds: 120 });
+    const old = structuredClone(expected);
+    Object.assign(old.silicon.fleets[0], { repairSpeedUp: true, repairTargetSeconds: 40, repairDailyDiamonds: 300 });
+    Object.assign(old.silicon.fleets[1], { repairSpeedUp: true, repairTargetSeconds: 10, repairDailyDiamonds: 1000 });
+    fs.writeFileSync(file, JSON.stringify({ version: 26, accounts: { old: { settingsVersion: 26, revision: 1, settings: old } } }));
+    assert.deepEqual(loadAutomationSettings('old', { file }).settings, expected);
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 26, settings: old }), expected);
+    assert.deepEqual(saveAutomationSettings('old', old, { file, revision: 1 }).settings, expected);
+  });
+  test('旧账号默认关闭两项提前召回，两项分钟数可独立往返保存', () => {
+    const old = defaultSettings();
+    for (const group of ['cityWar','treasure']) { delete old[group].recallSilicon; delete old[group].recallLeadMinutes; }
+    const migrated = importAutomationSettings({ format: SETTINGS_FORMAT, version: 27, settings: old });
+    for (const group of ['cityWar','treasure']) {
+      assert.equal(migrated[group].recallSilicon, false);
+      assert.equal(migrated[group].recallLeadMinutes, 5);
+      for (const value of [0, 1441, 0.5, '10']) {
+        assert.throws(() => validateSettings({ ...migrated, [group]: { ...migrated[group], recallLeadMinutes: value } }));
+      }
+    }
+    Object.assign(migrated.cityWar, { recallSilicon: true, recallLeadMinutes: 8 });
+    migrated.treasure.recallLeadMinutes = 3;
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(migrated)), migrated);
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 24);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 28);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

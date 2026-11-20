@@ -21,7 +21,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 24;
+export const SETTINGS_SCHEMA_VERSION = 28;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 const treasureRewardFilterDefaults = {
@@ -92,14 +92,15 @@ export const DEFAULT_SETTINGS = {
   treasure: { enabled: false, autoJoin: false, qualities: Object.keys(treasureQualityLabels), follow: false, followMode: 'trigger', fleetIds: [], followNames: [], followPlayerIds: [], avoidPlayerIds: [],
     rewardItems: [], ...treasureRewardFilterDefaults, avoidNames: [], allowHostile: false, minDurabilityPercent: 80,
     maxProgress: 90, personalProgressLimit: 20, dailyDispatchLimit: 0, checkEverySeconds: 15, participationMode: 'untilFull', repeatAttack: false,
-    autoRepair: false,
-    marchSpeedUp: false, marchTargetSeconds: 60, dailyDiamondLimit: 0,
+    autoRepair: false, recallSilicon: false, recallLeadMinutes: 5,
+    marchSpeedUp: false, outboundSpeedUp: true, marchTargetSeconds: 60,
+    returnSpeedUp: false, returnTargetSeconds: 60, dailyDiamondLimit: 0, returnDailyDiamondLimit: 0,
     fallbackEnabled: false, fallbackAfter: '21:00', fallbackTargetRewards: 3,
     fallbackQualities: ['PURPLE', 'BLUE'], fallbackMediumRewardPriority: [], fallbackSmallRewardPriority: [] },
   // 攻守目标由跟随全局的舰队共用；每队还可独立保存两套策略。
   cityWar: { enabled: false, fleetIds: [], defenceFleetIds: [], targetMode: 'alliance', targetPriority: 'fewestAllied', cityRefs: [],
     defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], fleetStrategies: {}, autoRepair: false,
-    nativeCommissionLimit: -1, repairBelowPercent: 80, reserveDuringWar: false, checkEverySeconds: 15 },
+    nativeCommissionLimit: -1, repairBelowPercent: 80, reserveDuringWar: false, recallSilicon: false, recallLeadMinutes: 5, checkEverySeconds: 15 },
   forge: { decompose: false, decomposeQualities: [], enabled: false, nativeAuto: false, collect: true, craft: true, buildingIds: [], recipeIds: [], universal: false,
     universalReserve: 0, checkEverySeconds: 30 },
   antique: { enabled: false, activate: false, activateQualities: [], star: false, starQualities: [], targetStar: 0, universal: false,
@@ -174,10 +175,11 @@ const constraints = {
   'treasure.fallbackSmallRewardMatchMode': rewardMatchMode, 'treasure.fallbackSmallRewardMinHits': int(100, 1),
   'treasure.minDurabilityPercent': int(100), 'treasure.maxProgress': int(100, 1),
   'treasure.personalProgressLimit': int(100),
+  'treasure.recallLeadMinutes': int(1440, 1), 'cityWar.recallLeadMinutes': int(1440, 1),
   'treasure.dailyDispatchLimit': int(1000), 'treasure.checkEverySeconds': int(300, 5),
   'treasure.avoidPlayerIds': strings(100), 'treasure.participationMode': { kind: 'choice', values: ['untilFull', 'always'] },
   'treasure.followMode': { kind: 'choice', values: ['trigger', 'eachTime'] },
-  'treasure.marchTargetSeconds': int(3600), 'treasure.dailyDiamondLimit': int(100000000),
+  'treasure.marchTargetSeconds': int(3600), 'treasure.returnTargetSeconds': int(3600), 'treasure.dailyDiamondLimit': int(100000000), 'treasure.returnDailyDiamondLimit': int(100000000),
   'treasure.fallbackAfter': { kind: 'time' }, 'treasure.fallbackTargetRewards': int(100, 1),
   'treasure.fallbackQualities': { ...strings(2), values: ['PURPLE', 'BLUE'] },
   'treasure.fallbackMediumRewardPriority': strings(100), 'treasure.fallbackSmallRewardPriority': strings(100),
@@ -329,6 +331,9 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   input = migrateVersion17Settings(migrateVersion16Settings(input));
   input = migrateVersion19Settings(migrateVersion18Settings(input));
   input = migrateVersion20Settings(input);
+  // 旧页面仍携带硅矿共享预算；新版缺失方向预算时交由字段校验报告。
+  if (plain(input?.silicon) && Object.hasOwn(input.silicon, 'dailyDiamondLimit')) input = migrateVersion25Settings(input);
+  input = migrateVersion26Settings(input);
   if (['arena', 'league'].some(group => plain(input?.[group]) && Object.hasOwn(input[group], 'keepTickets'))) input = migrateVersion23Settings(input);
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
@@ -658,7 +663,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1071,6 +1076,64 @@ function migrateVersion22Settings(settings) {
     if (plain(next[group])) next[group] = { maxPowerRatio: 0, ...next[group] };
   }
   return next;
+}
+
+function migrateVersion27Settings(settings) {
+  if (!plain(settings)) return settings;
+  const next = { ...settings };
+  for (const group of ['treasure', 'cityWar']) {
+    if (plain(next[group])) next[group] = { recallSilicon: false, recallLeadMinutes: 5, ...next[group] };
+  }
+  return next;
+}
+
+function migrateVersion26Settings(settings) {
+  if (!Array.isArray(settings?.silicon?.fleets)) return settings;
+  const fleets = settings.silicon.fleets.map(fleet => {
+    if (!plain(fleet)) return fleet;
+    const { repairSpeedUp, repairDailyDiamonds, repairTargetSeconds, ...travel } = fleet;
+    return travel;
+  });
+  return { ...settings, silicon: { ...settings.silicon, fleets } };
+}
+
+function migrateVersion25Settings(settings) {
+  if (!plain(settings)) return settings;
+  const next = { ...settings };
+  const t = settings.treasure;
+  if (plain(t) && !Object.hasOwn(t, 'returnDailyDiamondLimit')) {
+    const budget = t.dailyDiamondLimit;
+    const returning = t.returnSpeedUp && Number.isSafeInteger(budget) && budget > 0 && budget <= 100000000
+      ? (t.outboundSpeedUp === false ? budget : Math.floor(budget / 2)) : 0;
+    next.treasure = { ...t, ...(returning ? { dailyDiamondLimit: budget - returning } : {}), returnDailyDiamondLimit: returning };
+  }
+  if (plain(settings.silicon) && Object.hasOwn(settings.silicon, 'dailyDiamondLimit')) {
+    const { dailyDiamondLimit, ...silicon } = settings.silicon;
+    if (!Number.isSafeInteger(dailyDiamondLimit) || dailyDiamondLimit < 0 || dailyDiamondLimit > 100000) {
+      throw new SettingsError({ 'silicon.dailyDiamondLimit': '原硅矿每日钻石预算须为 0–100000 之间的整数' });
+    }
+    if (Array.isArray(silicon.fleets)) {
+      const fleets = silicon.fleets.map(fleet => plain(fleet) ? { ...fleet } : fleet);
+      const choices = fleets.filter(plain).flatMap(fleet => ['repair', 'march']
+        .filter(mode => fleet[mode + 'SpeedUp']).map(mode => ({ fleet, mode })));
+      let recipients = choices.filter(({ fleet }) => fleet.enabled);
+      if (!recipients.length) recipients = choices;
+      if (!recipients.length && plain(fleets[0])) recipients = [{ fleet: fleets[0], mode: 'march' }];
+      recipients.forEach(({ fleet, mode }, index) => {
+        const key = mode + 'DailyDiamonds';
+        if (!Object.hasOwn(fleet, key)) fleet[key] = Math.floor(dailyDiamondLimit / recipients.length) +
+          Number(index < dailyDiamondLimit % recipients.length);
+      });
+      silicon.fleets = fleets;
+    }
+    next.silicon = silicon;
+  }
+  return next;
+}
+
+function migrateVersion24Settings(settings) {
+  if (!plain(settings?.treasure)) return settings;
+  return { ...settings, treasure: { outboundSpeedUp: true, returnSpeedUp: false, returnTargetSeconds: 60, ...settings.treasure } };
 }
 
 function migrateVersion23Settings(settings) {

@@ -398,6 +398,8 @@ try {
     }
     for (const [field, values] of [
       ['marchSpeedUp', ['true', 1, null]],
+      ['outboundSpeedUp', ['true', 1, null]], ['returnSpeedUp', ['true', 1, null]],
+      ['returnTargetSeconds', [-1, 3601, 0.5, '60', null]],
       ['marchTargetSeconds', [-1, 3601, 0.5, '60', null]],
       ['dailyDiamondLimit', [-1, 100000001, 0.5, '300', null]],
     ]) {

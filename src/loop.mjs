@@ -5,7 +5,7 @@ import { merchantActivity } from './merchant-activity.mjs';
 import { runAllianceAutomation } from './alliance-automation.mjs';
 import { serviceGuildShips, watchGuildShipPushes } from './guild-ships.mjs';
 import { serviceGuildForts } from './guild-forts.mjs';
-import { runSiliconMining, watchSiliconMining, siliconInterval } from './silicon-mining.mjs';
+import { recallSiliconForEvent, runSiliconMining, siliconRecallOpensAt, settleSiliconEventRecalls, watchSiliconMining, siliconInterval } from './silicon-mining.mjs';
 import { runResourceFields } from './resource-field-automation.mjs';
 import { runHeroRaidAutomation } from './hero-raid-automation.mjs';
 import { merchantMonitorSeconds, watchMerchant } from './merchant-monitor.mjs';
@@ -15,7 +15,7 @@ import {claimGuildTitleReward} from './guild-title-rewards.mjs';
 import {runWorldBoss,claimWorldBossDamage} from './world-boss.mjs';
 import {recoverWorldBossLineups} from './world-boss-lineups.mjs';
 import { claimOpenRank, claimFestivalActive, claimReportRewards, claimLeagueCollect, claimLeaguePass, claimWeekSupply } from './missing-rewards.mjs';
-import { dispatchOrder, reserveDispatch, dispatchReservationReason, bridgeFleetReservations, legacyFleetReservationReason } from './fleet-availability.mjs';
+import { isMiningSilicon,  dispatchOrder, reserveDispatch, dispatchReservationReason, bridgeFleetReservations, legacyFleetReservationReason } from './fleet-availability.mjs';
 import { runAllianceRadar } from './alliance-radar.mjs';
 import { claimVipDaily, claimLimitedFree, claimWeekHeroStar, claimLinkageFree, recruitWithSkipAds } from './extra-free-rewards.mjs';
 import { collectAntiqueFloaters } from './antique-floaters.mjs';
@@ -187,6 +187,21 @@ export async function runLoop(client, protocol, {
     activityVersion++;
     scheduler.wake();
   };
+  const recallStarts = { treasure: null, cityWar: null };
+  const recallEnabled = source => {
+    const settings = getSettings(), p = settings?.[source];
+    return p?.recallSilicon && p.fleetIds?.length > 0 &&
+      (source === 'treasure' ? treasureAutomationEnabled(settings) : cityWarEnabled(settings));
+  };
+  function recallWindowStart(source, eventAt) {
+    return recallEnabled(source) ? siliconRecallOpensAt(getSettings()[source], eventAt) : null;
+  }
+  function inRecallWindow(source, id) {
+    const eventAt = recallStarts[source], from = recallWindowStart(source, eventAt), now = serverNowSeconds();
+    return from !== null && now >= from && now < eventAt && getSettings()[source].fleetIds.includes(id);
+  }
+  const heldForEvent = id => inRecallWindow('treasure', id) || inRecallWindow('cityWar', id);
+  const recallRuntime = () => !stop.aborted && runtimeActive() && client.connected !== false;
   const treasureScan = scheduler.scanTask({
     enabled: () => treasureAutomationEnabled(getSettings()),
     intervalMs: () => (getSettings()?.treasure?.checkEverySeconds ?? 15) * 1000,
@@ -199,7 +214,7 @@ export async function runLoop(client, protocol, {
       ]);
       if (current()) {
         if (Array.isArray(list.value?.treasure)) rewards?.observe('万吨巨轮', '已扫描海面货轮 ' + list.value.treasure.length + ' 艘，派遣时复核目标与舰队');
-        return [stats.value?.nextRefreshTime];
+        return [stats.value?.nextRefreshTime, recallWindowStart('treasure', stats.value?.nextRefreshTime)];
       }
     },
   });
@@ -212,7 +227,7 @@ export async function runLoop(client, protocol, {
       const war = await client.request('WarDeclarationRequest', {}, 'WarDeclarationResponse', 8000);
       if (current() && Array.isArray(war?.declarations)) {
         rewards?.observe('城战接续', '已扫描城战宣战记录 ' + war.declarations.length + ' 条，派遣时复核攻守目标');
-        return [war.startTime, war.endTime];
+        return [war.startTime, war.endTime, recallWindowStart('cityWar', war.startTime)];
       }
     },
   });
@@ -225,8 +240,8 @@ export async function runLoop(client, protocol, {
   });
   scheduler.listen(client, 'message', ({ name, body }) => {
     if (name === 'SCAllActivity' || name === 'SCServerTimeChanged') wakeActivities();
-    if (name === 'SCTreasureLootRefresh') treasureScan.invalidate();
-    if (name === 'SCWarDeclaration' || name === 'SCCityWarTime') cityWarScan.invalidate();
+    if (name === 'SCTreasureLootRefresh') { recallStarts.treasure = null; treasureScan.invalidate(); }
+    if (name === 'SCWarDeclaration' || name === 'SCCityWarTime') { recallStarts.cityWar = null; cityWarScan.invalidate(); }
     const now = serverNowSeconds();
     const inWar = cityWarState?.startTime <= now && now < cityWarState?.endTime;
     if (inWar && name === 'SCity') cityWarScan.invalidate();
@@ -235,6 +250,9 @@ export async function runLoop(client, protocol, {
       const settings = getSettings();
       if (inWar && idle.some(fleet => settings?.cityWar?.fleetIds?.includes(fleet.buildingId))) cityWarScan.invalidate();
       if (idle.some(fleet => settings?.treasure?.fleetIds?.includes(fleet.buildingId))) treasureScan.invalidate();
+      const miners = (body?.fleets ?? []).filter(isMiningSilicon);
+      if (miners.some(f => inRecallWindow('cityWar', f.buildingId))) cityWarScan.invalidate();
+      if (miners.some(f => inRecallWindow('treasure', f.buildingId))) treasureScan.invalidate();
     }
     if (name === 'SCServerTimeChanged') scheduler.wake();
   });
@@ -261,7 +279,10 @@ export async function runLoop(client, protocol, {
     dispatchSettingsPending = Boolean((cityWarState && !cityWarEnabled(settings)) || watchFleetMaintenance(client).held().length);
     for (const [key, scan] of Object.entries(fleetScans)) {
       const options = JSON.stringify(settings?.[key]);
-      if (scanOptions.get(key) !== options) scan.invalidate();
+      if (scanOptions.get(key) !== options) {
+        if (Object.hasOwn(recallStarts, key)) recallStarts[key] = null;
+        scan.invalidate();
+      }
       scanOptions.set(key, options);
     }
     rewards?.clearTask('guildShip'); rewards?.clearTask('guildFort'); wakeActivities(); scheduler.wake(); };
@@ -494,6 +515,8 @@ export async function runLoop(client, protocol, {
     async function checkDispatch() {
       if (!scheduler.active()) return;
       dispatchSettingsPending = false;
+      try { await settleSiliconEventRecalls(client, protocol, config, player, getSettings(), usageLedger, recallRuntime); }
+      catch (error) { phaseFailure('world', '硅矿召回归队核对', error); }
       if(usageLedger){const changes=await checkFleetSettlement(client,player,usageLedger);for(const change of changes)if(change.repairRecovery)
         stepLog('world')({category:'战后维修',title:change.buildingId+'维修复查',ok:true,status:'confirmed',note:change.reason,taskKey:'舰队战后维修'});}
       if(usageLedger)await recoverWorldBossLineups(client,player,usageLedger,{enabled:()=>!stop.aborted&&client.connected!==false,
@@ -528,8 +551,13 @@ export async function runLoop(client, protocol, {
     }
     async function checkSilicon() {
       if (stop.aborted || siliconNext() > Date.now()) return;
+      // 即便用户将硅矿排在最前，自动占矿前也先消费已到时的活动窗口。
+      for (const task of dispatchOrder(getSettings())) {
+        if (task === 'cityWar' && recallEnabled('cityWar')) await checkCityWar();
+        if (task === (getSettings()?.treasure?.follow ? 'follow' : 'treasure') && recallEnabled('treasure')) await checkTreasure();
+      }
       siliconPreference = getSettings()?.silicon; const version = siliconVersion;
-      try { await runSiliconMining(client, protocol, config, player, { getSettings, ledger: usageLedger, guard,
+      try { await runSiliconMining(client, protocol, config, player, { getSettings, ledger: usageLedger, guard, heldForEvent,
         enabled: () => !stop.aborted && runtimeActive() && client.connected !== false && getSettings()?.silicon?.enabled,
         report: entry => serviceReport('world', '硅矿')({ ...entry, taskKey: 'silicon.enabled' }) }); }
       catch (error) { phaseFailure('world', '硅矿检查', error); }
@@ -626,6 +654,34 @@ export async function runLoop(client, protocol, {
       const at = scan.nextAt();
       if (Number.isFinite(at)) rewards?.expect(key, (Math.max(Date.now(), at) + (client.serverClockOffsetMs || 0)) / 1000);
     }
+    async function prepareSiliconRecall(source, eventAt, miners = []) {
+      recallStarts[source] = eventAt;
+      const from = recallWindowStart(source, eventAt);
+      if (from === null) return [];
+      const now = serverNowSeconds();
+      if (now < from || now >= eventAt) return [from];
+      const settings = getSettings(), fleetIds = settings[source].fleetIds.filter(id => miners.includes(id));
+      const current = id => settings === getSettings() && recallStarts[source] === eventAt && inRecallWindow(source, id);
+      const verifyStart = async () => {
+        const war = source === 'cityWar', name = war ? 'WarDeclaration' : 'TreasureLootStats';
+        const response = await client.request(name + 'Request', {}, name + 'Response', 8000);
+        const matches = war ? response?.startTime === eventAt && response.endTime > eventAt : response?.nextRefreshTime === eventAt;
+        if (!matches) {
+          recallStarts[source] = null;
+          fleetScans[source].invalidate();
+        }
+        return matches;
+      };
+      const label = source === 'cityWar' ? '城战接续' : '万吨巨轮';
+      let nextRewardAt;
+      try {
+        nextRewardAt = await recallSiliconForEvent(client, protocol, config, player, { source, getSettings, ledger: usageLedger, fleetIds,
+          enabled: recallRuntime, recallCurrent: current, verifyStart,
+          report: entry => serviceReport('world', label)({ ...entry, taskKey: label }) });
+      } catch (error) { phaseFailure('world', label + '提前召回', error); }
+      // 城战休战期间通常只等开战；提前窗口内也按首奖时刻和配置间隔复查。
+      return [Math.min(eventAt, nextRewardAt ?? Infinity, serverNowSeconds() + settings[source].checkEverySeconds)];
+    }
     async function scanTreasure() {
       if(getSettings()?.cityWar.reserveDuringWar)await checkCityWar();
       try {
@@ -646,8 +702,9 @@ export async function runLoop(client, protocol, {
             lastTreasureNotes = text;
           },
         });
-        return [result.nextRefreshTime];
-      } catch (error) { phaseFailure('world', '万吨巨轮检查', error); }
+        const recallTimes = await prepareSiliconRecall('treasure', result.canPrepare ? result.nextRefreshTime : null, result.miningFleetIds);
+        return [result.nextRefreshTime, ...recallTimes];
+      } catch (error) { recallStarts.treasure = null; phaseFailure('world', '万吨巨轮检查', error); }
       finally { cityFuelCeiling = null; }
     }
 
@@ -669,7 +726,9 @@ export async function runLoop(client, protocol, {
         const text = (cityWarState.notes ?? []).join('；');rewards?.observe('城战接续',text||'本次已核对，城战动作结果见日志');
         if (text && text !== lastCityWarNotes) stepLog('world')({ title: '城战接续检查', category: '城战接续', skipped: true, reason: text });
         lastCityWarNotes = text;
-      } catch (error) { phaseFailure('world', '城战接续检查', error); cityWarState = { reservedFleetIds: [...getSettings().cityWar.fleetIds] }; reserveDispatch(client,'cityWar',getSettings().cityWar.fleetIds); }
+        const recallTimes = await prepareSiliconRecall('cityWar', cityWarState.reason ? null : cityWarState.startTime, cityWarState.miningFleetIds);
+        return [cityWarState.startTime, cityWarState.endTime, ...recallTimes];
+      } catch (error) { recallStarts.cityWar = null; phaseFailure('world', '城战接续检查', error); cityWarState = { reservedFleetIds: [...getSettings().cityWar.fleetIds] }; reserveDispatch(client,'cityWar',getSettings().cityWar.fleetIds); }
       return [cityWarState?.startTime, cityWarState?.endTime];
     }
 
