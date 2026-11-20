@@ -93,6 +93,116 @@ async function dispatchRound({ beforeWar = false, unknownCounts = false, opening
 }
 
 try {
+  await check('主轮跨开战和货轮刷新时按优先级接续，轮间分别按刷新和停战时间扫描', async () => {
+    for (const reserve of [false, true]) {
+      const hour = Date.UTC(2026, 10, 20, 2), base = hour - 12000;
+      let clock = base, queueSlot = 0, inQueue = false;
+      Date.now = () => clock;
+      try {
+        const f = warForgeFixture(), settings = warForgeSettings(), trace = [];
+        f.config.resources = { mapFiles: { 1: mapFile } };
+        f.client.serverClockOffsetMs = 7000;
+        f.state.targets = [];
+        f.state.war = { startTime: hour / 1000, endTime: hour / 1000 + 7, declarations: [] };
+        f.state.stats.nextRefreshTime = hour / 1000;
+        settings.forge.enabled = false;
+        settings.loop.dailies = settings.dailies.enabled = settings.schedule.freeGold = true;
+        Object.assign(settings.treasure, { enabled: true, autoJoin: true, follow: false, autoRepair: false, checkEverySeconds: 300 });
+        Object.assign(settings.cityWar, { autoRepair: false, reserveDuringWar: reserve, checkEverySeconds: 300 });
+        settings.fleetDispatch.priority = ['treasure', 'cityWar'];
+        f.beforeRead = name => {
+          assert(inQueue);
+          if (name === 'WarDeclarationRequest') trace.push(['war', clock - base, queueSlot]);
+          if (name === 'TreasureLootStatsRequest') {
+            trace.push(['ship', clock - base, queueSlot]);
+            if (clock - base === 7000) f.state.stats.nextRefreshTime = hour / 1000 + 4;
+          }
+          if (name === 'DailyTaskInfoRequest' && clock === base) {
+            trace.push(['daily', 0, queueSlot]);
+            clock += 7000;
+            if (reserve) for (let i = 0; i < 5; i++) f.client.emit('message', { name: 'SCTreasureLootRefresh', body: {} });
+          }
+        };
+        await runLoop(f.client, f.protocol, {
+          config: f.config, player: f.player, rounds: 2, everyMs: 14000, allowMutate: true,
+          usageLedger: ledger(), getSettings: () => settings, isEnabled: key => key === 'freeGold',
+          schedule: async work => {
+            assert(!inQueue); inQueue = true; queueSlot++;
+            try { return await work(); } finally { inQueue = false; }
+          },
+          sleep: async ms => { assert(!inQueue && ms > 0); clock += ms; },
+        });
+        const order = reserve ? ['war', 'ship'] : ['ship', 'war'];
+        assert.deepEqual(trace.map(([task, at]) => [task, at]), [
+          ...order.map(task => [task, 0]), ['daily', 0], ...order.map(task => [task, 7000]),
+          ['ship', 9000], ['war', 12000],
+        ]);
+        assert(trace[3][2] > trace[2][2], '耗时日常完成后让出队列，优先检查到期业务');
+        assert.deepEqual(f.client.writes, []);
+      } finally { Date.now = realNow; }
+    }
+  });
+  await check('主轮业务未返回时货轮和宣战推送触发只读扫描，写操作等待串行复核', async () => {
+    const f = warForgeFixture(), settings = warForgeSettings();
+    f.config.resources = { mapFiles: { 1: mapFile } };
+    settings.forge.enabled = settings.cityWar.autoRepair = false;
+    settings.loop.dailies = settings.dailies.enabled = settings.schedule.freeGold = true;
+    Object.assign(settings.treasure, { enabled: true, autoJoin: true, autoRepair: false });
+    f.state.targets = []; f.state.war.declarations = [];
+    let insideRead = false, waiting = false, finish;
+    const seen = [];
+    const scanned = new Promise(resolve => { finish = resolve; });
+    f.client.interleaveRead = async work => {
+      assert(!insideRead);
+      insideRead = true;
+      try { return await work(); } finally { insideRead = false; finish(); }
+    };
+    f.beforeRead = async name => {
+      if (insideRead) { assert(waiting); seen.push(name); }
+      if (name !== 'DailyTaskInfoRequest') return;
+      waiting = true;
+      for (const event of ['SCWarDeclaration', 'SCTreasureLootRefresh', 'SCTreasureLootRefresh']) {
+        f.client.emit('message', { name: event, body: {} });
+      }
+      let limit;
+      try {
+        await Promise.race([scanned, new Promise((_, reject) => {
+          limit = setTimeout(() => reject(Error('只读扫描仍在等待主轮结束')), 2000);
+        })]);
+      } finally { clearTimeout(limit); waiting = false; }
+    };
+    await runLoop(f.client, f.protocol, { config: f.config, player: f.player, rounds: 1, allowMutate: true,
+      getSettings: () => settings, usageLedger: ledger(), isEnabled: key => key === 'freeGold' });
+    assert.deepEqual(seen.sort(), ['TreasureLootListRequest', 'TreasureLootStatsRequest', 'WarDeclarationRequest']);
+    assert.deepEqual(f.client.writes, []);
+  });
+  await check('城战休战时等待开战，时段变更推送提前重排，战时恢复固定扫描', async () => {
+    const base = Date.UTC(2026, 10, 20, 2), stop = new AbortController();
+    let clock = base;
+    Date.now = () => clock;
+    try {
+      const f = warForgeFixture(), settings = warForgeSettings(), waits = [], reads = [];
+      f.config.resources = { mapFiles: { 1: mapFile } };
+      settings.forge.enabled = settings.cityWar.autoRepair = false;
+      f.state.war = { startTime: base / 1000 + 900, endTime: base / 1000 + 1800, declarations: [] };
+      f.beforeRead = name => { if (name === 'WarDeclarationRequest') reads.push(clock - base); };
+      await runLoop(f.client, f.protocol, {
+        config: f.config, player: f.player, rounds: 0, everyMs: 3600000, allowMutate: true, stop: stop.signal,
+        getSettings: () => settings, usageLedger: ledger(), isEnabled: () => false,
+        sleep: async ms => {
+          waits.push(ms);
+          if (waits.length === 1) {
+            clock += 20000;
+            f.state.war.startTime = clock / 1000 + 60;
+            f.client.emit('message', { name: 'SCCityWarTime', body: f.state.war });
+          } else if (waits.length === 2) clock += ms;
+          else stop.abort();
+        },
+      });
+      assert.deepEqual(waits, [900000, 60000, 15000]);
+      assert.deepEqual(reads, [0, 20000, 80000]);
+    } finally { Date.now = realNow; }
+  });
   await check('维修加速补满后同轮刷新占用并接续城战，不再等15秒检查周期',async()=>{
     let clock=Math.floor(realNow()/1000)*1000;Date.now=()=>clock;
     const stop=new AbortController();

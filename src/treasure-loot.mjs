@@ -592,7 +592,7 @@ export async function runTreasureLoot(client, protocol, config, player, { getSet
         if (acceleration) plan.actions.push(acceleration);
       }
     }
-    return { results, notes: plan.notes };
+    return { results, notes: plan.notes, nextRefreshTime: snapshot.nextRefreshTime };
   } finally { inFlight.delete(client); }
 }
 

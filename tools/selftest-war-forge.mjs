@@ -831,7 +831,8 @@ await check('城战窗口内无有效目标不阻断巨轮，跨入有效窗口�
   const g=warForgeFixture();g.state.war.startTime=Math.floor(Date.now()/1000)+5;let mapReads=0;
   g.beforeRead=name=>{if(name==='WorldInfoRequest'&&++mapReads===2)g.client.serverClockOffsetMs=10000;};
   await runLoop(g.client,g.protocol,{config:g.config,player:g.player,rounds:1,allowMutate:true,getSettings:()=>s,usageLedger:ledger(),isEnabled:()=>false});
-  assert.equal(g.client.writes.length,0,'读取期间跨入有效城战窗口仍不能把保留舰队派往巨轮');
+  assert.deepEqual(g.client.writes.map(row => row.name), ['MoveFleetsToCityRequest'],
+    '读取期间开战时应保留舰队，并在主轮检查点派往城战目标');
 });
 
 fs.writeFileSync(path.join(directory,'accounts.json'),JSON.stringify({version:1,activeId:'a',accounts:['a','b'].map(id=>({id,label:'城战锻造模拟'+id,url:'ws://127.0.0.1:1',login:{},automation:{enabled:false,paused:true}}))}));

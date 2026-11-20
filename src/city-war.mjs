@@ -249,6 +249,13 @@ export function cityWarReservedFleets(snapshot, settings, now = snapshot?.now) {
   return p.fleetIds.filter(id => (snapshot.targets ?? []).some(target => cityWarTargetSelected(p, target, id)));
 }
 
+export function reserveCityWarFleets(client, preferences, state, ids) {
+  const expires = Date.now() + Math.max(60000, (preferences.checkEverySeconds ?? 15) * 2000);
+  const closing = !state.reason && integer(state.endTime, 1)
+    ? state.endTime * 1000 - (client.serverClockOffsetMs || 0) : Infinity;
+  reserveDispatch(client, 'cityWar', ids, Math.min(expires, closing));
+}
+
 // 首杀发送前只刷新城战意向，不在候选复核期间另行派遣舰队。
 export async function refreshCityWarReservations(client, protocol, config, player, getSettings) {
   const settings = getSettings(), p = settings?.cityWar;
@@ -259,7 +266,7 @@ export async function refreshCityWarReservations(client, protocol, config, playe
   }
   // 查询可能横跨开战/结束时刻，不能沿用读取开始时的时间。
   const ids = snapshot.reason ? p.fleetIds : cityWarReservedFleets(snapshot, settings, nowOf(client));
-  reserveDispatch(client, 'cityWar', ids, Date.now() + Math.max(60000, (p.checkEverySeconds ?? 15) * 2000));
+  reserveCityWarFleets(client, p, snapshot, ids);
 }
 
 export function planCityWar(snapshot, settings, { keys = {}, pendingPetrol = 0 } = {}) {
