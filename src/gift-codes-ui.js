@@ -70,7 +70,7 @@ function paintGiftInitial(){
   $('gift-load-initial').textContent=giftLoading?'正在载入…':'载入未兑换码';
   const note=$('gift-code-initial-note');
   if(giftInitialError)note.textContent=giftInitialError;
-  else if(!giftInitial)note.textContent='正在读取码库…';
+  else if(!giftInitial)note.textContent=giftLoading?'':'正在读取码库…';
   else{
     const rows=giftInitial.displayRows??[];
     const summary=['码库 '+rows.length+' 条'];
@@ -79,6 +79,7 @@ function paintGiftInitial(){
     if(giftInitial.lastError)summary.push('同步失败，使用缓存：'+giftInitial.lastError);
     note.textContent=summary.join(' · ');
   }
+  note.hidden=!note.textContent;
   const body=clear($('gift-code-library-rows'));
   for(const entry of giftInitial?.displayRows??[]){
     const pending=entry.usage?.some(row=>['queued','sending'].includes(row.status));
@@ -90,7 +91,7 @@ function paintGiftInitial(){
     });
     body.append(tr);
   }
-  if(!body.children.length){const row=el('tr'),cell=el('td','',giftInitial?'暂无符合条件的礼包码':'正在读取码库…');cell.colSpan=3;row.append(cell);body.append(row);}
+  if(giftInitial&&!body.children.length){const row=el('tr'),cell=el('td','','暂无符合条件的礼包码');cell.colSpan=3;row.append(cell);body.append(row);}
 }
 async function refreshGiftInitial(){
   const version=++giftInitialVersion,context=giftContext;

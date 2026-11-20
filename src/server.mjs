@@ -60,7 +60,7 @@ import { challengeTrial, trialProgress, createTrialTask } from './trials.mjs';
 import { readTrialSweeps, executeTrialSweep } from './trial-sweeps.mjs';
 import { readHeroEquipment, equipHeroEmptySlots, enhanceHeroEquipment, uidText } from './hero-equipment.mjs';
 import { readEquipmentCrafting, startEquipmentCraft, collectEquipmentCraft } from './equipment-crafting.mjs';
-import { readLineups, applyLineup } from './lineups.mjs';
+import { readLineups, applyLineup, editorLineupRecommendations } from './lineups.mjs';
 import { getLineupCatalog, readLineupEditor, validateLineupSettings } from './saved-lineups.mjs';
 import { readLineupRuntime, recoverLineup } from './lineup-runtime.mjs';
 import { createLineupExecutor, lineupRole, selectedSavedLineup } from './lineup-execution.mjs';
@@ -3369,9 +3369,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if (route === 'GET /api/lineup-editor') {
         const { session, account } = scoped_(parsed);
-        json(await progressionJob(session, account, route, '读取布阵信息', async client => ({
-          ...await readLineupEditor(client, loadConfigSafe(), session.player), ...lineupPresetsView(session),
-        })));
+        json(await progressionJob(session, account, route, '读取布阵信息', async client => {
+          const config = loadConfigSafe();
+          const editor = await readLineupEditor(client, config, session.player);
+          return { ...editor, recommendations: editorLineupRecommendations(config, editor), ...lineupPresetsView(session) };
+        }));
         return;
       }
       if (route === 'POST /api/lineup-presets/save') {

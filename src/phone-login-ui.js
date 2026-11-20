@@ -273,7 +273,7 @@ $('phone-roles-retry').onclick = async () => {
 async function phoneLogin(payload) {
   if (phoneBusy) return;
   setPhoneBusy(true);
-  phoneHint('正在验证 APP 账号并读取全部区服角色，多账号可能需要稍等片刻…');
+  phoneHint('');
   const button = $(phoneMode === 'password' ? 'phone-login' : 'phone-sms-login');
   const label = button.textContent;
   button.textContent = '正在读取角色…';
@@ -322,13 +322,13 @@ $('phone-send-code').onclick = () => {
     if (phoneBusy || generation !== phoneGeneration) return;
     setPhoneBusy(true);
     $('phone-send-code').textContent = '正在发送…';
-    phoneHint('正在发送验证码…');
+    phoneHint('');
     try {
       const data = await call('/api/accounts/phone-login/send-code', { method: 'POST', body: JSON.stringify({ confirm: true, phone }) });
       smsCooldowns.set(phone, Date.now() + (Number(data.cooldown) || 60) * 1000);
       clearInterval(smsTimer);
       smsTimer = setInterval(() => {
-        updateSmsButton();
+        if (!phoneBusy) updateSmsButton();
         if ([...smsCooldowns.values()].every(deadline => deadline <= Date.now())) clearInterval(smsTimer);
       }, 1000);
       phoneHint('验证码已发送至 ' + phone.slice(0, 3) + '****' + phone.slice(-4) + '，请输入后点击「验证并读取角色」。');

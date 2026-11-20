@@ -744,7 +744,8 @@ function configWeeklyRankingRender() {
   $('config-weekly-ranking-refresh').textContent = pending ? '读取中…' : '刷新榜单';
   const status = $('config-weekly-ranking-status');
   status.textContent = error ? '榜单读取失败：' + error + (data ? '。以下为上次成功读取的榜单。' : '')
-    : pending ? '正在读取军备竞赛排行…' : data?.reason || (data ? '仅展示服务器返回的名次，不在返回范围内的排名不会推算。' : '尚未读取榜单。');
+    : pending ? '' : data?.reason || (data ? '仅展示服务器返回的名次，不在返回范围内的排名不会推算。' : '尚未读取榜单。');
+  status.hidden = !status.textContent;
   const summary = clear($('config-weekly-ranking-summary')), updated = $('config-weekly-ranking-updated');
   const host = clear($('config-weekly-ranking-table'));
   summary.hidden = updated.hidden = !data; host.hidden = !data?.rows?.length;
@@ -1532,7 +1533,8 @@ function configPlayerPicker(spec, id) {
     summary.textContent = values.length ? '选择盟友 · 已选 ' + values.length + ' 位' : '选择盟友';
     refresh.disabled = !!configEditor.playerRequest; refresh.textContent = configEditor.playerRequest ? '正在读取…' : '刷新盟友名单';
     const data = configEditor.playerData;
-    status.textContent = configEditor.playerError || (configEditor.playerRequest ? '正在读取盟友…' : data?.reason || (data ? (data.guildName || '当前联盟') + ' · 可选 ' + members.length + ' 位盟友' : '尚未读取盟友名单'));
+    status.textContent = configEditor.playerError || (configEditor.playerRequest ? '' : data?.reason || (data ? (data.guildName || '当前联盟') + ' · 可选 ' + members.length + ' 位盟友' : '尚未读取盟友名单'));
+    status.hidden = !status.textContent;
     if (details.open) paintList();
   }
   search.oninput = paintList;
