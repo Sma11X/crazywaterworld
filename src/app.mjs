@@ -1,5 +1,5 @@
 import { shutdownSignals } from './platform/terminal.mjs';
-import { consoleHost } from './console-address.mjs';
+import { consoleHost, reportPublicIp } from './console-address.mjs';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { execFile } from 'node:child_process';
@@ -1080,9 +1080,11 @@ async function main() {
   const output = consoleOutput = createConsoleOutput();
   const restoreOutput = () => output.restore();
   process.once('exit', restoreOutput);
-  const console_ = createConsole({ host: consoleHost(), port, onLog: entry => output.log(entry), resourceUpdates: true });
+  const host = consoleHost(process.env, process.argv.slice(2));
+  const console_ = createConsole({ host, port, onLog: entry => output.log(entry), resourceUpdates: true });
   const url = await console_.listen();
   output.start(url);
+  void reportPublicIp(output.showPublicIp);
   void syncConsoleArt(output);
   let shuttingDown = false;
   const shutdown = async signal => {

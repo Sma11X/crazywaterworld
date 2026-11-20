@@ -46,6 +46,8 @@ sh ./start-console.sh
 
 脚本会检查 Node.js 和 npm，按需安装依赖，再构建界面。首次安装需要联网。启动后手动打开终端显示的地址，默认为 [http://127.0.0.1:17323/](http://127.0.0.1:17323/)。
 
+启动窗口还会显示当前网络的公网出口 IP。默认只有本机能打开控制台。需要让同一局域网的设备访问时，运行 `.\start-console.cmd --host`（macOS 或 Linux 用 `sh ./start-console.sh --host`），然后在设备上打开终端列出的对应网卡地址。运行 `.\start-console.cmd address` 可以单独查看地址。[启动参数](docs/console-guide.md#启动参数)
+
 如需**手动启动**，可在项目根目录执行以下命令。
 
 ```sh

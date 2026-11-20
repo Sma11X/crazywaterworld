@@ -1,6 +1,6 @@
 import { createSettingsHistory } from './settings-history.mjs';
 import { serveClientAsset } from './ui-assets.mjs';
-import { normalizeConsoleHost, consoleUrl } from './console-address.mjs';
+import { normalizeConsoleHost, consoleAccessHints, consoleUrl } from './console-address.mjs';
 import { createConsoleVersion, renderVersionedPage, consoleVersionError } from './console-version.mjs';
 import { createTraceLog, traceJson, redactLog } from './trace-log.mjs';
 import { createProtocolDiagnostics } from './protocol-diagnostics.mjs';
@@ -5002,9 +5002,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         server.once('error', listenFailed);
         server.listen(port, host, () => {
           server.off('error', listenFailed);
-          const address = consoleUrl(host, server.address().port);
-          if (host === '0.0.0.0' || host === '::' || host === '0:0:0:0:0:0:0:0') emit(null, 'info', `控制台监听 ${host}，其他设备请使用这台电脑的局域网 IP 和端口 ${server.address().port}`);
+          const bound = server.address();
+          const address = consoleUrl(host, bound.port);
           emit(null, 'info', `控制台已启动 ${address}`);
+          for (const hint of consoleAccessHints(bound.address, bound.port)) emit(null, 'info', hint);
           giftAutomation.start();
           fs.watchFile(settingsFile(), { interval: 1000, persistent: false }, settingsFileChanged);
           settingsWatchStarted = true;
