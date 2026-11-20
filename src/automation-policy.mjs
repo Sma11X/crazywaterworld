@@ -84,7 +84,7 @@ export function nativePreferenceEnabled(settings, key) {
     fishEnhance: () => settings.loop.world && settings.gather.upgradeFishing,
     diveEnhance: () => settings.loop.world && settings.gather.upgradeDiving,
     salvageEnhance: () => settings.loop.world && settings.gather.upgradeSalvage,
-    dailyRewards: () => settings.dailies.enabled && settings.dailies.claimTasks,
+    dailyRewards: () => settings.dailies.enabled && (settings.dailies.claimTasks || settings.arena?.claimTask || settings.league?.claimTask),
     chests: () => settings.dailies.enabled && (settings.dailies.claimDailyChest || settings.dailies.claimWeeklyChest),
     gift: () => settings.dailies.enabled && settings.dailies.claimGift,
     tasks: () => settings.loop.tasks || (settings.loop.world && settings.resident.rewards),

@@ -220,18 +220,20 @@ const configGroups = [
     }),
   ]},
   {id:'league',title:'积分赛',category:'daily',fields:[
-    configField('schedule.leagueChallenge','积分赛每日挑战','switch',{help:'使用已有编队和挑战券，每轮最多挑战一次，完成当日积分赛任务后停止。只从当前匹配名单选人。'}),
+    configField('schedule.leagueChallenge','积分赛每日挑战','switch',{help:'使用已有编队和挑战券，每轮最多挑战一次，达到每日战斗次数后停止。只从当前匹配名单选人。'}),
     configField('league.target','选对手策略','choice',{options:[['weakest','优先战力最低'],['score','优先积分最高']]}),
     configField('league.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示只选战力不超过本人积分赛战力 70% 的对手，再按所选策略排序。无人符合时跳过。0 表示不限。'}),
-    configField('league.keepTickets','保留积分赛挑战券','number',{unit:'张',help:'每场使用 1 张。剩余券数达到此值时停止挑战。'}),
+    configField('league.dailyBattleLimit','每日战斗次数','number',{unit:'次',help:'每场用 1 张券。填 0 暂停战斗并留券，领奖仍按各自开关执行。'}),
+    configField('league.claimTask','领取积分赛每日任务奖励','switch',{help:'任务达标后领取，需开启「每日任务与奖励」总开关。'}),
     configField('schedule.leagueCollect','领取累计收集奖励'),
     configField('schedule.leaguePassRewards','领取已达标战令奖励'),
   ]},
   {id:'arena',title:'竞技场',category:'daily',fields:[
-    configField('schedule.arena','竞技场每日挑战','switch',{help:'使用已有挑战券，每轮最多挑战一次，完成当日竞技场任务后停止。需开启「日常行动」和「每日任务与奖励」总开关。'}),
+    configField('schedule.arena','竞技场每日挑战','switch',{help:'使用已有挑战券，每轮最多挑战一次，达到每日战斗次数后停止。需开启「日常行动」和「每日任务与奖励」总开关。'}),
     configField('arena.target','选对手策略','choice',{options:[['weakest','优先战力最低'],['rank','优先排名最高']],help:'从排名在自己之前、当前可以挑战的对手中选择。'}),
     configField('arena.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示只选战力不超过本人竞技场战力 70% 的对手，再按所选策略排序。无人符合时跳过。0 表示不限。'}),
-    configField('arena.keepTickets','保留竞技场挑战券','number',{unit:'张',help:'每场使用 1 张。剩余券数达到此值时停止挑战。'}),
+    configField('arena.dailyBattleLimit','每日战斗次数','number',{unit:'次',help:'包含今天已打的场次。每场用 1 张券，填 0 暂停战斗并留券。'}),
+    configField('arena.claimTask','领取竞技场每日任务奖励','switch',{help:'任务达标后领取，需开启「每日任务与奖励」总开关。'}),
   ]},
   {id:'daily-actions',title:'日常行动',category:'daily',fields:[]},
   {id:'ad-rewards',title:'广告奖励',category:'daily',fields:[
@@ -497,7 +499,7 @@ const configGroups = [
   ] },
   { id: 'rewards', title: '任务与奖励', category: 'daily', fields: [
     configField('tasks.main', '领取主线奖励'), configField('tasks.branch', '领取支线奖励'), configField('tasks.achievements', '领取成就奖励'),
-    configField('dailies.enabled', '日常总开关', 'switch', { help: '控制本组每日任务与奖励。基地页的付费点金独立设置。' }), configField('dailies.claimTasks', '领取每日任务奖励'),
+    configField('dailies.enabled', '日常总开关', 'switch', { help: '控制本组每日任务与奖励。基地页的付费点金独立设置。' }), configField('dailies.claimTasks', '领取其他每日任务奖励', 'switch', {help:'竞技场和积分赛的每日任务奖励在各自页签设置。'}),
     configField('dailies.claimDailyChest', '领取每日活跃宝箱'), configField('dailies.claimWeeklyChest', '领取每周活跃宝箱'), configField('dailies.claimGift', '领取每日免费赠礼'),
     configField('schedule.comicDrama','漫剧观看与每日奖励','switch',{help:'默认关闭。已解锁的集数每轮最多处理 10 集，并在每天领取 1 次每日奖励；当天没有新集时重看最后一集以满足领取条件。'}),
     configField('schedule.tournamentDailyGift','擂台赛每日礼包','switch',{help:'默认关闭。只在擂台赛进行阶段按服务器记录每天领取 1 次，不参与投注和布阵。'}),
@@ -2003,7 +2005,7 @@ async function configPreview() {
       if(['daily-actions','daily-challenges','rewards'].includes(selected.id)){
         const plan=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'daily'})});
         const isTrial=a=>['trialPaidSweep','trialAdSweep'].includes(a.kind);
-        data.moduleActions=plan.actions.filter(a=>a.kind!=='arena' && (selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a)));
+        data.moduleActions=plan.actions.filter(a=>!['arena','league'].includes(a.kind) && (selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a)));
         data.usage=plan.usage;
       }
       const activityNames={'weekly-activities':['军备竞赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};

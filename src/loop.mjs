@@ -775,8 +775,9 @@ export async function runLoop(client, protocol, {
           }
           if (recruit) summary.dailies.results.push({ id: 1002, skipped: true, reason: recruit.reason });
           if (rewards) {
-            for (const { task } of survey.tasks) {
-              if (!(task.targetProgress > 0 && task.progress >= task.targetProgress)) continue;
+            for (const { task, status } of survey.tasks) {
+              const finished = task.id === 1005 && settings ? status === 'done' : task.targetProgress > 0 && task.progress >= task.targetProgress;
+              if (!finished) continue;
               for (const key of dailyKeys[task.id] ?? []) rewards.defer(key, survey.daily.dailyResetTime);
             }
             rewards.defer('freeRecruit', survey.freeRecruitAt);
@@ -811,7 +812,7 @@ export async function runLoop(client, protocol, {
         }
       }
       if (isEnabled && groupEnabled('领奖')) {
-        const results = await observed(['tasks','dailyRewards','chests','gift','mail','afk'],()=>claimRewards(client, protocol, config, logReward, enabled, rememberDeadline, rewards, player, { settings }));
+        const results = await observed(['tasks','dailyRewards','chests','gift','mail','afk'],()=>claimRewards(client, protocol, config, logReward, enabled, rememberDeadline, rewards, player, { settings, getSettings }));
         summary.tasks = { planned: results.length, results };
         try { await claimAfkAdNow(); } catch (error) { phaseFailure('tasks', '闯关挂机广告收益', error); }
       }

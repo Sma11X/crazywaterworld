@@ -32,7 +32,7 @@ import { previewManualFleetSpeed, runManualFleetSpeed } from './manual-fleet-spe
 import {observeOwnedFleets,ownedFleetCatalog} from './fleet-catalog.mjs';
 import {readPirateSweeps} from './pirate-sweeps.mjs';
 import { readArena } from './arena.mjs';
-import { readLeagueChallenge, leagueChallengeKey } from './league-challenge.mjs';
+import { readLeagueChallenge } from './league-challenge.mjs';
 import {readWorldTarget} from './world-target.mjs';
 import {readWorldBoss} from './world-boss.mjs';
 import { readWeekCalendar, claimReportRewards, claimableLeaguePassTiers, rewardData } from './missing-rewards.mjs';
@@ -87,7 +87,7 @@ import { displayMaterial, getConfig } from './config.mjs';
 import { readHeroGrowthPlan, heroStepLabel, runHeroPlan, formatHeroPlan } from './heroes.mjs';
 import { appointments } from './appointments.mjs';
 import { APPOINTMENT_PRIORITIES } from './appointment-priorities.mjs';
-import { surveyDailies, runDailies, formatSurvey } from './dailies.mjs';
+import { surveyDailies, runDailies, formatSurvey, dailyRewardGroup, dailyRewardEnabled } from './dailies.mjs';
 import { dailySingleState, addDailyOptions, runDailySingle } from './daily-single.mjs';
 import { surveyTasks, runTasks, formatTaskPlan, selectTaskSettings } from './tasks.mjs';
 import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, planWorld, runWorldRound, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
@@ -2414,16 +2414,17 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             return output(plan, plan.counts, '资源田自动占领');
           }
           if (category === 'arena') {
-            const { plan, info, tickets } = await readArena(client, () => settings);
-            const notes = [`本人排名 ${info.myself?.rankNo ?? '未知'} · 今日已挑战 ${info.dailyChallengeTimes ?? '未知'} 次 · 挑战券 ${tickets ?? '未知'} 张`];
+            const { plan, info, tickets, task } = await readArena(client, () => settings);
+            const notes = [`本人排名 ${info.myself?.rankNo ?? '未知'} · 今日战斗 ${info.dailyChallengeTimes ?? '未知'} / ${settings.arena.dailyBattleLimit} 次 · 挑战券 ${tickets ?? '未知'} 张`];
             const enabled = settings.schedule.arena && nativePreferenceEnabled(settings, 'arena');
             if (!enabled) notes.push('开启竞技场挑战、日常行动和每日任务与奖励总开关后执行');
             if (plan.reason) notes.push(plan.reason);
             const actions = enabled ? (plan.actions ?? []).map(a => ({ kind: 'arena', label: a.note, costs: [{ id: 'ARENA_POINT', num: 1 }] })) : [];
+            if (task && dailyRewardEnabled(settings, task.id) && task.progress >= task.targetProgress && !task.rewardClaimed) actions.push({ kind: 'arena', label: '领取竞技场每日任务奖励' });
             return output({ notes, actions }, {}, '竞技场');
           }
           if (category === 'league') {
-            const state = await readLeagueChallenge(client, config, session.player, () => settings, { preview: true });
+            const state = await readLeagueChallenge(client, config, session.player, () => settings, { preview: true, ledger: usageFor(session) });
             const info = state.info, notes = [], actions = [];
             if (state.reason) notes.push(state.reason);
             if (info) {
@@ -2431,9 +2432,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               notes.push(`分组段位 ${danName(info.roomDan)} · 预计结算段位 ${danName(info.predictDan)} · 排名 ${info.mine?.rank ?? '未知'} · 积分 ${info.mine ? toNumber(info.mine.score) : '未知'} · 挑战券 ${Number.isFinite(state.tickets) ? state.tickets : '未知'} 张`);
               if (!settings.schedule.leagueChallenge) notes.push('积分赛每日挑战已关闭');
               else if (state.target) {
-                if (usageFor(session).hasKey(leagueChallengeKey(session.player, state))) notes.push('本次挑战已提交，等待每日任务进度更新');
-                else actions.push({ kind: 'leagueChallenge', label: state.note, costs: [{ id: 'LEAGUE_POINT', num: 1 }] });
+                actions.push({ kind: 'leagueChallenge', label: state.note, costs: [{ id: 'LEAGUE_POINT', num: 1 }] });
               }
+              notes.push(`今日战斗 ${state.battles ?? '未知'} / ${settings.league.dailyBattleLimit} 次`);
+              const task = state.task;
+              if (task && dailyRewardEnabled(settings, task.id) && task.progress >= task.targetProgress && !task.rewardClaimed) actions.push({ kind: 'league', label: '领取积分赛每日任务奖励' });
               if (info.bonusItemNum >= 0) notes.push('累计可收集 ' + info.bonusItemNum);
               if (settings.schedule.leagueCollect && info.bonusItemNum > 0) actions.push({ kind: 'leagueCollect', label: '领取累计收集奖励' });
               const pass = await client.request('LeagueBattlePassInfoRequest', {}, 'LeagueBattlePassInfoResponse');
@@ -2573,7 +2576,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               actions.push({ ...action, kind: key === 'arena' ? 'arena' : 'daily', label: `${entry.task.title}：${action.note ?? '执行一次'}` });
             }
             if (settings.dailies.enabled) {
-              if (settings.dailies.claimTasks) for (const task of daily.daily?.dailyTask ?? []) if (task.progress >= task.targetProgress && !task.rewardClaimed) actions.push({ kind: 'reward', label: `领取每日任务 ${task.id} 奖励` });
+              for (const task of daily.daily?.dailyTask ?? []) if (dailyRewardEnabled(settings, task.id) && task.progress >= task.targetProgress && !task.rewardClaimed) actions.push({ kind: dailyRewardGroup(task.id) === 'dailies' ? 'reward' : dailyRewardGroup(task.id), label: `领取每日任务 ${task.id} 奖励` });
               for (const action of daily.chests?.actions ?? []) if (action.request === 'DrawWeeklyRewardRequest' ? settings.dailies.claimWeeklyChest : settings.dailies.claimDailyChest) actions.push({ ...action, kind: 'reward', label: action.note });
               if (settings.dailies.claimGift) for (const action of daily.gift?.actions ?? []) actions.push({ ...action, kind: 'reward', label: action.note });
             }
@@ -4236,7 +4239,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const results = await runDailies(instance, protocolFor(instance), survey, {
           allowMutate: true,
           allowPaid: payload.paid === true,
-          settings: session.preferences, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
+          settings: session.preferences, getSettings: () => session.preferences, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
           onStep: (entry) => {
             if (entry.skipped) emit(session, 'warn', `日常「${entry.title}」跳过：${entry.reason}`);
             else emit(session, entry.ok ? 'info' : 'error', entry.ok ? `日常「${entry.title}」${entry.note}` : `日常「${entry.title}」${entry.note ?? ''}失败：${entry.error}`,
@@ -4245,7 +4248,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         });
         // 任务奖励、活跃度宝箱与每日赠礼的领取都在 runDailies 内部收尾，这里只把结果重新读一遍给页面。
         await new Promise((resolve) => setTimeout(resolve, 1200));
-        const after = await surveyDailies(instance, protocolFor(instance), { config, player: session.player });
+        const after = await surveyDailies(instance, protocolFor(instance), { config, player: session.player, settings: session.preferences });
         const claimed = results
           .filter((entry) => entry.ok && (entry.request === 'DrawDailyTaskRewardRequest' || entry.id === 'activityChest' || entry.id === 'freeDailyPack'))
           .map((entry) => entry.note);

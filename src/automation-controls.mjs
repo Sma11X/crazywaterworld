@@ -24,7 +24,9 @@ for (const [key,label] of [
 add('forge.enabled','装备自动锻造','装备');
 add('gather.enabled','采集总开关','采集',{gates:['loop.world'],help:'在游戏配置 → 采集选择钓鱼、潜水、拾荒、漂浮物和工具养成。关闭总开关会暂停这些项目，保留已选细项。'});
 for (const [key,label] of [['fishing','自动钓鱼'],['floaters','拾取海面原料漂浮物'],['antiqueFloaters','打捞海面藏品宝箱'],['diving','潜水打捞原料'],['salvage','拾荒船自动拾荒'],['upgradeFishing','钓具强化与升级'],['upgradeDiving','潜水船坞强化与升级'],['upgradeSalvage','拾荒船强化与升级']]) add('gather.'+key,label,'采集',{gates:['loop.world','gather.enabled']});
-for (const [key,label] of [['claimTasks','领取每日任务奖励'],['claimDailyChest','领取每日活跃宝箱'],['claimWeeklyChest','领取每周活跃宝箱'],['claimGift','每日免费赠礼']]) add('dailies.'+key,label,'任务与领奖',{gates:['dailies.enabled']});
+for (const [key,label] of [['claimTasks','领取其他每日任务奖励'],['claimDailyChest','领取每日活跃宝箱'],['claimWeeklyChest','领取每周活跃宝箱'],['claimGift','每日免费赠礼']]) add('dailies.'+key,label,'任务与领奖',{gates:['dailies.enabled']});
+add('arena.claimTask','领取竞技场每日任务奖励','竞技场',{gates:['dailies.enabled']});
+add('league.claimTask','领取积分赛每日任务奖励','积分赛',{gates:['dailies.enabled']});
 add('worldBoss.enabled','世界Boss每日首战派遣','世界与挑战',{configLabel:'每日首战自动派遣',help:'每天仅在服务器计数为0时，将勾选且符合条件的舰队一起派出；未勾选时自动选一队。汽油按队数消耗，结果不明确时不重复派遣。伤害奖励由下方领奖开关独立控制。'});
 add('radar.runEnabled','联盟情报总开关','世界与挑战',{help:'统一暂停或恢复情报处理和舰队维修，保留配置中的细项选择。请在下方选择执行动作。'});
 add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'逐条领取已完成奖励，并用所选空闲舰队处理新情报。不会开启游戏原生月卡自动功能；派遣前检查实际汽油库存和待确认消费。'});
@@ -49,12 +51,13 @@ for (const [key,label,group,gates] of [
  ['heroRaid.enabled','超凡英雄活动','活动',[]],
 ]) add(key,label,group,{gates});
 const nativeKeys = new Set(['trialPaidSweep','trialAdSweep','diveEnhance','autoDive','salvageEnhance','autoSalvage','autoFish','fishEnhance','floaters','antiqueFloaters','cargo','farm','collect','finishUpgrade','build','buildSupply','upgrade','finishOrder','startProduce','speedUp','denyOrder','paidGold','dailyRewards','chests','gift','tasks']);
+const combatGroups = { arena: '竞技场', leagueChallenge: '积分赛', leagueCollect: '积分赛', leaguePassRewards: '积分赛' };
 for (const task of automationTasks) {
  if (task.key === 'stageAuto' || task.key === 'heroGrowth' || retiredAutomationTasks.has(task.key)) continue;
  if (nativeKeys.has(task.key)) continue;
  const group = ['freeRecruit','ticketRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
  const gates = task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
- add('schedule.'+task.key,task.label,group,{gates,taskKey:task.key,...(task.key==='pirate'?{configLabel:'每日免费扫荡',help:'在挂机配置 → 世界 → 海盗讨伐选择扫荡种类。三种海盗共用每日免费次数，无需派舰队，不消耗汽油、耐久或钻石；日常任务完成后仍按剩余次数执行，与首杀开关独立。'}:{}),...(task.key==='guildTitleReward'?{help:'默认关闭，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
+ add('schedule.'+task.key,task.label,combatGroups[task.key] ?? group,{gates,taskKey:task.key,...(task.key==='pirate'?{configLabel:'每日免费扫荡',help:'在挂机配置 → 世界 → 海盗讨伐选择扫荡种类。三种海盗共用每日免费次数，无需派舰队，不消耗汽油、耐久或钻石；日常任务完成后仍按剩余次数执行，与首杀开关独立。'}:{}),...(task.key==='guildTitleReward'?{help:'默认关闭，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
 }
 // 模块主控与细项在同一配置分组编辑；主控仍保留独立的保存字段。
 const idleModules = {

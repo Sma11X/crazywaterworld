@@ -59,7 +59,17 @@ const RESOURCE_RUBY = '钻石';
 
 export function describeDailyTask(task, config) {
   const row = (config?.tables?.DailyTaskCfg?.data ?? []).find((r) => r.taskId === task.id);
-  return { ...task, title: TASK_TITLES[task.id] ?? row?.type ?? String(task.id), desc: row?.desc ?? '' };
+  return { ...task, progress: task.progress, title: TASK_TITLES[task.id] ?? row?.type ?? String(task.id), desc: row?.desc ?? '' };
+}
+
+export function dailyRewardGroup(id) {
+  return id === 1005 ? 'arena' : id === 1017 ? 'league' : 'dailies';
+}
+
+export function dailyRewardEnabled(settings, id) {
+  if (!settings) return true;
+  const group = dailyRewardGroup(id);
+  return settings.dailies.enabled && (group === 'dailies' ? settings.dailies.claimTasks : settings[group]?.claimTask);
 }
 
 // ---- 活跃度宝箱 ---------------------------------------------------------------
@@ -333,6 +343,8 @@ function lowPower(power) {
 export async function surveyDailies(client, protocol, { config = null, player = null, timeout = 8000, includeTask = () => true, probeGift = true, idle = false, settings = null } = {}) {
   const daily = await client.request('DailyTaskInfoRequest', {}, 'DailyTaskInfoResponse', timeout);
   const tasks = (daily.dailyTask ?? []).filter(task => includeTask(task.id)).map((task) => describeDailyTask(task, config));
+  const needsAction = task => task.id === 1005 && idle && settings?.arena
+    ? task.progress < settings.arena.dailyBattleLimit : task.progress < task.targetProgress;
   const unfinished = id => tasks.some(task => task.id === id && task.progress < task.targetProgress);
   const itemList = !idle || unfinished(1002) ? await client.request('AllItemRequest', {}, 'AllItemResponse', timeout) : null;
   const items = new Map();
@@ -366,7 +378,7 @@ export async function surveyDailies(client, protocol, { config = null, player = 
   };
   for (const driver of Object.values(DAILY_DRIVERS)) {
     if (driver.id === 1010 && independentPirateSweep) continue;
-    if (!tasks.some(task => task.id === driver.id && task.progress < task.targetProgress)) continue;
+    if (!tasks.some(task => task.id === driver.id && needsAction(task))) continue;
     for (const [name, body, shouldProbe] of driver.probes ?? []) {
       if (shouldProbe && !shouldProbe(probe, { config, player })) continue;
       const key = `${name}|${JSON.stringify(body)}`;
@@ -377,7 +389,7 @@ export async function surveyDailies(client, protocol, { config = null, player = 
   const now = (Date.now() + (client.serverClockOffsetMs || 0)) / 1000;
   const evaluations = [];
   for (const task of tasks) {
-    if (task.progress >= task.targetProgress) {
+    if (task.progress >= task.targetProgress && !(task.id === 1005 && idle && settings?.arena)) {
       evaluations.push({ task, status: 'done', actions: [] });
       continue;
     }
@@ -506,15 +518,15 @@ export async function runDailies(client, protocol, survey, { allowMutate = false
   if (claimRewards) {
     // 服务端的完成数是异步落库的，动作刚发完就问会读到旧值。
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    results.push(...await claimDailies(client, protocol, { config: config ?? survey.config, timeout, onStep, settings }));
+    results.push(...await claimDailies(client, protocol, { config: config ?? survey.config, timeout, onStep, settings, getSettings }));
   }
   return results;
 }
 
 // 收尾两连：先领达标任务的奖励，再领活跃度宝箱。
-export async function claimDailies(client, protocol, { config = null, timeout = 15000, onStep, enabled = () => true, scheduler, settings = null } = {}) {
+export async function claimDailies(client, protocol, { config = null, timeout = 15000, onStep, enabled = () => true, scheduler, settings = null, getSettings = () => settings } = {}) {
   const results = [];
-  const selected = key => !settings || (settings.dailies.enabled && (key === 'dailyRewards' ? settings.dailies.claimTasks : key === 'gift' ? settings.dailies.claimGift : settings.dailies.claimDailyChest || settings.dailies.claimWeeklyChest));
+  const selected = key => !settings || (settings.dailies.enabled && (key === 'dailyRewards' ? settings.dailies.claimTasks || settings.arena?.claimTask || settings.league?.claimTask : key === 'gift' ? settings.dailies.claimGift : settings.dailies.claimDailyChest || settings.dailies.claimWeeklyChest));
   const ready = key => selected(key) && enabled(key) && (!scheduler || scheduler.due(key));
 
   const report = (outcome) => {
@@ -535,6 +547,7 @@ export async function claimDailies(client, protocol, { config = null, timeout = 
   const claimable = (after?.dailyTask ?? []).filter((task) => task.progress >= task.targetProgress && !task.rewardClaimed);
   for (const task of claimable) {
     if (!ready('dailyRewards')) break;
+    if (!dailyRewardEnabled(getSettings(), task.id)) continue;
     const title = TASK_TITLES[task.id] ?? String(task.id);
     const action = { request: 'DrawDailyTaskRewardRequest', response: 'DrawDailyTaskRewardResponse', body: { id: task.id }, note: `领任务奖励（${title}）` };
     try {
@@ -552,9 +565,16 @@ export async function claimDailies(client, protocol, { config = null, timeout = 
   if (scheduler && fresh?.dailyResetTime > scheduler.now()) {
     const recheck = Math.min(fresh.dailyResetTime, scheduler.now() + 180);
     if (ready('dailyRewards') && fresh.dailyTask?.length) {
-      scheduler.observe?.('dailyRewards','已领取 '+fresh.dailyTask.filter(t=>t.rewardClaimed).length+'/'+fresh.dailyTask.length+' 项任务奖励');
-      if (fresh.dailyTask.every(task => task.rewardClaimed)) scheduler.defer('dailyRewards', fresh.dailyResetTime);
-      else if (fresh.dailyTask.every(task => task.rewardClaimed || task.progress < task.targetProgress)) scheduler.defer('dailyRewards', recheck);
+      const selectedTasks = fresh.dailyTask.filter(task => dailyRewardEnabled(getSettings(), task.id));
+      for (const task of selectedTasks) {
+        const group = dailyRewardGroup(task.id);
+        if (group === 'dailies') continue;
+        const claimed = task.rewardClaimed || results.some(entry => entry.id === task.id && entry.ok);
+        scheduler.observe?.(group + '.claimTask', claimed ? '今日任务奖励已领取' : '任务进度 ' + task.progress + '/' + task.targetProgress);
+      }
+      scheduler.observe?.('dailyRewards','已领取 '+selectedTasks.filter(t=>t.rewardClaimed).length+'/'+selectedTasks.length+' 项任务奖励');
+      if (selectedTasks.length && selectedTasks.every(task => task.rewardClaimed)) scheduler.defer('dailyRewards', fresh.dailyResetTime);
+      else if (selectedTasks.every(task => task.rewardClaimed || task.progress < task.targetProgress)) scheduler.defer('dailyRewards', recheck);
     }
     // This switch serves both day and week tiers. Only sleep once both sets
     // are exhausted, waking at the earlier (daily) reset.
