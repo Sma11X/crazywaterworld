@@ -141,6 +141,32 @@ await check('真实登录协议VIP额度动态读取，未用完不接续，不�
   delete f.player.vip;
   assert.equal((await warPlan(f, s)).actions.length, 0);
 });
+await check('未解锁原生委任时各次数设置均直接派遣所选舰队', async () => {
+  for (const [vipLevel, effects] of [[0, null], [1, []], [1, [['每日城战委任次数', 0]]]]) {
+    for (const mode of [-1, 0, 2]) {
+      const f = warForgeFixture(), s = warForgeSettings();
+      f.player.vip.vipLevel = vipLevel;
+      if (effects) f.config.tables.VipLevelCfg.data.find(row => row.level === vipLevel).effects = effects;
+      Object.assign(s.cityWar, { fleetIds: ['1远征船'], nativeCommissionLimit: mode });
+      delete f.state.fleets[0].autoFight;
+      const result = await warRun(f, s);
+      assert.equal(result.nativeLimit, 0);
+      assert.deepEqual(f.client.writes, [{ name: 'MoveFleetsToCityRequest', body: { buildingId: ['1远征船'], cityId: 2 } }]);
+      assert.equal(result.results[0]?.status, 'confirmed');
+    }
+  }
+});
+await check('VIP 等级没有匹配配置时继续等待额度确认', async () => {
+  const f = warForgeFixture(), s = warForgeSettings();
+  f.player.vip.vipLevel = 2;
+  for (const mode of [-1, 2]) {
+    s.cityWar.nativeCommissionLimit = mode;
+    const result = await warRun(f, s);
+    assert.equal(result.nativeLimit, null);
+    assert.match(result.fleets[0].reason, /无法确认账号委任额度/);
+    assert.deepEqual(f.client.writes, []);
+  }
+});
 await check('原生委任设为0时关闭所选舰队开关再立即接续', async () => {
   const f=warForgeFixture(),s=warForgeSettings(),u=ledger();s.cityWar.fleetIds=['1远征船'];s.cityWar.nativeCommissionLimit=0;
   f.state.fleets[0].autoFight={isOn:true,todayTimes:0};

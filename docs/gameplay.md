@@ -735,7 +735,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 - 分解和放生在对应模块每轮检查中扫描库存。上次结果待确认时，完整库存中已消失的 UID 自动核销，已确认 UID 保留标记以避免旧库存回显后重复发送。在场 UID 连续两次符合对应的分解或放生条件时可重试，否则解除旧待确认记录。账号连接、设置变化或暂停会中止发送前检查。
 - 当前协议没有 `LeagueFormationRequest`；本人的积分赛编队从 `LeagueInfoResponse.ownFormations`（字段 5，重复 `LeagueFormation`）读取，`LeagueFormationResponse` 只用于保存编队。
 - `WorldCity` 的本盟现场数量由 `attackFleetNum + priorityAtkFleetNum` 加上 `battlePoints` 中左侧非 NPC 且属于本盟的交战点组成；已同步在途舰队从 `WorldInfoResponse.fleets` 读取：`state == 2`、`targetCityId` 为目标城、`owner.guildId` 为本盟，并按 `owner.playerId` 排除 MyFleets 已统计的本人舰队。归属或数量无法确认时不当作 0。
-- `SetFleetAutoFightRequest { buildingIds[], isOn }` 没有配套响应；关闭后回读 `MyFleetsResponse.fleets[].autoFight.isOn` 确认。城战原生委任设置 -1 按 VIP 额度等待，0 关闭后接管，N 表示原生先用 N 次再关闭。
+- `SetFleetAutoFightRequest { buildingIds[], isOn }` 没有配套响应；关闭后回读 `MyFleetsResponse.fleets[].autoFight.isOn` 确认。VIP 配置确认原生委任未解锁时，工具直接接管所选舰队。已解锁时，设置 -1 按 VIP 额度等待，0 关闭后接管，N 表示原生先用 N 次再关闭。
 
 ### 城战防守与逐队职责（#28）
 

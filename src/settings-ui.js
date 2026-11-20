@@ -408,9 +408,9 @@ const configGroups = [
     configField('schedule.worldOnlineRewards', '领取城战在线奖励', 'switch', { help: '在服务器城战时段内，按实际计时逐档领取免费在线奖励。独立于下方城战接续开关；默认关闭，保存后随挂机检查，不自动启动挂机。请求结果未知时等待计数确认，不重复领取。' }),
     configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟城战”；不会宣战或改变集结目标。' }),
     configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队' }),
-    configField('cityWar.defenceFleetIds', '舰队职责与策略', 'cityWarRoles', { parent: 'cityWar.fleetIds', wide: true, help: '为已选舰队分别选择进攻或防守；展开后可设置本队策略、维修加速和派遣加速。策略可跟随全局，也可独立设置目标来源、城市和优先策略。加速需开启城战接续和“基础 → 加速与钻石”中的自动钻石消耗总开关，每队每项上限与全局钻石预算同时生效。切换职责保留本队另一套策略；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；要立即按此分工执行，将原生委任次数设为 0。' }),
-    configField('cityWar.nativeCommissionLimit', '原生委任次数', 'number', { unit: '次', help: '-1 表示按服务器 VIP 规则等待额度用尽。0 表示关闭所选舰队的原生委任，由工具立即接续。N 表示先让原生委任使用 N 次（不超过 VIP 额度），再关闭开关并由工具接续。原生委任跟随联盟集结，攻守职责与各自目标配置在工具接管后生效。需要立即按设置执行时设为 0，工具会先回读确认关闭。' }),
-    configField('cityWar.targetMode', '进攻目标来源', 'choice', { options: [['alliance', '跟随联盟有效进攻目标'], ['selected', '只选择指定城市']], help: '进攻队使用本组目标来源、城市和优先策略。目标须为本盟已宣战且当前属于敌方的城市。攻守目标设置在工具接管后生效，需要立即执行时将原生委任次数设为 0。' }),
+    configField('cityWar.defenceFleetIds', '舰队职责与策略', 'cityWarRoles', { parent: 'cityWar.fleetIds', wide: true, help: '为已选舰队分别选择进攻或防守；展开后可设置本队策略、维修加速和派遣加速。策略可跟随全局，也可独立设置目标来源、城市和优先策略。加速需开启城战接续和“基础 → 加速与钻石”中的自动钻石消耗总开关，每队每项上限与全局钻石预算同时生效。切换职责保留本队另一套策略；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；已解锁原生委任的账号要立即按此分工执行，将原生委任次数设为 0。' }),
+    configField('cityWar.nativeCommissionLimit', '原生委任次数', 'number', { unit: '次', help: '未解锁原生委任时，工具直接按所选舰队的攻守设置接管，无需修改次数。已解锁时，-1 表示等待服务器 VIP 额度用尽，0 表示立即关闭原生委任，正数表示先用指定次数（最多用完 VIP 额度）。需要关闭时，工具会回读确认后再接管。' }),
+    configField('cityWar.targetMode', '进攻目标来源', 'choice', { options: [['alliance', '跟随联盟有效进攻目标'], ['selected', '只选择指定城市']], help: '进攻队使用本组目标来源、城市和优先策略。目标须为本盟已宣战且当前属于敌方的城市。攻守目标设置在工具接管后生效，已解锁原生委任的账号需要立即执行时将原生委任次数设为 0。' }),
     configField('cityWar.targetPriority', '进攻目标优先', 'choice', { options: [['fewestAllied', '按队数与距离选择'], ['original', '沿用集结／指定城市顺序']], help: '合计本盟排队、交战、已同步在途和本轮安排的舰队。以队数最少的城为基准，相差 0–9 队时选较近目标，差 10 队及以上时优先队数较少的城。多盟同攻时，攻方队列为空或排队明细与总数吻合即可确认本盟排队数。队数不明时，按队数选城会跳过该城，按集结或指定顺序仍可派舰。发送前重新核对。' }),
     configField('cityWar.cityRefs', '指定进攻城市', 'multi', { parent: 'cityWar.targetMode', catalog: 'cityTargets', empty: '请选择当前场景的进攻城市', when: d => d.cityWar.targetMode === 'selected', help: '进攻队在本名单内选择有效目标。启用队数与距离优先时按上述规则排序，勾选顺序用于同条件时的次序。场景不匹配、未宣战或城市归属不符合进攻职责时跳过，没有有效目标时等待。' }),
     configField('cityWar.defenceTargetMode', '防守目标来源', 'choice', { options: [['alliance', '跟随联盟有效防守目标'], ['selected', '只选择指定城市']], help: '防守队使用本组目标来源、城市和优先策略，可与进攻队分别选择自动选城或指定城市。目标须为正在受宣战且当前属于本盟的城市。' }),
@@ -2003,12 +2003,12 @@ async function configPreview() {
     }
     if (data.cityWar) {
       const state = data.cityWar;
-      root.append(el('p', 'config-help', '原生每队每日委任额度：' + (state.nativeLimit ?? '未确认') + '；本工具原生委任设置：' +
+      root.append(el('p', 'config-help', '原生每队每日委任额度：' + (state.nativeLimit === 0 ? '0（未解锁，工具直接接管）' : state.nativeLimit ?? '未确认') + '；本工具原生委任设置：' +
         (state.nativeCommissionLimit === -1 ? '按 VIP 规则' : state.nativeCommissionLimit === 0 ? '关闭原生委任' : (state.nativeCommissionLimit ?? '?') + ' 次') +
         '；汽油 ' + (state.fuel ?? '未确认') + '。' +
         (state.startTime && state.endTime ? '服务器城战时段：' + new Date(state.startTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) + ' 至 ' + new Date(state.endTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '尚未取得有效城战时段。')));
       if (state.fleets?.length) root.append(table(['舰队 / 职责', '实际状态', '今日原生委任', '接续条件'], state.fleets.map(f => [f.name + ' · ' + (f.role === 'defence' ? '防守' : '进攻'), f.state, (f.used ?? '?') + ' / ' + (f.limit ?? '?'), f.reason || '满足舰队条件'])));
-      root.append(el('p', 'config-help', '攻守职责与各自目标配置在工具接续时生效。原生委任跟随联盟集结，需要立即按设置执行时将原生委任次数设为 0。守方队列采用服务器计数，可能包含城防 NPC。'));
+      root.append(el('p', 'config-help', '攻守职责与各自目标配置在工具接续时生效。已解锁原生委任的账号如需立即按设置执行，可将原生委任次数设为 0。守方队列采用服务器计数，可能包含城防 NPC。'));
       if (state.targets?.length) root.append(table(['城战目标 / 方向', '攻/守队列及交战 + 本盟在途', '单队行军汽油', '目标标记'], state.targets.map(t => {
         const total = t.alliedCount == null || t.transitCount == null ? null : t.alliedCount + t.transitCount;
         return [t.name + ' · ' + (t.role === 'defence' ? '防守' : '进攻'), t.alliedCount == null ? (t.countReason || '未确认')
