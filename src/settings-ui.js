@@ -405,7 +405,7 @@ const configGroups = [
   ] },
   { id:'radar',title:'联盟情报',category:'world',fields:[
     configField('radar.runEnabled','联盟情报总开关','switch',{help:'统一暂停情报处理和舰队维修，保留细项选择。未选择任何执行动作时不会操作。'}),
-    configField('radar.enabled','自动处理情报'),
+    configField('radar.enabled','自动处理情报','switch',{help:'角色达到 30 级且普通月卡有效时，游戏自动完成刷新的情报，挂机一键领奖。未达到等级、没有普通月卡或月卡到期时，挂机逐条领奖，并按下方配置派遣舰队。'}),
     configField('radar.repairIdle','自动维修空闲舰队','switch',{help:'普通维修耐久低于80%的空闲舰队，按实际汽油库存检查。'}),
     configField('radar.fleetIds','情报参与舰队','multi',{ parent: 'radar.enabled',catalog:'expeditionFleets',empty:'未选择舰队，仅领取奖励；选择后才派遣',help:'使用空闲且已编队舰队；可与巨轮、城战、首杀共用舰队，只使用实际空闲且无待确认任务的舰队。'}),
     configField('radar.types','情报类型','multi',{ parent: 'radar.enabled',catalog:'radarTypes',empty:'未选择，暂停新派遣'}),

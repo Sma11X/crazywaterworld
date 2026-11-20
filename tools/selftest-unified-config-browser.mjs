@@ -141,6 +141,15 @@ try {
   assert.equal(await page.locator('#config-root').getByText(/上次保存/).count(), 0);
   console.log('通过：30个模块开关各自归位，旧导航与跨页跳转移除');
 
+  await group('radar');
+  assert.equal(await page.locator('[data-config-key="radar.monthCardSweep"]').count(), 0);
+  const radar = page.getByRole('switch', { name: '自动处理情报', exact: true });
+  await radar.click(); await saved();
+  assert.equal(loadAutomationSettings('config-a').settings.radar.enabled, true);
+  await page.reload(); await openConfig(); await group('radar');
+  assert(await radar.isChecked());
+  console.log('通过：自动处理情报统一控制普通派遣和月卡扫荡');
+
   await group('resourceFields');
   const fieldConfig = page.locator('#config-group-resourceFields');
   const refillAfterLoss = fieldConfig.getByRole('switch', { name: '失地后自动补齐', exact: true });

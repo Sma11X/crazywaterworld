@@ -333,6 +333,11 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
   }
+  if (plain(input?.radar) && typeof input.radar.monthCardSweep === 'boolean') {
+    const { monthCardSweep, ...radar } = input.radar;
+    if (monthCardSweep && radar.enabled === false) radar.enabled = true;
+    input = { ...input, radar };
+  }
   if (plain(input) && plain(input.weeklyActivity)) input = { ...input, weeklyActivity: migrateWeeklyActivitySettings(input.weeklyActivity) };
   // This additive limit was absent from saved version 2 settings. Only fill
   // the missing field; explicit values still pass through strict validation.

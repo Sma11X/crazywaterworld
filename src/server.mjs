@@ -42,6 +42,7 @@ import { readCityDeclare, declareCity, readCityCancelDeclare, cancelCityDeclare,
 import { readCityAssemble, assembleCity } from './world-city-assemble.mjs';
 import { readWorldCityDefence, readWorldCityDefenders, runWorldCityRecruit, reconcileWorldCityRecruit } from './world-city-defence.mjs';
 import { readAllianceRadar } from './alliance-radar.mjs';
+import { previewRadarSweep } from './radar-sweep.mjs';
 import { planRadarPreview, pendingPetrol } from './dispatch-preview.mjs';
 import { inspectHunt } from './pirates.mjs';
 import { selectPirateAdvance, runSinglePirateHunt } from './pirate-advance.mjs';
@@ -2447,6 +2448,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             return output({ actions, notes }, {}, '跨服积分赛');
           }
           // 草稿预览的预留结果仅在本请求使用，绝不写入运行中的调度缓存。
+          if (category === 'radar' && settings.radar.runEnabled && settings.radar.enabled) {
+            const plan = await previewRadarSweep(client, protocolFor(client), session.player, usageFor(session));
+            if (plan) return output(plan, { targets: plan.ready.length }, '联盟情报 · 普通月卡一键扫荡');
+          }
           let previewCityReserved=[];
           if(['radar','pirateHunt','worldBoss'].includes(category)&&settings.cityWar.enabled&&settings.cityWar.reserveDuringWar){
             const war=await readCityWar(client,protocolFor(client),config,session.player,settings.cityWar);

@@ -29,7 +29,7 @@ add('arena.claimTask','领取竞技场每日任务奖励','竞技场',{gates:['d
 add('league.claimTask','领取积分赛每日任务奖励','积分赛',{gates:['dailies.enabled']});
 add('worldBoss.enabled','世界Boss每日首战派遣','世界与挑战',{configLabel:'每日首战自动派遣',help:'每天仅在服务器计数为0时，将勾选且符合条件的舰队一起派出；未勾选时自动选一队。汽油按队数消耗，结果不明确时不重复派遣。伤害奖励由下方领奖开关独立控制。'});
 add('radar.runEnabled','联盟情报总开关','世界与挑战',{help:'统一暂停或恢复情报处理和舰队维修，保留配置中的细项选择。请在下方选择执行动作。'});
-add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'逐条领取已完成奖励，并用所选空闲舰队处理新情报。不会开启游戏原生月卡自动功能；派遣前检查实际汽油库存和待确认消费。'});
+add('radar.enabled','联盟情报自动处理','世界与挑战',{gates:['radar.runEnabled'],help:'角色达到 30 级且普通月卡有效时一键领取已完成的情报奖励；其他情况逐条领奖，并按配置派遣舰队。'});
 add('radar.repairIdle','自动维修空闲舰队','世界与挑战',{gates:['radar.runEnabled'],help:'普通维修耐久低于80%的空闲舰队，按实际汽油库存检查。'});
 add('treasure.enabled','万吨巨轮自动参与','世界与挑战');
 add('cityWar.enabled','联盟城战','世界与挑战');
