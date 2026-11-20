@@ -17,7 +17,9 @@ header { position:sticky; top:0; z-index:30; background:color-mix(in oklab,var(-
 h1 { font-size:16px; font-weight:600; line-height:1.2; letter-spacing:-.01em; white-space:nowrap }
 .brand-label { font-size:13px; color:var(--muted-foreground); border-left:1px solid var(--border); padding-left:10px; white-space:nowrap }
 .mast:has(#console-version-open:not([hidden])) .brand-label { display:none }
-.connection { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0; max-width:100%; flex:0 1 auto; margin-left:auto }
+/* 页头按可用宽度换行，连接按钮显隐时由账号选择框伸缩。 */
+.connection { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0; max-width:100%; flex:1 1 52rem; margin-left:auto }
+.connection:has(#hint:not(:empty)) { flex-basis:100% }
 .account-picker { position:relative; width:320px; max-width:100%; min-width:0; flex:0 1 320px }
 #account-picker-list { position:absolute; inset-inline:0; top:calc(100% + 6px); z-index:50; max-height:min(60dvh,360px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin }
 .account-picker-option { grid-template-columns:minmax(0,1fr) 16px }

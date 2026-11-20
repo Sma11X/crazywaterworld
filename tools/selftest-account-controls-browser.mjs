@@ -91,6 +91,32 @@ try {
     assert.equal(app.sessions.get('second')?.loop.running ?? false, false);
     if (width === 1280) assert.equal(mailReads, 0, '打开页面读取资料不会执行挂机任务');
 
+    const headerHeights = await page.evaluate(async () => {
+      const { actions, accountsById } = window.cwConsoleStore.getState();
+      const original = accountsById.first.status;
+      const heights = [];
+      try {
+        for (const status of [
+          { paused: true },
+          { syncingProduction: true, state: 'CONNECTING' },
+          { connected: true, looping: true },
+        ]) {
+          actions.setStatus('first', status);
+          await Promise.resolve();
+          heights.push(document.querySelector('.headline').getBoundingClientRect().height);
+        }
+      } finally {
+        actions.setStatus('first', original);
+      }
+      return heights;
+    });
+    assert.ok(headerHeights.every(height => height === headerHeights[0]), width + 'px暂停、恢复同步和挂机期间页头高度稳定');
+    if (width === 1280) {
+      const brand = await page.locator('.mast').boundingBox();
+      const picker = await page.locator('#account-picker').boundingBox();
+      assert.ok(picker.y < brand.y + brand.height, '桌面账号工具栏与标题保持同一行');
+    }
+
     // No render function is called: a store update must reach all DOM consumers.
     await page.locator('#account-picker-trigger').click();
     const storeViews = await page.evaluate(async () => {
