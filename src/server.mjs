@@ -31,9 +31,11 @@ import {watchFleetSpeed,readFleetSpeed,planFleetSpeed,fleetSpeedEnabled} from '.
 import { previewManualFleetSpeed, runManualFleetSpeed } from './manual-fleet-speed.mjs';
 import {observeOwnedFleets,ownedFleetCatalog} from './fleet-catalog.mjs';
 import {readPirateSweeps} from './pirate-sweeps.mjs';
+import { readArena } from './arena.mjs';
+import { readLeagueChallenge, leagueChallengeKey } from './league-challenge.mjs';
 import {readWorldTarget} from './world-target.mjs';
 import {readWorldBoss} from './world-boss.mjs';
-import { readWeekCalendar, claimReportRewards, rewardData } from './missing-rewards.mjs';
+import { readWeekCalendar, claimReportRewards, claimableLeaguePassTiers, rewardData } from './missing-rewards.mjs';
 import { readWorldOverview } from './world-overview.mjs';
 import { previewWorldCityDispatch, runWorldCityDispatch } from './world-city-dispatch.mjs';
 import { readCityDeclare, declareCity, readCityCancelDeclare, cancelCityDeclare, reconcileCityCancelDeclare } from './world-city-declare.mjs';
@@ -2387,7 +2389,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!config) throw new Error('缺少游戏配置表，暂时不能预览');
         const settings = validateSettings(payload.settings ?? settingsView(session).settings, { catalog: settingsCatalog(config) });
         const category = payload.category ?? 'base';
-        if (!['base', 'world', 'heroes', 'daily', 'runtime', 'cityWar', 'forge', 'antique', 'equipmentGrowth', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid','resourceFields'].includes(category)) throw new Error('不支持的预览分类');
+        if (!['base', 'world', 'heroes', 'daily', 'arena', 'league', 'runtime', 'cityWar', 'forge', 'antique', 'equipmentGrowth', 'activity', 'radar', 'pirateHunt', 'fleetDispatch','fleetSpeed','worldBoss','pirateSweep','alliance','guildShip','guildFort','silicon','heroRaid','resourceFields'].includes(category)) throw new Error('不支持的预览分类');
 
         if (category === 'runtime') {
           json({ checkedAt: new Date().toISOString(), usage: usageFor(session).snapshot(), actions: [], counts: {}, viewOnly: true, scopeLabel: '运行安排（仅查看，不执行）',
@@ -2410,6 +2412,36 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               getSettings: () => settings, ledger: usageFor(session), enabled: () => session.client === client && client.connected && !session.paused && session.player === player && session.generation === generation,
             });
             return output(plan, plan.counts, '资源田自动占领');
+          }
+          if (category === 'arena') {
+            const { plan, info, tickets } = await readArena(client, () => settings);
+            const notes = [`本人排名 ${info.myself?.rankNo ?? '未知'} · 今日已挑战 ${info.dailyChallengeTimes ?? '未知'} 次 · 挑战券 ${tickets ?? '未知'} 张`];
+            const enabled = settings.schedule.arena && nativePreferenceEnabled(settings, 'arena');
+            if (!enabled) notes.push('开启竞技场挑战、日常行动和每日任务与奖励总开关后执行');
+            if (plan.reason) notes.push(plan.reason);
+            const actions = enabled ? (plan.actions ?? []).map(a => ({ kind: 'arena', label: a.note, costs: [{ id: 'ARENA_POINT', num: 1 }] })) : [];
+            return output({ notes, actions }, {}, '竞技场');
+          }
+          if (category === 'league') {
+            const state = await readLeagueChallenge(client, config, session.player, () => settings, { preview: true });
+            const info = state.info, notes = [], actions = [];
+            if (state.reason) notes.push(state.reason);
+            if (info) {
+              const danName = dan => config.tables.LeagueDanCfg?.data?.find(row => row.dan === dan)?.name ?? dan ?? '未知';
+              notes.push(`分组段位 ${danName(info.roomDan)} · 预计结算段位 ${danName(info.predictDan)} · 排名 ${info.mine?.rank ?? '未知'} · 积分 ${info.mine ? toNumber(info.mine.score) : '未知'} · 挑战券 ${Number.isFinite(state.tickets) ? state.tickets : '未知'} 张`);
+              if (!settings.schedule.leagueChallenge) notes.push('积分赛每日挑战已关闭');
+              else if (state.target) {
+                if (usageFor(session).hasKey(leagueChallengeKey(session.player, state))) notes.push('本次挑战已提交，等待每日任务进度更新');
+                else actions.push({ kind: 'leagueChallenge', label: state.note, costs: [{ id: 'LEAGUE_POINT', num: 1 }] });
+              }
+              if (info.bonusItemNum >= 0) notes.push('累计可收集 ' + info.bonusItemNum);
+              if (settings.schedule.leagueCollect && info.bonusItemNum > 0) actions.push({ kind: 'leagueCollect', label: '领取累计收集奖励' });
+              const pass = await client.request('LeagueBattlePassInfoRequest', {}, 'LeagueBattlePassInfoResponse');
+              const tiers = claimableLeaguePassTiers(config, info, pass);
+              notes.push('战令积分 ' + pass.score + ' · 可领 ' + tiers.length + ' 档');
+              if (settings.schedule.leaguePassRewards && tiers.length) actions.push({ kind: 'leaguePassRewards', label: '领取 ' + tiers.length + ' 档战令奖励' });
+            }
+            return output({ actions, notes }, {}, '跨服积分赛');
           }
           // 草稿预览的预留结果仅在本请求使用，绝不写入运行中的调度缓存。
           let previewCityReserved=[];
@@ -2538,7 +2570,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             for (const entry of daily.tasks) for (const action of entry.actions ?? []) {
               const key = dailyTaskKey(entry.task.id, action);
               if (!key || !flags[key] || !nativePreferenceEnabled(settings, key)) continue;
-              actions.push({ ...action, kind: 'daily', label: `${entry.task.title}：${action.note ?? '执行一次'}` });
+              actions.push({ ...action, kind: key === 'arena' ? 'arena' : 'daily', label: `${entry.task.title}：${action.note ?? '执行一次'}` });
             }
             if (settings.dailies.enabled) {
               if (settings.dailies.claimTasks) for (const task of daily.daily?.dailyTask ?? []) if (task.progress >= task.targetProgress && !task.rewardClaimed) actions.push({ kind: 'reward', label: `领取每日任务 ${task.id} 奖励` });

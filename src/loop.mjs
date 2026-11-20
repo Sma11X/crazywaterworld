@@ -10,6 +10,7 @@ import { runResourceFields } from './resource-field-automation.mjs';
 import { runHeroRaidAutomation } from './hero-raid-automation.mjs';
 import { merchantMonitorSeconds, watchMerchant } from './merchant-monitor.mjs';
 import {runPirateSweeps} from './pirate-sweeps.mjs';
+import { runLeagueChallenge } from './league-challenge.mjs';
 import {claimGuildTitleReward} from './guild-title-rewards.mjs';
 import {runWorldBoss,claimWorldBossDamage} from './world-boss.mjs';
 import {recoverWorldBossLineups} from './world-boss-lineups.mjs';
@@ -678,7 +679,7 @@ export async function runLoop(client, protocol, {
             summary.dailies.results = await runDailies(client, protocol, survey, {
               allowMutate, allowPaid: isEnabled ? true : allowPaid, claimRewards: !isEnabled, config,
               allowAction: allowDaily, onStep: stepLog('dailies'),
-              settings, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
+              settings, getSettings, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
             });
           }
           if (recruit) summary.dailies.results.push({ id: 1002, skipped: true, reason: recruit.reason });
@@ -702,6 +703,21 @@ export async function runLoop(client, protocol, {
       if(isEnabled&&settings&&enabled('pirate')){
         try{await runPirateSweeps(client,config,player,{getSettings,ledger:usageLedger,enabled:()=>enabled('pirate'),scheduler:rewards,report:entry=>{summary.dailies.results.push(entry);if(!entry.skipped)summary.dailies.planned++;stepLog('dailies')({...entry,title:entry.label,taskKey:'pirate'});}});}
         catch(error){const entry={title:'海盗日常扫荡',taskKey:'pirate',ok:false,error:error.message};summary.dailies.results.push(entry);stepLog('dailies')(entry);}
+      }
+      if (settings?.schedule?.leagueChallenge && enabled('leagueChallenge')) {
+        const taskKey = 'leagueChallenge';
+        try {
+          const entry = await runLeagueChallenge(client, protocol, config, player, {
+            getSettings, ledger: usageLedger, enabled: () => getSettings()?.schedule?.leagueChallenge && enabled(taskKey),
+          });
+          summary.dailies.results.push(entry);
+          if (!entry.skipped) summary.dailies.planned++;
+          stepLog('dailies')({ ...entry, title: entry.label, taskKey });
+          if (entry.nextCheck) rewards?.defer(taskKey, entry.nextCheck);
+        } catch (error) {
+          const entry = { title: '积分赛每日挑战', taskKey, ok: false, error: error.message };
+          summary.dailies.results.push(entry); stepLog('dailies')(entry);
+        }
       }
       if (isEnabled && groupEnabled('领奖')) {
         const results = await observed(['tasks','dailyRewards','chests','gift','mail','afk'],()=>claimRewards(client, protocol, config, logReward, enabled, rememberDeadline, rewards, player, { settings }));

@@ -219,6 +219,21 @@ const configGroups = [
         configField(key+'marchSpeedUp',label+'允许行军加速','switch',{parent:key+'enabled',when}),configField(key+'marchTargetSeconds',label+'行军剩余目标','number',{unit:'秒',parent:key+'marchSpeedUp',when})].map(field=>({...field,fleetIndex:i,fleetGroup:'silicon'}));
     }),
   ]},
+  {id:'league',title:'积分赛',category:'daily',fields:[
+    configField('schedule.leagueChallenge','积分赛每日挑战','switch',{help:'使用已有编队和挑战券，每轮最多挑战一次，完成当日积分赛任务后停止。只从当前匹配名单选人。'}),
+    configField('league.target','选对手策略','choice',{options:[['weakest','优先战力最低'],['score','优先积分最高']]}),
+    configField('league.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示只选战力不超过本人积分赛战力 70% 的对手，再按所选策略排序。无人符合时跳过。0 表示不限。'}),
+    configField('league.keepTickets','保留积分赛挑战券','number',{unit:'张',help:'每场使用 1 张。剩余券数达到此值时停止挑战。'}),
+    configField('schedule.leagueCollect','领取累计收集奖励'),
+    configField('schedule.leaguePassRewards','领取已达标战令奖励'),
+  ]},
+  {id:'arena',title:'竞技场',category:'daily',fields:[
+    configField('schedule.arena','竞技场每日挑战','switch',{help:'使用已有挑战券，每轮最多挑战一次，完成当日竞技场任务后停止。需开启「日常行动」和「每日任务与奖励」总开关。'}),
+    configField('arena.target','选对手策略','choice',{options:[['weakest','优先战力最低'],['rank','优先排名最高']],help:'从排名在自己之前、当前可以挑战的对手中选择。'}),
+    configField('arena.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示只选战力不超过本人竞技场战力 70% 的对手，再按所选策略排序。无人符合时跳过。0 表示不限。'}),
+    configField('arena.keepTickets','保留竞技场挑战券','number',{unit:'张',help:'每场使用 1 张。剩余券数达到此值时停止挑战。'}),
+  ]},
+  {id:'daily-actions',title:'日常行动',category:'daily',fields:[]},
   {id:'ad-rewards',title:'广告奖励',category:'daily',fields:[
     configField('ads.waitSeconds','广告申请后等待','number',{unit:'秒',help:'无免广告权益时默认申请并等待后领取；有权益时立即领取。默认15秒，是挂机收益、英雄招募、工厂加速、藏品招募、广告商店、节庆礼包和雪球礼包都实测成功过的时长。5秒只在藏品招募上测通，广告商店3秒被拒。等待会占用账号操作队列，挂机每轮最多处理1次；服务器返回未完成时跳过该入口并冷却5分钟。'}),
     configField('schedule.afkAd','闯关挂机广告收益','switch',{help:'每天1次。游戏只在普通领取后的60秒内提供此入口，因此需同时开启“闯关挂机收益”，普通领取后立即执行。无免广告权益时按设置的等待时间领取。'}),
@@ -976,7 +991,9 @@ function configRender() {
   for (const group of groups) group.fields = group.fields.filter(field => !hiddenFields.has(field.key) && !activityOwnedSettings.has(field.key));
   const mapped = new Set(configEditor.data.rules?.mappedTasks ?? []);
   const staticFields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
-  const tasks = (configEditor.data.tasks ?? []).filter(task => !mapped.has(task.key)&&!hiddenFields.has('schedule.'+task.key)&&!activityOwnedSettings.has('schedule.'+task.key)&&!staticFields.has('schedule.'+task.key)).map(task => ['freeRecruit', 'ticketRecruit'].includes(task.key) ? { ...task, group: '招募' } : task);
+  // These switches used to determine the order of the numbered schedule bookmarks.
+  const movedCombatTasks = new Set(['arena', 'leagueCollect', 'leaguePassRewards']);
+  const tasks = (configEditor.data.tasks ?? []).filter(task => !mapped.has(task.key)&&!hiddenFields.has('schedule.'+task.key)&&!activityOwnedSettings.has('schedule.'+task.key)&&(!staticFields.has('schedule.'+task.key)||movedCombatTasks.has(task.key))).map(task => ['freeRecruit', 'ticketRecruit'].includes(task.key) ? { ...task, group: '招募' } : task);
   const destinations = { '联盟': ['cityWar', '联盟城战'], '海面': ['building', '建筑'], '领奖': ['rewards', '任务与领奖'],
     '周期活动': ['daily-weekly', '周期活动'], '限时活动': ['river-series', '限时 · 联动系列'], '藏品': ['antique-recruit', '藏品招募'],
     '招募': ['hero-recruit', '英雄招募'], '日常': ['daily-actions', '日常行动'], '挑战': ['daily-challenges', '挑战与扫荡'] };
@@ -993,7 +1010,7 @@ function configRender() {
     configLegacyGroups.set('schedule-' + (33 + index), id);
     let group = groups.find(item => item.id === id);
     if (!group) { group = { id, title, category: 'daily', fields: [] }; groups.push(group); }
-    for (const task of tasks.filter(task => task.group === name)) if (!group.fields.some(field => field.key === 'schedule.' + task.key)) group.fields.push(configField('schedule.' + task.key, task.label, 'switch', task.key === 'heroRecruitRewards' ? { help: '只领取本赛季已达标的英雄累计招募奖励，不消耗招募券或钻石。与藏品领奖分别控制，不受日常行动开关控制，暂停托管时停止。' } : {}));
+    for (const task of tasks.filter(task => task.group === name && !staticFields.has('schedule.' + task.key))) if (!group.fields.some(field => field.key === 'schedule.' + task.key)) group.fields.push(configField('schedule.' + task.key, task.label, 'switch', task.key === 'heroRecruitRewards' ? { help: '只领取本赛季已达标的英雄累计招募奖励，不消耗招募券或钻石。与藏品领奖分别控制，不受日常行动开关控制，暂停托管时停止。' } : {}));
   });
   groups.find(g => g.id === 'rewards').title = '任务与领奖';
   const trialGroup = groups.find(g => g.id === 'progression');
@@ -1006,6 +1023,10 @@ function configRender() {
     configField('trials.dailyDiamondBudget', '试炼每日钻石预算', 'number', { parent:'trials.paid', unit:'钻石', help:'三个副本共用，也计入全局每日钻石用量。结果未知仍保留额度，跨日未知请求先核对，不重复发送。' }),
   );
   for (let index = groups.length - 1; index >= 0; index--) if (!groups[index].fields.length) groups.splice(index, 1);
+  if (!groups.some(group => group.id === 'daily-challenges')) {
+    configLegacyGroups.set('daily-challenges', 'league');
+    for (const [key, id] of configLegacyGroups) if (id === 'daily-challenges') configLegacyGroups.set(key, 'league');
+  }
   const adIndex = groups.findIndex(group => group.id === 'ad-rewards');
   if (adIndex >= 0 && groups.some(group => group.id === 'daily-actions')) {
     const [ads] = groups.splice(adIndex, 1);
@@ -1957,7 +1978,7 @@ async function configPreview() {
   configBusy(true); configUpdateState(); $('config-preview').textContent = '读取真实状态…';
   try {
     const selected=scope.startsWith('module:')?configEditor.groups.get(scope.slice(7)):null;
-    const dedicated={alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon',resourceFields:'resourceFields','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
+    const dedicated={arena:'arena',league:'league',alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon',resourceFields:'resourceFields','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
     const runtime=await call('/api/loop');
     const source=selected?dedicated[selected.id]:scope;
     let data;
@@ -1982,7 +2003,7 @@ async function configPreview() {
       if(['daily-actions','daily-challenges','rewards'].includes(selected.id)){
         const plan=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'daily'})});
         const isTrial=a=>['trialPaidSweep','trialAdSweep'].includes(a.kind);
-        data.moduleActions=plan.actions.filter(a=>selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a));
+        data.moduleActions=plan.actions.filter(a=>a.kind!=='arena' && (selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a)));
         data.usage=plan.usage;
       }
       const activityNames={'weekly-activities':['军备竞赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};

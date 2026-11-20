@@ -178,6 +178,20 @@ ChurnInfo            UltraOpen            BlackList
 
 `ChurnInfoRequest` 含 `task`、`gotTaskId`、`gotPaidGift`、`paidPack`、`type`，是流失召回与付费礼包的运营投放。
 
+#### 竞技场与跨服积分赛
+
+以下字段和操作依据本机微信客户端 v76。两个玩法各用一种挑战券。
+
+| 玩法 | 服务端可读数据 | 挂机配置如何使用 |
+|---|---|---|
+| 竞技场 | `ArenaInfoResponse` 的 `myself`、`top3`、`challenges` 含玩家 ID、排名和战力，还可读编队、今日挑战次数及下次回券时间 | 日常任务 1005 未完成时，从游戏允许挑战且排在本人之前的对手中选战力最低或排名最高者。每场消耗 1 张竞技场券（资源 5），发起前重读名单和余额。 |
+| 跨服积分赛 | `LeagueInfoResponse` 提供本人积分和排名、当前及预测段位、结算时间、各队阵容、累计可收集数量。`LeagueRefreshRivalRequest{isRefresh:false}` 读取当前匹配对手的 ID、积分和战力 | 按当期段位的队伍数检查已有编队。在客户端开放时段内按最低战力或最高积分选人，消耗 1 张积分赛券（资源 6），完成任务 1017 后停止。积分赛券的保留量与竞技场分别设置。 |
+| 积分赛奖励 | `LeagueBattlePassInfoResponse` 提供战令积分、已领档位和付费战令激活标记 | 累计收集与战令领奖各有开关。战令按当前分组段位的 `LeaguePassCfg` 匹配已达标档位。 |
+
+两个页签可分别设置「对手战力上限（相对己方）」，范围为 0–1000 的整数。0 表示不限。竞技场按 `myself.power` 计算，积分赛按 `mine.power` 计算。例如己方战力 10 万、上限 70% 时，候选人可包含恰好 7 万战力的对手。挂机先筛选符合上限的对手，再按所选策略排序。启用上限后，己方战力未同步或没有战力符合条件的对手时，本轮跳过挑战并保留挑战券。
+
+当前配置表中，跨服积分赛在角色 25 级开放。挑战时段按游戏服务器时间为北京时间 06:00 至 23:59:30。挂机沿用已有编队和已有券，读取当前名单不购买次数或付费换一批。战斗回包带双方身份及战后积分。工具按账号、角色和当日任务进度记录已提交的一场挑战，回包丢失时重连也会先核对进度。
+
 ### 3.7 世界地图：资源田、舰队、货船、海盗、世界 Boss
 
 - 协议：`MyResFieldsRequest`、`MyFleetsRequest`、`CargoShipsRequest`、`AllPirateRequest`、`PirateKillRecordRequest`、`WorldBossInfoRequest`、`LimitedBossOpenRequest`、`RadarInfoRequest`。

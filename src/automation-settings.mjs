@@ -21,7 +21,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 21;
+export const SETTINGS_SCHEMA_VERSION = 23;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 const treasureRewardFilterDefaults = {
@@ -75,6 +75,8 @@ export const DEFAULT_SETTINGS = {
     universal: false, keepExp: 0, targetLevel: 0, targetStar: 0 },
   appointments: { enabled: false, priorities: [...DEFAULT_APPOINTMENT_PRIORITIES] },
   dailies: { enabled: false, claimTasks: false, claimDailyChest: false, claimWeeklyChest: false, claimGift: false },
+  arena: { target: 'weakest', keepTickets: 0, maxPowerRatio: 0 },
+  league: { target: 'weakest', keepTickets: 0, maxPowerRatio: 0 },
   tasks: { main: false, branch: false, achievements: false },
   progression: { enabled: false, mainline: false, trials: false, raidIds: ['1','2','3'], maxFailures: 3 },
   lineups: { presets: [], mainlinePresetId: '', trialPresets: [] },
@@ -156,6 +158,9 @@ const constraints = {
   'appointments.priorities': { ...strings(7), values: DEFAULT_APPOINTMENT_PRIORITIES },
   'trials.raidIds': { ...strings(3), values: ['1','2','3'] }, 'trials.paidPerRaidLimit': int(100),
   'trials.dailyDiamondBudget': int(100000), 'trials.maxSingleCost': int(10000),
+  'arena.target': { kind: 'choice', values: ['weakest', 'rank'] }, 'arena.keepTickets': int(100000),
+  'league.target': { kind: 'choice', values: ['weakest', 'score'] }, 'league.keepTickets': int(100000),
+  'arena.maxPowerRatio': int(1000), 'league.maxPowerRatio': int(1000),
   'progression.raidIds': { ...strings(3), values: ['1','2','3'] }, 'progression.maxFailures': int(100, 1),
   'pirateHunt.maxFailures': int(100, 1),
   'pirateSweep.type': {kind:'choice',values:['1','2','3']},
@@ -647,7 +652,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1043,4 +1048,20 @@ function migrateVersion19Settings(settings) {
 function migrateVersion20Settings(settings) {
   if (!plain(settings?.treasure)) return settings;
   return { ...settings, treasure: { ...treasureRewardFilterDefaults, ...settings.treasure } };
+}
+
+function migrateVersion21Settings(settings) {
+  if (!plain(settings)) return settings;
+  const next = { arena: { ...DEFAULT_SETTINGS.arena }, league: { ...DEFAULT_SETTINGS.league }, ...settings };
+  if (plain(settings.schedule)) next.schedule = { leagueChallenge: false, ...settings.schedule };
+  return next;
+}
+
+function migrateVersion22Settings(settings) {
+  if (!plain(settings)) return settings;
+  const next = { ...settings };
+  for (const group of ['arena', 'league']) {
+    if (plain(next[group])) next[group] = { maxPowerRatio: 0, ...next[group] };
+  }
+  return next;
 }

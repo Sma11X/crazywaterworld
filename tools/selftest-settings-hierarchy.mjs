@@ -645,8 +645,14 @@ test('世界Boss领奖只在世界分组出现，首战派遣与领奖独立控�
   f.set('worldBoss.enabled', false);
   assert.equal(f.editor.draft.schedule.worldBossRewards, true, '关闭首战不关闭领奖');
   assert(visible(reward.node), '关闭首战后领奖仍可编辑');
-  const challenges = f.editor.groups.get('daily-challenges');
-  assert.deepEqual(challenges.fields.map(field => field.key), ['schedule.leagueCollect', 'schedule.leaguePassRewards']);
+  const ids = [...f.editor.groups.values()].filter(item => item.category === 'daily').map(item => item.id);
+  const daily = ids.indexOf('daily-actions');
+  assert.deepEqual(ids.slice(daily - 2, daily + 2), ['league', 'arena', 'daily-actions', 'ad-rewards']);
+  assert.deepEqual(f.editor.groups.get('arena').fields.map(field => field.key), ['schedule.arena', 'arena.target', 'arena.maxPowerRatio', 'arena.keepTickets']);
+  assert.deepEqual(f.editor.groups.get('league').fields.map(field => field.key),
+    ['schedule.leagueChallenge', 'league.target', 'league.maxPowerRatio', 'league.keepTickets', 'schedule.leagueCollect', 'schedule.leaguePassRewards']);
+  f.env.hash = '#config-group-daily-challenges'; f.applyHash();
+  assert.equal(f.editor.selectedGroups.daily, 'league');
 });
 
 test('所有模块主控与参数在同组，英雄组合主控保留细项，运行安排入口移除', () => {

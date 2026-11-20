@@ -183,9 +183,23 @@ try {
   await bossReward.click(); await saved();
   assert.equal(loadAutomationSettings('config-a').settings.schedule.worldBossRewards, false);
   assert(!Object.hasOwn(loadAutomationSettings('config-a').settings.schedule, 'worldBossDamage'));
-  await group('daily-challenges');
-  assert.deepEqual(await page.locator('#config-group-daily-challenges [data-config-key]').evaluateAll(nodes => nodes.map(node => node.dataset.configKey)),
-    ['schedule.leagueCollect', 'schedule.leaguePassRewards']);
+  await group('arena');
+  const tickets = page.locator('#config-field-arena-keepTickets');
+  await tickets.fill('2'); await saved();
+  const arenaRatio = page.locator('#config-field-arena-maxPowerRatio');
+  await arenaRatio.fill('70'); await saved();
+  await group('league');
+  const leagueRatio = page.locator('#config-field-league-maxPowerRatio');
+  await leagueRatio.fill('115'); await saved();
+  await page.locator('#config-field-schedule-leagueChallenge').click(); await saved();
+  await page.reload(); await openConfig(); await group('league');
+  assert.equal(await leagueRatio.inputValue(), '115');
+  assert.equal(await page.locator('#config-field-schedule-leagueChallenge').getAttribute('aria-checked'), 'true');
+  assert.equal(await page.locator('#config-field-schedule-leagueCollect').getAttribute('aria-checked'), 'false');
+  await group('arena');
+  assert.equal(await tickets.inputValue(), '2');
+  assert.equal(await arenaRatio.inputValue(), '70');
+  assert.equal(await page.locator('[data-config-key="schedule.arena"]').count(), 1);
   console.log('通过：世界Boss只有一个领奖入口，自动保存及刷新保留选择，首战派遣保持独立');
 
   await group('worldBoss');
