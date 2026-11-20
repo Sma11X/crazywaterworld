@@ -226,7 +226,7 @@ const configGroups = [
   ]},
   {id:'league',title:'积分赛',category:'daily',fields:[
     configField('schedule.leagueChallenge','积分赛每日挑战','switch',{help:'使用已有编队和挑战券，每轮最多挑战一次，达到每日战斗次数后停止。'}),
-    configField('league.target','选对手策略','choice',{options:[['weakest','优先战力最低'],['score','优先积分最高']]}),
+    configField('league.target','选对手策略','choice',{componentSelect:true,options:[['weakest','优先战力最低'],['score','优先积分最高']]}),
     configField('league.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示优先选战力不超过本人积分赛战力 70% 的对手，再按所选策略排序。0 表示不限。'}),
     configField('league.fallbackWeakest','免费刷新后兜底挑战','switch',{help:'当前名单无人符合上限时使用免费刷新次数。刷到符合条件的对手就打，免费次数用完仍无人符合时，挑战当前名单中战力最低者。'}),
     configField('league.dailyBattleLimit','每日战斗次数','number',{unit:'次',help:'每场用 1 张券。填 0 暂停战斗并留券，领奖仍按各自开关执行。'}),
@@ -236,7 +236,7 @@ const configGroups = [
   ]},
   {id:'arena',title:'竞技场',category:'daily',fields:[
     configField('schedule.arena','竞技场每日挑战','switch',{help:'使用已有挑战券，每轮最多挑战一次，达到每日战斗次数后停止。需开启「日常行动」和「每日任务与奖励」总开关。'}),
-    configField('arena.target','选对手策略','choice',{options:[['weakest','优先战力最低'],['rank','优先排名最高']],help:'从排名在自己之前、当前可以挑战的对手中选择。'}),
+    configField('arena.target','选对手策略','choice',{componentSelect:true,options:[['weakest','优先战力最低'],['rank','优先排名最高']],help:'从排名在自己之前、当前可以挑战的对手中选择。'}),
     configField('arena.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示优先选战力不超过本人竞技场战力 70% 的对手，再按所选策略排序。0 表示不限。'}),
     configField('arena.fallbackLowerRank','兜底扫荡低排名对手','switch',{help:'排名靠前的可挑战对手中无人符合条件时，消耗 1 张券扫荡排名在自己之后的对手，计入每日战斗次数。'}),
     configField('arena.dailyBattleLimit','每日战斗次数','number',{unit:'次',help:'包含今天已打的场次。每场用 1 张券，填 0 暂停战斗并留券。'}),
@@ -1179,7 +1179,10 @@ function configRenderField(spec) {
   } else if (spec.kind === 'choice') {
     control = el('select', 'config-select'); control.id = id;
     for (const [value, text] of spec.options) { const option = el('option', '', text); option.value = value; control.append(option); }
-    control.value = configGet(spec.key); control.onchange = () => configSet(spec.key, spec.numeric ? Number(control.value) : control.value); box.append(control);
+    control.value = configGet(spec.key); control.onchange = () => configSet(spec.key, spec.numeric ? Number(control.value) : control.value);
+    if (spec.componentSelect) {
+      const picker = el('cw-select'); picker.append(control); box.append(picker);
+    } else box.append(control);
   } else if (['lineup', 'trialLineups', 'fleetLineups'].includes(spec.kind)) {
     control = configLineupPicker(spec, id); box.append(control);
   } else if (spec.kind === 'radio') {
@@ -1580,7 +1583,11 @@ function configErrors(error, { focus = true } = {}) {
     widget.row.hidden = false; widget.error.textContent = text; widget.error.hidden = false; widget.control?.setAttribute('aria-invalid', 'true');configRevealSection(widget); first ??= widget;
   }
   configUpdateVisibility();
-  if (focus && first) { configActivate(first.spec.category); configActivateGroup(first.spec.groupId); first.control?.focus?.(); first.row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  if (focus && first) {
+    configActivate(first.spec.category); configActivateGroup(first.spec.groupId);
+    const input = first.spec.componentSelect ? first.row.querySelector('.choice-trigger') ?? first.control : first.control;
+    input?.focus?.(); first.row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
   else if (focus) $('config-message').scrollIntoView({ block: 'nearest' });
 }
 

@@ -145,7 +145,7 @@
   .config-tabs>button { min-width:0; padding-inline:3px }
   .config-toolbar { flex-wrap:wrap }
   .config-actions { max-width:100%; flex-wrap:wrap }
-  .config-owner { flex:1 }
+  .config-owner { flex:1 1 15rem }
   .config-owner strong { font-size:14px }
   .config-families { padding-inline:12px }
   .config-sheet>.config-subtabs,#config-fields .config-subtabs { margin:10px 12px 0; max-width:calc(100% - 24px) }
