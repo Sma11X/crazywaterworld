@@ -1,5 +1,6 @@
 import { cleanupAfterClaim } from './claim-cleanup.mjs';
 import { collectAntiqueFloaters } from './antique-floaters.mjs';
+import { linkOperationResult } from './operation-log.mjs';
 import { normalize } from './worlds.mjs';
 import { displayMaterial, RESOURCE } from './config.mjs';
 import { budgetPreview, createActionGuard, resourceReserve, exactAutomationId, automationWireId, nativePreferenceEnabled, AutomationSkip } from './automation-policy.mjs';
@@ -691,7 +692,7 @@ export async function runBaseAutomation(client, protocol, config, plan, { player
         entry = { step, ok: false, ...(error.code === 'AUTOMATION_SKIP' ? { skipped: true } : {}), error: error.message };
       }
     }
-    results.push(entry); onStep?.(entry);
+    results.push(linkOperationResult(entry, ticket)); onStep?.(entry);
   }
   const pref = getSettings();
   const cleanup = await cleanupAfterClaim(client, config, pref, ledger, 'pet',

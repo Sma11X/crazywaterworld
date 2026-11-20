@@ -19,6 +19,7 @@ export interface ConsoleState {
     resource: string;
     logAccount: string;
     logGroup: string;
+    logFeature: string;
     onlyIssues: boolean;
     loginSettingsAccountId: string | null;
   };

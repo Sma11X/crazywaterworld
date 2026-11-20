@@ -529,7 +529,7 @@ await test('挑战恢复状态刷新仅更新提示，保留编辑器DOM、筛�
 await test('阵容阶段通知只刷新当前账号状态，不占用运行日志', () => {
   const streams = [], refreshes = [], logs = [];
   const context = vm.createContext({
-    current: 'account-a', stream: null, Date,
+    current: 'account-a', stream: null, compactLogs: true, Date,
     updateLogSummary() {}, clearLogBefore() {},
     appendLog: entry => logs.push(clone(entry)),
     refreshSavedLineups: () => { refreshes.push(context.current); return Promise.resolve(); },
@@ -553,7 +553,7 @@ await test('阵容阶段通知只刷新当前账号状态，不占用运行日�
   context.subscribe(); context.subscribe();
   assert.equal(streams.length, 1, '重复订阅不应创建额外事件流');
   const stream = streams[0];
-  assert.equal(stream.url, '/api/events?scope=all');
+  assert.equal(stream.url, '/api/events?scope=all&compact=1');
   for (const phase of ['switching', 'battling', 'restoring', 'idle']) {
     stream.dispatch('lineup-changed', { account: 'account-a', phase });
   }

@@ -185,7 +185,7 @@ export function createActionGuard(client, getSettings, ledger, { enabled = () =>
   // request bodies may be retried after an earlier unknown action is settled.
   const forget = record => { record.log.close(); reservations.delete(record.token); };
   const reportOutcome = (record, outcome) => {
-    const confirmed = outcome?.ok && !('sent' in outcome);
+    const confirmed = outcome?.ok && !outcome.materialsPending && !['unknown', 'pending'].includes(outcome.status) && !('sent' in outcome);
     record.log.phase(confirmed ? 'confirmed' : 'unknown', confirmed ? 'confirmed' : 'pending', { reason: outcome?.reason });
   };
   return {
@@ -314,7 +314,7 @@ export function createActionGuard(client, getSettings, ledger, { enabled = () =>
       }
       for (const [id, balance] of nextBalances) remaining.set(id, balance);
       const token = ticket ?? Object.freeze({});
-      const log = createOperationLog(client, { request: step.request, label: step.label, module: step.kind || step.scope || 'automation', dedupeKey: step.uniqueKey ?? null });
+      const log = createOperationLog(client, { ticket: token, operationId: ticket?.id, request: step.request, label: step.label, module: step.kind || step.scope || 'automation', dedupeKey: step.uniqueKey ?? null });
       if (operation?.onConfirmed) {
         const onConfirmed = operation.onConfirmed;
         operation.onConfirmed = () => { onConfirmed(); log.phase('confirmed', 'confirmed'); };
@@ -420,7 +420,8 @@ export function createActionGuard(client, getSettings, ledger, { enabled = () =>
       if (notSent) { cancelUnsentGold(record.gold); cancelOrderMaterialSpend(record.materials); }
       else if (error?.prompt && error.request === record.request) { rejectGold(record.gold, error); cancelOrderMaterialSpend(record.materials); }
       else { record.log.phase('unknown', 'pending', { reason: error?.message }); record.log.close(); return; }
-      record.log.phase('cancelled', notSent ? 'not-sent' : 'rejected');
+      const rejected = !error?.notSent && error?.prompt && error.request === record.request;
+      record.log.phase('cancelled', rejected ? 'rejected' : 'not-sent', { reason: error?.message });
       forget(record);
       if (record.ticket) ledger.cancel(record.ticket);
       for (const [id, amount] of record.costs) if (remaining.has(id)) remaining.set(id, remaining.get(id) + amount);

@@ -111,6 +111,7 @@ const operationNames = ${JSON.stringify(operationLabels)};
 let current = null;
 let accounts = [];
 let stream = null;
+let compactLogs = true;
 const consoleDraftFormat = ${JSON.stringify({ format: SETTINGS_FORMAT, version: SETTINGS_SCHEMA_VERSION })};
 
 function createConsoleVersionGuard() {
@@ -359,14 +360,17 @@ const logTime = new Intl.DateTimeFormat('zh-CN', {
 const logCategories = ${JSON.stringify(LOG_CATEGORIES)};
 const logGroups = ${JSON.stringify(LOG_GROUPS)};
 const logGroupTones = ${JSON.stringify(LOG_GROUP_TONES)};
+const groupByLogCategory = new Map(Object.entries(logGroups).flatMap(([group, keys]) => keys.map(key => [key, group])));
 const createLogAccountLabels = ${createLogAccountLabels.toString()};
 let logAccount = 'all';
 let logGroup = 'all';
+let logFeature = 'all';
 let onlyIssues = false;
 consoleStore.subscribe((state, previous) => {
   if (state.view === previous.view) return;
   logAccount = state.view.logAccount;
   logGroup = state.view.logGroup;
+  logFeature = state.view.logFeature;
   onlyIssues = state.view.onlyIssues;
 });
 let logReturnFocus;
@@ -382,18 +386,22 @@ function openJournal() {
 $('logs-open').onclick = openJournal;
 $('logs-close').onclick = () => $('journal-dialog').close();
 $('journal-dialog').addEventListener('close', () => { document.body.classList.remove('has-log-dialog'); (logReturnFocus?.isConnected ? logReturnFocus : $('logs-open')).focus(); });
-const logTabs = [...$('log-tabs').querySelectorAll('[role=tab]')];
+const featureBar = $('log-tabs');
 function revealHorizontalTab(button) {
   // 使用布局坐标，避免弹窗开场缩放影响横向定位。
   const container = button.parentElement, left = button.offsetLeft - 3, right = button.offsetLeft + button.offsetWidth + 3;
   if (left < container.scrollLeft) container.scrollLeft = left;
   else if (right > container.scrollLeft + container.clientWidth) container.scrollLeft = right - container.clientWidth;
 }
-function selectLogGroup(tab) {
-  stateActions.setView({ logGroup: tab.dataset.logGroup });
-  updateLogSummary();
-  revealHorizontalTab(tab);
+function selectLogFeature(key) {
+  stateActions.setView({ logFeature: key });
+  const selected = featureBar.querySelector('[aria-selected=true]');
+  if (selected) revealHorizontalTab(selected);
 }
+$('log-group').onchange = event => {
+  stateActions.setView({ logGroup: event.target.value, logFeature: 'all' });
+  featureBar.scrollLeft = 0;
+};
 function selectLogAccount(id) {
   stateActions.setView({ logAccount: id });
   updateLogSummary();
@@ -407,14 +415,18 @@ $('log-account-tabs').onkeydown = event => {
   if (next === undefined) return;
   event.preventDefault(); selectLogAccount(buttons[next].dataset.logAccount); buttons[next].focus({ preventScroll: true });
 };
-for (const [index, tab] of logTabs.entries()) {
-  tab.onclick = () => selectLogGroup(tab);
-  tab.onkeydown = event => {
-    const next = { ArrowRight: (index + 1) % logTabs.length, ArrowLeft: (index + logTabs.length - 1) % logTabs.length, Home: 0, End: logTabs.length - 1 }[event.key];
-    if (next === undefined) return;
-    event.preventDefault(); selectLogGroup(logTabs[next]); logTabs[next].focus({ preventScroll: true });
-  };
-}
+featureBar.onclick = event => {
+  const tab = event.target.closest('[role=tab]');
+  if (tab) selectLogFeature(tab.dataset.logFeature);
+};
+featureBar.onkeydown = event => {
+  const tabs = [...featureBar.children];
+  const index = tabs.indexOf(event.target.closest('[role=tab]'));
+  if (index < 0) return;
+  const next = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index + tabs.length - 1) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+  if (next === undefined) return;
+  event.preventDefault(); selectLogFeature(tabs[next].dataset.logFeature); tabs[next].focus({ preventScroll: true });
+};
 const logClearWatermarks = new Map();
 const logAccountNames = new Map();
 let logClearing = false;
@@ -460,22 +472,58 @@ function clearedLog(entry) {
   return watermark && (entry.id ? entry.id <= watermark.before : entry.t <= watermark.at);
 }
 let guildRefreshTimer;
+const featureOrder = new Intl.Collator('zh-CN', { numeric: true });
+function updateFeatureTabs(features, counts) {
+  const existing = new Map([...featureBar.children].map(tab => [tab.dataset.logFeature, tab]));
+  if (logFeature !== 'all' && !features.has(logFeature) && existing.has(logFeature)) {
+    const tab = existing.get(logFeature);
+    features.set(logFeature, { key: logFeature, label: tab.firstElementChild.textContent, tone: tab.dataset.tone });
+  }
+  const sorted = [...features.values()].sort((a,b) => featureOrder.compare(a.label, b.label) || a.key.localeCompare(b.key));
+  const options = [{ key: 'all', label: '全部', tone: 'neutral' }, ...sorted];
+  for (const [index, { key, label, tone }] of options.entries()) {
+    const tab = existing.get(key) || featureBar.firstElementChild.cloneNode(true);
+    existing.delete(key);
+    tab.id = 'log-tab-' + key;
+    tab.dataset.logFeature = key;
+    tab.dataset.tone = tone;
+    if (tab.firstElementChild.textContent !== label) tab.firstElementChild.textContent = label;
+    const value = String(counts.get(key) || 0);
+    if (tab.lastElementChild.textContent !== value) tab.lastElementChild.textContent = value;
+    const selected = key === logFeature;
+    tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
+    if (selected) $('log-panel').setAttribute('aria-labelledby', tab.id);
+    if (featureBar.children[index] !== tab) featureBar.insertBefore(tab, featureBar.children[index] || null);
+  }
+  for (const tab of existing.values()) tab.remove();
+}
 function updateLogSummary() {
   updateLogAccounts();
   let count = 0;
   const groupCounts = { all: 0 };
+  const featureCounts = new Map();
+  const availableFeatures = new Map();
   const accountCounts = new Map([['all', 0]]);
   for (const row of logEl.children) {
     const accountMatches = logAccount === 'all' || row.dataset.account === logAccount;
     const levelMatches = !onlyIssues || row.classList.contains('error') || row.classList.contains('warn');
-    const group = Object.keys(logGroups).find(key => logGroups[key].includes(row.dataset.category));
+    const group = groupByLogCategory.get(row.dataset.category);
     const groupMatches = logGroup === 'all' || group === logGroup;
+    const feature = row.dataset.feature;
+    const featureMatches = logFeature === 'all' || logFeature === feature;
+    if (groupMatches && (accountMatches || logFeature === feature)) {
+      availableFeatures.set(feature, { key: feature, label: row.dataset.featureLabel, tone: logGroupTones[group] || 'neutral' });
+    }
     if (accountMatches && levelMatches) { groupCounts.all++; if (group) groupCounts[group] = (groupCounts[group] || 0) + 1; }
-    if (groupMatches && levelMatches) {
+    if (groupMatches && levelMatches && accountMatches) {
+      featureCounts.set('all', (featureCounts.get('all') || 0) + 1);
+      featureCounts.set(feature, (featureCounts.get(feature) || 0) + 1);
+    }
+    if (groupMatches && levelMatches && featureMatches) {
       accountCounts.set('all', accountCounts.get('all') + 1);
       if (row.dataset.account) accountCounts.set(row.dataset.account, (accountCounts.get(row.dataset.account) || 0) + 1);
     }
-    row.hidden = !accountMatches || !levelMatches || !groupMatches;
+    row.hidden = !accountMatches || !levelMatches || !groupMatches || !featureMatches;
     if (!row.hidden) count++;
   }
   for (const button of $('log-account-tabs').children) {
@@ -485,105 +533,110 @@ function updateLogSummary() {
     const value = String(accountCounts.get(button.dataset.logAccount) || 0);
     if (counter.textContent !== value) counter.textContent = value;
   }
-  for (const tab of logTabs) {
-    const selected = tab.dataset.logGroup === logGroup;
-    tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
-    tab.querySelector('[data-log-group-count]').textContent = groupCounts[tab.dataset.logGroup] || 0;
-    if (selected) $('log-panel').setAttribute('aria-labelledby', tab.id);
+  updateFeatureTabs(availableFeatures, featureCounts);
+  const groupSelect = $('log-group');
+  if (groupSelect.value !== logGroup) groupSelect.value = logGroup;
+  for (const option of groupSelect.options) {
+    const label = (option.value === 'all' ? '全部分类' : option.value) + ' · ' + (groupCounts[option.value] || 0);
+    if (option.textContent !== label) option.textContent = label;
   }
   const account = accounts.find(item => item.id === logAccount);
   $('log-clear').disabled = logClearing || !account;
   $('log-clear').title = account ? '清空“' + logAccountLabel(logAccount) + '”的全部运行日志（不限当前分类）' : '选择一个账号后可清空该账号的全部运行日志';
   $('log-top-count').textContent = logEl.children.length;
   $('log-count').textContent = String(count);
-  $('log-empty').hidden = count > 0;
-  $('log-empty').textContent = logGroup !== 'all' || logAccount !== 'all' || onlyIssues ? '没有符合当前账号、分类和等级筛选的记录' : '还没有运行记录';
+  $('log-empty').hidden = logEl.childElementCount > 0 || logAccount !== 'all' || logGroup !== 'all' || logFeature !== 'all' || onlyIssues;
+}
+function createLogRow(entry) {
+  const row = el('div', 'row ' + entry.level);
+  row.dataset.category = entry.category || 'system';
+  row.dataset.feature = entry.feature ? 'task-' + entry.feature.key : row.dataset.category;
+  row.dataset.featureLabel = entry.feature?.label || logCategories[row.dataset.category] || logCategories.system;
+  row.dataset.account = entry.account || '';
+  if (entry.rowId) row.dataset.rowId = String(entry.rowId);
+  if (entry.extra?.batch) row.dataset.batch = entry.extra.batch;
+  if (entry.extra?.waitKey) row.dataset.waitKey = entry.extra.waitKey;
+  const body = el('div', 'log-body');
+  const meta = el('div', 'log-meta');
+  const accountBadge = component(entry.account ? 'ui-log-account' : 'ui-log-badge');
+  if (entry.account) {
+    paintLogAccount(accountBadge, entry.account);
+    accountBadge.onclick = () => selectLogAccount(entry.account);
+  } else {
+    accountBadge.textContent = '系统'; accountBadge.dataset.tone = 'neutral'; accountBadge.classList.add('log-system-tag');
+    accountBadge.title = '控制台系统日志';
+  }
+  const categoryBadge = el('button', 'log-tag log-category-tag', row.dataset.featureLabel);
+  categoryBadge.type = 'button';
+  categoryBadge.title = '筛选功能：' + row.dataset.featureLabel;
+  categoryBadge.setAttribute('aria-label', categoryBadge.title);
+  categoryBadge.onclick = () => selectLogFeature(row.dataset.feature);
+  const group = groupByLogCategory.get(row.dataset.category);
+  categoryBadge.dataset.tone = logGroupTones[group] || 'neutral';
+  meta.append(el('time', 'ts'), accountBadge, categoryBadge);
+  const levelName = { error: '错误', warn: '警告' }[entry.level];
+  if (levelName) {
+    const badge = component('ui-log-badge'); badge.classList.add('log-level-tag');
+    badge.dataset.tone = entry.level === 'error' ? 'error' : 'warning'; badge.textContent = levelName;
+    meta.appendChild(badge);
+  }
+  body.append(meta, el('span', 'log-message'));
+  row.appendChild(body);
+  return row;
 }
 function appendLog(entry) {
-  if (clearedLog(entry)) return;
-  if (entry.id && seen.has(entry.id)) return;
+  if (clearedLog(entry) || entry.id && seen.has(entry.id)) return;
+  const previous = entry.rowId && [...logEl.children].find(row => row.dataset.rowId === String(entry.rowId));
+  if (previous && previous.logEntry.id >= entry.id) return;
+  if (entry.reuseDetail) {
+    if (!previous) {
+      // A busy all-account view may have evicted this row. Replay the bounded snapshots once.
+      compactLogs = false;
+      stream?.close(); stream = null; subscribe(); return;
+    }
+    entry.detail = previous.logEntry.detail;
+  }
   if (entry.id) seen.add(entry.id);
   if (entry.account && entry.accountName) logAccountNames.set(entry.account, entry.accountName);
   const atTop = logEl.scrollTop < 30;
   const anchor = [...logEl.children].find(row => !row.hidden && row.getBoundingClientRect().bottom > logEl.getBoundingClientRect().top);
   const anchorTop = anchor?.getBoundingClientRect().top;
-  const waitKey=entry.extra?.waitKey;
-  const sameScope = row => row?.dataset.account === (entry.account || '') && row.dataset.category === (entry.category || 'system') && row.classList.contains(entry.level);
-  const newer = (a, b) => a.t > b.t || (a.t === b.t && (a.id || Infinity) > (b.id || 0));
-  const repeated=waitKey && [...logEl.children].find(row=>sameScope(row) && row.dataset.waitKey===waitKey);
-  if(repeated){
-    repeated.logEntries.push(entry); repeated.logEntries.sort((a,b) => newer(a,b) ? -1 : 1);
-    if(repeated.logEntries.length>400){const dropped=repeated.logEntries.pop();seen.delete(dropped.id);}
-    repeated.dataset.waitCount=String(Number(repeated.dataset.waitCount||1)+1);updateLogRow(repeated);
-    const next=[...logEl.children].find(row=>row!==repeated && newer(repeated.logEntries[0],row.logEntries[0]));
-    logEl.insertBefore(repeated,next||null);updateLogSummary();
-    if(atTop)logEl.scrollTop=0;else if(anchor?.isConnected)logEl.scrollTop+=anchor.getBoundingClientRect().top-anchorTop;
-    return;
+  const reuse = previous && previous.logEntry.level === entry.level && previous.logEntry.category === entry.category
+    && previous.logEntry.feature?.key === entry.feature?.key;
+  const row = reuse ? previous : createLogRow(entry);
+  const wasOpen = previous && previous.querySelector('details')?.open;
+  if (previous) {
+    seen.delete(previous.logEntry.id);
+    if (!reuse) previous.remove();
   }
-  const batch = entry.extra?.batch;
-  const first = logEl.firstElementChild;
-  if (batch && sameScope(first) && first.dataset.batch === batch && first.logEntries.length < 32 && newer(entry, first.logEntries[0])) {
-    first.logEntries.unshift(entry);
-    updateLogRow(first);
-  } else {
-    const row = el('div', 'row ' + entry.level);
-    row.dataset.category = entry.category || 'system';
-    row.dataset.account = entry.account || '';
-    if(waitKey){row.dataset.waitKey=waitKey;row.dataset.waitCount='1';}
-    row.logEntries = [entry];
-    if (batch) row.dataset.batch = batch;
-    const timestamp = logTime.format(entry.t);
-    const body = el('div', 'log-body');
-    const meta = el('div', 'log-meta');
-    const accountBadge = component(entry.account ? 'ui-log-account' : 'ui-log-badge');
-    if (entry.account) {
-      paintLogAccount(accountBadge, entry.account);
-      accountBadge.onclick = () => selectLogAccount(entry.account);
-    } else {
-      accountBadge.textContent = '系统'; accountBadge.dataset.tone = 'neutral'; accountBadge.classList.add('log-system-tag');
-      accountBadge.title = '控制台系统日志';
+  row.logEntry = entry;
+  row.querySelector('time').textContent = logTime.format(entry.t);
+  const repeats = entry.extra?.waitKey && entry.count > 1 ? '（累计 '+entry.count+' 次，时间为最后检查）' : '';
+  row.querySelector('.log-message').textContent = entry.message + repeats;
+  let details = row.querySelector('details');
+  if (entry.detail) {
+    if (!details) {
+      details = el('details', 'log-details');
+      details.open = !!wasOpen;
+      details.append(el('summary'), el('div', 'log-detail-text'));
+      row.querySelector('.log-body').appendChild(details);
     }
-    const categoryBadge = component('ui-log-badge'); categoryBadge.classList.add('log-category-tag');
-    categoryBadge.textContent = logCategories[row.dataset.category] || logCategories.system;
-    const group = Object.keys(logGroups).find(key => logGroups[key].includes(row.dataset.category));
-    categoryBadge.dataset.tone = logGroupTones[group] || 'neutral';
-    meta.append(el('time', 'ts', timestamp), accountBadge, categoryBadge);
-    const levelName = { error: '错误', warn: '警告' }[entry.level];
-    if (levelName) {
-      const levelBadge = component('ui-log-badge'); levelBadge.classList.add('log-level-tag');
-      levelBadge.dataset.tone = entry.level === 'error' ? 'error' : 'warning'; levelBadge.textContent = levelName;
-      meta.appendChild(levelBadge);
-    }
-    body.appendChild(meta);
-    body.appendChild(el('span', 'log-message', entry.message));
-    if (entry.detail || batch) {
-      const details = el('details', 'log-details');
-      details.hidden = !entry.detail;
-      details.append(el('summary', null, batch ? '查看逐次排产' : '查看详情'),
-        el('div', 'log-detail-text', entry.detail || timestamp + ' ' + entry.message));
-      body.appendChild(details);
-    }
-    row.appendChild(body);
-    const next = [...logEl.children].find(item => newer(entry, item.logEntries[0]));
-    logEl.insertBefore(row, next || null);
-  }
+    details.querySelector('summary').textContent = entry.extra?.detailLabel || (entry.extra?.batch ? '查看逐次排产' : '查看详情');
+    const detailText = details.querySelector('.log-detail-text');
+    if (detailText.textContent !== entry.detail) detailText.textContent = entry.detail;
+  } else details?.remove();
+  const next = [...logEl.children].find(item => item !== row && (entry.t > item.logEntry.t ||
+    entry.t === item.logEntry.t && (entry.id || Infinity) > (item.logEntry.id || 0)));
+  if (!row.isConnected || row.nextElementSibling !== (next || null)) logEl.insertBefore(row, next || null);
   while (logEl.childElementCount > 400) {
-    for (const item of logEl.lastChild.logEntries) seen.delete(item.id);
+    seen.delete(logEl.lastChild.logEntry.id);
     logEl.lastChild.remove();
   }
   updateLogSummary();
   if (atTop) logEl.scrollTop = 0;
-  else if (anchor?.isConnected) logEl.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
-}
-function updateLogRow(row) {
-  const entry = row.logEntries[0];
-  row.querySelector('time').textContent = logTime.format(entry.t);
-  row.querySelector('.log-message').textContent = row.dataset.waitKey ? entry.message+'（累计 '+row.dataset.waitCount+' 次，时间为最后检查）' : row.logEntries.length > 1
-    ? entry.extra.factory + '：连续安排生产' + entry.extra.product + '，共 ' + row.logEntries.length + ' 次' : entry.message;
-  const details = row.querySelector('.log-details');
-  if (details) {
-    details.hidden = row.logEntries.length < 2 && !entry.detail;
-    row.querySelector('.log-detail-text').textContent = entry.detail || row.logEntries.map(item => logTime.format(item.t) + ' ' + item.message).join(String.fromCharCode(10));
+  else if (anchor) {
+    const visibleAnchor = anchor === previous ? row : anchor;
+    if (visibleAnchor.isConnected) logEl.scrollTop += visibleAnchor.getBoundingClientRect().top - anchorTop;
   }
 }
 function clearLogBefore(data) {
@@ -592,12 +645,10 @@ function clearLogBefore(data) {
   logClearWatermarks.set(data.account, { before: Math.max(previous?.before || 0, data.before || 0), at: Math.max(previous?.at || 0, data.at || 0) });
   for (const row of [...logEl.children]) {
     if (row.dataset.account !== data.account) continue;
-    row.logEntries = row.logEntries.filter(entry => !clearedLog(entry));
-    if (row.dataset.waitKey) row.dataset.waitCount = String(row.logEntries.length);
-    if (row.logEntries.length) updateLogRow(row); else row.remove();
+    if (clearedLog(row.logEntry)) row.remove();
   }
   seen.clear();
-  for (const row of logEl.children) for (const entry of row.logEntries) if (entry.id) seen.add(entry.id);
+  for (const row of logEl.children) if (row.logEntry.id) seen.add(row.logEntry.id);
   updateLogSummary();
 }
 $('log-clear').onclick = async () => {
@@ -633,7 +684,7 @@ for (const [id, filtered] of [['log-all', false], ['log-issues', true]]) {
 function subscribe() {
   updateLogSummary();
   if (stream) return;
-  stream = new EventSource('/api/events?scope=all');
+  stream = new EventSource('/api/events?scope=all' + (compactLogs ? '&compact=1' : ''));
   stream.addEventListener('logs-cleared', event => clearLogBefore(JSON.parse(event.data)));
   stream.addEventListener('lineup-changed', event => {
     const { account } = JSON.parse(event.data);
@@ -819,6 +870,7 @@ async function loadAccounts(reload, readOverview = true) {
   accountStatusRevision++;
   const previous = current;
   stateActions.replaceAccounts(data.accounts, data.activeId, { preserveStatus });
+  if ($('journal-dialog').open) updateLogSummary();
   renderAccountSelect();
   if (previous !== current || reload) refreshProgression();
   if (previous !== current || reload) void refreshSavedLineups();
@@ -2558,7 +2610,7 @@ consoleStore.subscribe((state, previous) => {
   }
   if (state.view !== previous.view) {
     if (state.view.logAccount !== previous.view.logAccount || state.view.logGroup !== previous.view.logGroup
-        || state.view.onlyIssues !== previous.view.onlyIssues) {
+        || state.view.logFeature !== previous.view.logFeature || state.view.onlyIssues !== previous.view.onlyIssues) {
       $('journal').classList.toggle('issues', state.view.onlyIssues);
       $('log-all').setAttribute('aria-pressed', String(!state.view.onlyIssues));
       $('log-issues').setAttribute('aria-pressed', String(state.view.onlyIssues));

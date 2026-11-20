@@ -1,7 +1,7 @@
 export function stepObservation(entry) {
   const label = entry.step?.label || entry.title || entry.label;
   let state = 'ok';
-  if (entry.pending || ['unknown', 'pending'].includes(entry.status)) state = 'pending';
+  if (entry.pending || entry.materialsPending || ['unknown', 'pending'].includes(entry.status)) state = 'pending';
   else if (entry.skipped) state = 'waiting';
   else if (!entry.ok) state = 'error';
   else if ('sent' in entry && entry.status !== 'confirmed') state = 'sent';
@@ -16,7 +16,7 @@ export const worldObservationKeys = {
   speedUpUpgrade: 'building.speedUp', speedUpProduce: 'factory.speedUp',
 };
 
-const runtimeObservationKeys = {
+export const runtimeObservationKeys = {
   'heroes.enabled':'loop.heroes', 'weeklyActivity.enabled':'weeklyActivity',
   'factory.produce':'startProduce', 'factory.cooperateNative':'nativeProduce',
   'building.build':'build', 'building.supply':'buildSupply', 'building.upgrade':'upgrade', 'building.finish':'finishUpgrade',

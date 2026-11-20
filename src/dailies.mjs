@@ -15,6 +15,7 @@
 //   WeeklyActivityRewardCfg 120/240/360/480/600。
 
 import { displayMaterial } from './config.mjs';
+import { linkOperationResult } from './operation-log.mjs';
 import { normalize } from './worlds.mjs';
 import { FREE_DAILY_PACK_ID } from './actions.mjs';
 import { arenaDailyDriver } from './arena.mjs';
@@ -487,7 +488,7 @@ export async function runDailies(client, protocol, survey, { allowMutate = false
         if (!allowAction(entry.task.id, action)) {
           await cancelAction?.(action, ticket, { notSent: true });
           const outcome = { id: entry.task.id, title: entry.task.title, request: action.request, note: action.note, skipped: true, reason: '日常行动已关闭或账号已暂停' };
-          results.push(outcome); onStep?.(outcome); continue;
+          results.push(linkOperationResult(outcome, ticket)); onStep?.(outcome); continue;
         }
         let body;
         if (entry.task.id === 1010 && typeof DAILY_DRIVERS[1010].run === 'function') {
@@ -495,7 +496,7 @@ export async function runDailies(client, protocol, survey, { allowMutate = false
           if (sweepResult?.skipped) {
             await cancelAction?.(action, ticket, { notSent: !writeAttempted, error: new Error(sweepResult.reason) });
             const outcome = { id: entry.task.id, title: entry.task.title, request: action.request, note: action.note, skipped: true, reason: sweepResult.reason };
-            results.push(outcome); onStep?.(outcome); continue;
+            results.push(linkOperationResult(outcome, ticket)); onStep?.(outcome); continue;
           }
           body = sweepResult?.body;
         } else if (entry.task.id === 1005 && typeof arenaDailyDriver.run === 'function') {
@@ -503,14 +504,14 @@ export async function runDailies(client, protocol, survey, { allowMutate = false
           if (arenaResult?.skipped) {
             await cancelAction?.(action, ticket, { notSent: !writeAttempted, error: new Error(arenaResult.reason) });
             const outcome = { id: entry.task.id, title: entry.task.title, request: action.request, note: action.note, skipped: true, reason: arenaResult.reason };
-            results.push(outcome); onStep?.(outcome); continue;
+            results.push(linkOperationResult(outcome, ticket)); onStep?.(outcome); continue;
           }
           body = arenaResult?.body;
         } else {
           body = await performWrite(() => sendAction(client, protocol, action, timeout));
         }
         const outcome = { id: entry.task.id, title: entry.task.title, request: action.request, note: action.note, ok: true, body };
-        results.push(outcome);
+        results.push(linkOperationResult(outcome, ticket));
         onStep?.(outcome);
         await afterAction?.(action, ticket, action.response ? outcome : { ...outcome, sent: true });
       } catch (error) {
@@ -521,7 +522,7 @@ export async function runDailies(client, protocol, survey, { allowMutate = false
         }
         const outcome = { id: entry.task.id, title: entry.task.title, request: action.request, way: action.body?.way, note: action.note, ok: false,
           ...(error.code === 'AUTOMATION_SKIP' ? { skipped: true, reason: error.message } : {}), error: error.message };
-        results.push(outcome);
+        results.push(linkOperationResult(outcome, ticket));
         onStep?.(outcome);
         break;
       }

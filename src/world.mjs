@@ -19,6 +19,8 @@ import { SERVER, assetUrl } from '../tools/sync-art.mjs';
 import { activeResources } from './resource-store.mjs';
 import { randomUUID, createHash } from 'node:crypto';
 import { normalize } from './worlds.mjs';
+import { upgradeReason } from './building-upgrade-log.mjs';
+import { linkOperationResult } from './operation-log.mjs';
 import { residentFilter, resourceReserve, worldPreferenceEnabled, worldActionAllowed, factoryItemSpeedEnabled, exactAutomationId, AutomationSkip, createActionGuard } from './automation-policy.mjs';
 import { readWeekOrder } from './activities.mjs';
 import { RESOURCE, displayMaterial } from './config.mjs';
@@ -702,7 +704,10 @@ export function planWorld(survey, {
     }
     builds.push({ building: b, row, consume, gain, capacity: sumEffect(effect, '人口上限') });
   }
-  const upgradeReasons = [];
+  const upgradeChecks = [];
+  function upgradeBlocked(building, kind, fields) {
+    upgradeChecks.push({ id: building.buildingId, name: buildingName(building), kind, ...fields });
+  }
   const typeLevels = new Map();
   for (const b of survey.buildings) typeLevels.set(b.type, Math.max(typeLevels.get(b.type) ?? 0, b.level));
   let upgradeCount = 0;
@@ -1091,25 +1096,26 @@ export function planWorld(survey, {
       const forOrder = target?.buildingId === b.buildingId && b.level < target.required;
       if (forOrder !== priority) continue;
       if (b.level <= 0) continue;
-      if (!b.type) { upgradeReasons.push(buildingName(b) + '未找到建筑类型'); continue; }
+      if (!b.type) { upgradeBlocked(b, 'config', { reason: '未找到建筑类型' }); continue; }
       if (b.buildStartTime > 0 || b.buildFinishTime > 0) {
-        upgradeReasons.push(buildingName(b) + '已有施工任务，本轮先检查竣工'); continue;
+        upgradeBlocked(b, 'construction'); continue;
       }
       const next = b.level + 1;
       const row = upgradeRow(config, b.type, next);
       if (!row) {
         const max = topLevel(config, b.type);
-        upgradeReasons.push(buildingName(b) + (max && b.level >= max ? '已达最高 ' + max + ' 级' : '缺少下一级配置'));
+        if (max && b.level >= max) upgradeBlocked(b, 'maximum', { required: max });
+        else upgradeBlocked(b, 'config', { reason: '缺少下一级配置' });
         continue;
       }
       const unmet = (row.condition ?? []).find(([type, lv]) => (typeLevels.get(type) ?? 0) < lv);
       if (unmet) {
         const prerequisite = rowsOf(config, 'BuildingCfg').find(cfg => cfg.buildingType === unmet[0])?.name || unmet[0];
-        upgradeReasons.push(`${buildingName(b)}需要${prerequisite}达到 ${unmet[1]} 级`);
+        upgradeBlocked(b, 'prerequisite', { prerequisite, required: unmet[1] });
         continue;
       }
-      if (row.playerLevel > (survey.player?.level ?? 1)) { upgradeReasons.push(buildingName(b) + '需要角色 ' + row.playerLevel + ' 级'); continue; }
-      if (row.curPeople > survey.population) { upgradeReasons.push(buildingName(b) + '需要人口 ' + row.curPeople + '，当前 ' + survey.population); continue; }
+      if (row.playerLevel > (survey.player?.level ?? 1)) { upgradeBlocked(b, 'level', { required: row.playerLevel }); continue; }
+      if (row.curPeople > survey.population) { upgradeBlocked(b, 'population', { required: row.curPeople, current: survey.population }); continue; }
       const consume = (row.consume ?? []).map(([id, num]) => ({ id, num: Number(num) }));
       const gain = Math.max(0, sumEffect(row.effect, '人口增加') - (b.population ?? 0));
       upgrades.push({ building: b, row, consume, gain, costTime: row.costTime ?? 0 });
@@ -1121,12 +1127,13 @@ export function planWorld(survey, {
         continue;
       }
       if (u.gain && plannedPopulation + u.gain > survey.maxPopulation) {
-        upgradeReasons.push(buildingName(u.building) + '升级后人口超过上限 ' + survey.maxPopulation);
+        upgradeBlocked(u.building, 'capacity', { required: survey.maxPopulation });
         continue;
       }
       const short = u.consume.filter(c => free(c.id) < c.num);
       if (short.length) {
-        upgradeReasons.push(buildingName(u.building) + '缺' + short.map(c => name(c.id) + ' ×' + (c.num - free(c.id))).join('、'));
+        upgradeBlocked(u.building, 'materials', { items: short.map(c => ({ id: c.id, name: name(c.id), missing: c.num - free(c.id) }))
+          .sort((a,b) => a.id.localeCompare(b.id)) });
         continue;
       }
       upgradeCount++;
@@ -1208,7 +1215,8 @@ export function planWorld(survey, {
     if (left === speeders) notes.push(`${SPEED_UP_ITEM} 有 ${speeders} 个，但没有等待中的建造或生产`);
   }
 
-  return { actions, notes, factoryReasons, upgradeReasons, orderDecisions, demands: detailedNeeds ? [...detailedNeeds].map(([id, need]) => ({ id, ...need })) : [], reserved: [...reserved].filter(([, n]) => n > 0) };
+  return { actions, notes, factoryReasons, upgradeChecks, upgradeReasons: upgradeChecks.map(upgradeReason), orderDecisions,
+    demands: detailedNeeds ? [...detailedNeeds].map(([id, need]) => ({ id, ...need })) : [], reserved: [...reserved].filter(([, n]) => n > 0) };
 }
 
 function worldProductionEligibility(survey, config, settings) {
@@ -1703,6 +1711,7 @@ export async function runWorld(client, protocol, plan, {
           await finishAction?.(actual, ticket, entry);
         }
       }
+      linkOperationResult(entry, ticket);
     }
     results.push(entry);
     onStep?.(entry);

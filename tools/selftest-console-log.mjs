@@ -9,6 +9,7 @@ import { createLogAccountLabels } from '../src/log-accounts.mjs';
 import { describeLogError } from '../src/log-errors.mjs';
 import { LOG_CATEGORIES } from '../src/log-categories.mjs';
 import { formatLoopStep, formatLoopRound } from '../src/loop.mjs';
+import { summarizeUpgradeChecks, upgradeChanges } from '../src/building-upgrade-log.mjs';
 
 const time = new Date(2026, 10, 12, 13, 14, 15).getTime();
 const clock = new Intl.DateTimeFormat('zh-CN', {
@@ -88,6 +89,27 @@ test('系统日志和中文等级', () => {
     assert.equal(formatConsoleLog({ ...entry, account: null, level }), prefix('系统', expected) + '自动挂机开始');
   }
   assert.equal(formatConsoleLog({ ...entry, account: '', level: 'unknown' }), prefix('系统') + '自动挂机开始');
+});
+
+test('93 栋建筑收成一条摘要，逐栋原因完整，乱序和材料数量变化可区分', () => {
+  const rows = [
+    ...Array.from({ length: 63 }, (_, i) => ({ id: 'L'+i, name: '建筑L-'+i, kind: 'level', required: i < 13 ? 28 : 29 })),
+    ...Array.from({ length: 20 }, (_, i) => ({ id: 'M'+i, name: '建筑M-'+i, kind: 'maximum', required: 1 })),
+    ...Array.from({ length: 7 }, (_, i) => ({ id: 'P'+i, name: '建筑P-'+i, kind: 'population', required: i < 4 ? 240 : 245, current: 235 })),
+    { id: 'C1', name: '海水提取厂-1', kind: 'construction' },
+    { id: 'A1', name: '家具作坊-1', kind: 'materials', items: [{ id: 'screw', name: '螺丝', missing: 4 }] },
+    { id: 'A2', name: '选种厂-1', kind: 'materials', items: [{ id: 'book', name: '植物百科', missing: 10 }] },
+  ];
+  const first = summarizeUpgradeChecks(rows);
+  assert.equal(first.count, 93);
+  assert.match(first.message, /螺丝 ×4.*植物百科 ×10.*235\/240.*4 栋.*28 级.*13 栋/);
+  assert(first.message.length < 100);
+  for (const row of rows) assert(first.detail.includes(row.name));
+  assert.match(first.detail, /已满级 20 栋/);
+  assert.equal(upgradeChanges(summarizeUpgradeChecks([...rows].reverse()), first), null);
+  const changed = structuredClone(rows);
+  changed.at(-2).items[0].missing = 3;
+  assert.equal(upgradeChanges(summarizeUpgradeChecks(changed), first), '家具作坊-1的螺丝缺口 4 → 3');
 });
 
 test('多行正文每一行都带时间、账号和等级', () => {

@@ -1,3 +1,4 @@
+import { linkOperationResult } from './operation-log.mjs';
 import { normalize } from './worlds.mjs';
 
 const skip = reason => ({ label: '钓具养成', skipped: true, reason });
@@ -47,20 +48,20 @@ export async function upgradeFishingOnce(client, config, { playerLevel, enabled,
   const ticket = await beforeAction?.(action);
   let dispatched = false, writePending = false;
   try {
-    if (!enabled()) { await cancelAction?.(action, ticket, { notSent: true }); return skip('已暂停'); }
+    if (!enabled()) { await cancelAction?.(action, ticket, { notSent: true }); return linkOperationResult(skip('已暂停'), ticket); }
     dispatched = writePending = true;
     const reply = await client.request(action.request, action.body, action.response);
     writePending = false;
     const after = reply?.levelInfo;
-    if (promote && after?.level === next.level) { await afterAction?.(action, ticket, { ok: true, body: reply }); return { label: '钓具已从 ' + level + ' 级升至 ' + after.level + ' 级', ok: true }; }
+    if (promote && after?.level === next.level) { await afterAction?.(action, ticket, { ok: true, body: reply }); return linkOperationResult({ label: '钓具已从 ' + level + ' 级升至 ' + after.level + ' 级', ok: true }, ticket); }
     if (!promote && after?.level === level && Number.isSafeInteger(after.enhance) && after.enhance > progress) {
       await afterAction?.(action, ticket, { ok: true, body: reply });
-      return { label: '钓具 ' + level + ' 级强化进度 ' + progress + ' → ' + after.enhance + '/' + current.enhance + '（消耗 ' + current.cost[1] + ' 金币）', ok: true };
+      return linkOperationResult({ label: '钓具 ' + level + ' 级强化进度 ' + progress + ' → ' + after.enhance + '/' + current.enhance + '（消耗 ' + current.cost[1] + ' 金币）', ok: true }, ticket);
     }
     throw new Error('服务端未确认钓具' + (promote ? '升级' : '强化进度增加'));
   } catch (error) {
     const notSent = !dispatched || writePending && error.notSent === true;
     await cancelAction?.(action, ticket, { notSent, error });
-    throw error;
+    throw linkOperationResult(error, ticket);
   }
 }

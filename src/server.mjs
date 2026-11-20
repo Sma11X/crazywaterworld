@@ -93,8 +93,11 @@ import { dailySingleState, addDailyOptions, runDailySingle } from './daily-singl
 import { surveyTasks, runTasks, formatTaskPlan, selectTaskSettings } from './tasks.mjs';
 import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, inventoryStockRows, planWorld, runWorldRound, speedUpProduction, SPEED_UP_ITEM, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
 import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
+import { foldBusinessEntry, createOperationJournal } from './business-journal.mjs';
+import { upgradeChanges } from './building-upgrade-log.mjs';
 import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
+import { resolveLogFeature } from './log-features.mjs';
 import { createLogAccountLabels } from './log-accounts.mjs';
 import { operationLabels } from './operation-labels.mjs';
 import { automationTasks, retiredAutomationTasks, migratedAutomationTasks, defaultCompassSpinCount, maxCompassSpinCount, taskSettings, worldTaskKey, dailyTaskKey } from './automation.mjs';
@@ -575,10 +578,6 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
   trace(null, 'runtime', { startedAt: RUN_VERSION, node: process.version });
 
-  const logLimit = (list) => {
-    while (list.length > LOG_LIMIT) list.shift();
-  };
-
   // Browsers only subscribe to progress. A closed or slow tab must never stop
   // the account's background job or keep buffering logs without a limit.
   function writeStream(res, payload) {
@@ -598,24 +597,54 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     }
   }
 
-  function emit(session, level, message, extra) {
+  function terminal(entry) {
+    try { if (onLog) Promise.resolve(onLog(entry)).catch(() => {}); } catch { /* Logging is an observer. */ }
+  }
+  function flushBatch(session) {
+    if (!session?.batchOutput) return;
+    clearTimeout(session.batchOutput.timer);
+    terminal(session.batchOutput.entry);
+    session.batchOutput = null;
+  }
+  function emit(session, level, message, extra, quiet = false) {
     const display = describeLogError(message, extra);
     const detail = [extra?.diagnostic, display.detail].filter(Boolean).join('\n');
-    const entry = redactLog({ id: ++logId, t: Date.now(), level, category: classifyLog(display.message, extra), message: display.message, detail: detail || undefined, extra, account: session?.id ?? null,
+    const feature = resolveLogFeature(extra?.taskKey, extra?.module);
+    const category = feature?.category || classifyLog(display.message, extra);
+    const entry = redactLog({ id: ++logId, t: Date.now(), level, category, feature, message: display.message, detail: detail || undefined,
+      extra: extra?.diagnostic ? { ...extra, diagnostic: undefined } : extra, account: session?.id ?? null,
       accountName: session ? logAccountLabels.get(session.id) || session.player?.nickname || '未命名账号' : undefined,
       operationId: extra?.operationId, dedupeKey: extra?.dedupeKey, module: extra?.module, phase: extra?.phase, result: extra?.result });
-    trace(session, 'business', entry);
     const list = session ? session.log : globalLog;
-    list.push(entry);
-    logLimit(list);
-    // Logging is an observer too: a broken terminal sink cannot cancel a job.
-    try { if (onLog) Promise.resolve(onLog(entry)).catch(() => {}); } catch { /* Preserve the in-memory log. */ }
-    const payload = `id: ${entry.id}\ndata: ${JSON.stringify(entry)}\n\n`;
+    const updated = foldBusinessEntry(list, entry, LOG_LIMIT);
+    if (!updated || !extra?.waitKey) trace(session, 'business', entry);
+    if (session?.batchOutput && session.batchOutput.entry.rowId !== entry.rowId) flushBatch(session);
+    if (session && extra?.batch) {
+      clearTimeout(session.batchOutput?.timer);
+      session.batchOutput = { entry, timer: setTimeout(() => flushBatch(session), 500).unref() };
+    } else if (!quiet && !(updated && extra?.waitKey)) terminal(entry);
+    let payload, compact;
     for (const res of streams) {
       if (!res.allAccounts && entry.account !== null && res.account !== entry.account) continue;
-      writeStream(res, payload);
+      if (res.compact && extra?.waitKey && entry.detail && updated?.detail === entry.detail) {
+        compact ??= `id: ${entry.id}\ndata: ${JSON.stringify({ ...entry, detail: undefined, reuseDetail: true })}\n\n`;
+        writeStream(res, compact);
+      } else {
+        payload ??= `id: ${entry.id}\ndata: ${JSON.stringify(entry)}\n\n`;
+        writeStream(res, payload);
+      }
     }
     return entry;
+  }
+
+  function reportOperationStep(session, entry, level, message, scope) {
+    if (!entry.operationId) return false;
+    if (entry.operationMember) return session.operations.has(entry.operationId);
+    const title = entry.operationSummary || entry.step?.label || entry.note || entry.title || entry.label;
+    return session.operations.step(entry.operationId, level, message, { title, scope, taskKey: entry.logTaskKey || entry.taskKey || entry.step?.setting || entry.step?.kind,
+      detail: entry.operationDetail, reason: entry.error || entry.reason,
+      pending: entry.pending || entry.materialsPending || ['pending', 'unknown'].includes(entry.status),
+      category: classifyLog(title || message, { request: entry.request || entry.step?.request }) });
   }
 
   // 协议层细节（帧、序号、字节数、原始 JSON）只落盘，不进运行记录。
@@ -709,6 +738,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       residentJobs: new Map(),
       progressionJobs: new Map(),
       log: [],
+      upgradeRevision: 0,
       logClearBefore: 0,
       logClearAt: 0,
       dailySingle: dailySingleState(),
@@ -761,6 +791,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   function sessionFor(id) {
     if (!sessions.has(id)) {
       const session = newSession(id);
+      session.operations = createOperationJournal((level, message, data, quiet) => emit(session, level, message, data, quiet), LOG_LIMIT);
       sessions.set(id, session);
       if (session.settingsRecovery) emit(session, 'error', session.settingsRecovery.message);
       try {
@@ -1252,6 +1283,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           `当时等待请求：${requests.join('、') || '无'}；发送序号 ${data.sendSeqNo}，接收序号 ${data.recvSeqNo}`,
           !saved.file ? '本次错误快照未保存' : saved.rawOmitted || (saved.truncated ? '原始报文超过 256 KiB，快照已标记截断' : '原始报文以 frameHex 保存在本机快照中')].join('\n'),
           protocolSnapshot: saved.file, messageName: saved.header?.name, seq: saved.header?.seq });
+      } else if (data.event === 'operation' && data.operationId) {
+        const safe = redactLog(data);
+        trace(session, 'operation', safe);
+        session.operations.phase(safe);
       } else if (data.event === 'operation' || data.event === 'ad-path') {
         const phases = { reserved: '已预留', sent: '已发送，等待确认', confirmed: '已确认', unknown: '结果待确认', cancelled: '已释放预留' };
         const message = data.message ?? `${data.label || data.request} · ${phases[data.phase] ?? data.phase}`;
@@ -2723,6 +2758,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { session } = scoped_(parsed);
         const cleared = { account: session.id, before: logId, at: Date.now() };
         session.log.length = 0;
+        session.operations.clear();
+        clearTimeout(session.batchOutput?.timer);
+        session.batchOutput = null;
+        session.upgradeInspection = null;
         session.logClearBefore = cleared.before;
         session.logClearAt = cleared.at;
         for (const stream of streams) {
@@ -2739,6 +2778,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         });
         res.account = parsed.searchParams.get('account');
         res.allAccounts = parsed.searchParams.get('scope') === 'all';
+        res.compact = parsed.searchParams.get('compact') === '1';
         streams.add(res);
         res.once('close', () => streams.delete(res));
         const logSession = sessions.get(res.account);
@@ -2851,6 +2891,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         removed?.loop.controller?.abort();
         removed?.pirateAdvance.stop('账号已删除'); removed?.stages.stop('账号已删除'); removed?.mutualAid.stop('账号已删除'); for (const task of removed?.trials.values() ?? []) task.stop('账号已删除');
         if (removed) await closeSessionConnection(removed, { includeWorld: true });
+        sessions.get(account.id)?.operations.clear();
+        flushBatch(sessions.get(account.id));
         sessions.delete(account.id);
         try { publicGiftCodes.removeAccount(account.id); }
         catch (error) { emit(null, 'warn', '账号已删除，礼包自动兑换设置清理失败：' + error.message); }
@@ -4195,7 +4237,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           const client=await ensureConnected(session,account),player=session.player;
           return {client,player,config:loadConfigSafe(),ledger:usageFor(session),schedule:work=>enqueue(session,work),
             enabled:()=>!session.paused && session.generation===generation && session.client===client && session.player===player && client.connected};
-        },state=>emit(session,state.failed||state.pending?'warn':'info',`联盟互助 · ${state.reason}（本轮发起${state.published}条，已确认赠送${state.sent}次，领取${state.received}份）`)));
+        }, state => {
+          const level = state.failed || state.pending ? 'warn' : 'info';
+          const message = `联盟互助 · ${state.reason}（本轮发起${state.published}条，已确认赠送${state.sent}次，领取${state.received}份）`;
+          if (!reportOperationStep(session, { ...state, title: state.reason }, level, message)) emit(session, level, message);
+        }));
         return;
       }
       if (route === 'POST /api/trials/sweep') {
@@ -4325,6 +4371,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
               const step = entry.step;
               const label = heroStepLabel(step, entry.targetLevel);
               steps.push({ label, ok: entry.ok, skipped: entry.skipped === true, error: entry.error });
+              if (reportOperationStep(session, entry, entry.ok ? 'info' : entry.skipped ? 'warn' : 'error', label + (entry.error ? ' · ' + entry.error : ''))) return;
               if (entry.skipped) emit(session, 'warn', `英雄 ${label} 已跳过：${entry.error}`);
               else emit(session, entry.ok ? 'info' : 'error', entry.ok ? `英雄 ${label}` : `英雄 ${label} 失败：${entry.error}`);
             },
@@ -4369,6 +4416,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           allowPaid: payload.paid === true,
           settings: session.preferences, getSettings: () => session.preferences, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
           onStep: (entry) => {
+            if (reportOperationStep(session, entry, entry.ok ? 'info' : entry.skipped ? 'warn' : 'error', formatLoopStep(entry))) return;
             if (entry.skipped) emit(session, 'warn', `日常「${entry.title}」跳过：${entry.reason}`);
             else emit(session, entry.ok ? 'info' : 'error', entry.ok ? `日常「${entry.title}」${entry.note}` : `日常「${entry.title}」${entry.note ?? ''}失败：${entry.error}`,
               entry.ok ? undefined : { request: entry.request, way: entry.way });
@@ -4431,6 +4479,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           enabled: kind => generation === session.generation && !session.paused &&
             (!['finishOrder', 'denyOrder'].includes(kind) || protectCargo || !session.loop.tasks.cargo),
           onStep: (entry) => {
+            if (reportOperationStep(session, entry, entry.ok ? 'info' : entry.skipped ? 'warn' : 'error', formatLoopStep(entry))) return;
             if (entry.skipped) emit(session, 'warn', `海面「${entry.step.label}」跳过：${entry.error}`);
             else emit(session, entry.ok ? 'info' : 'error', entry.ok ? `海面 ${entry.step.label}` : `海面 ${entry.step.label} 失败：${entry.error}`);
           },
@@ -4788,6 +4837,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           },
           usageLedger: usageFor(session),
           getEveryMs: () => loop.everyMs,
+          includeRepeatedWaits: true,
           onMaintenance:view=>{loop.fleetMaintenance=view;},
           onRound(summary) {
             summary = { ...summary, round: completedBefore + summary.round };
@@ -4810,12 +4860,29 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             const previous=loop.controlStatus.get(statusKey);
             const {text,state} = stepObservation(entry);
             loop.controlStatus.set(statusKey,{text,state,checkedAt:Math.floor(Date.now()/1000)});
-            if(previous?.state==='error' && ['ok','waiting'].includes(state)) emit(session,'info',(entry.title||entry.label||entry.step?.label||'任务')+'已恢复');
-            const production = entry.ok && !entry.skipped && entry.step?.request === 'StartFactoryProduceRequest';
+            if(previous?.state==='error' && ['ok','waiting'].includes(state)) emit(session,'info',(entry.title||entry.label||entry.step?.label||'任务')+'已恢复', { taskKey: entry.logTaskKey || entry.taskKey });
+            if (entry.upgradeInspection) {
+              const previous = session.upgradeInspection;
+              const check = entry.upgradeInspection;
+              if (!previous && !check.count) return;
+              const change = upgradeChanges(check, previous);
+              if (change) session.upgradeRevision++;
+              const version = session.upgradeRevision;
+              session.upgradeInspection = { ...check, display: change ?? previous.display };
+              emit(session, 'info', '建筑升级检查 · ' + session.upgradeInspection.display, { category: 'building', taskKey: 'upgrade', diagnostic: check.detail,
+                detailLabel: '查看 ' + check.count + ' 栋建筑的检查明细', waitScope: 'upgrade-inspection', waitKey: 'upgrade:' + version });
+              return;
+            }
+            const level = state === 'error' ? 'error' : state === 'pending' ? 'warn' : 'info';
+            const message = formatLoopStep(entry);
+            const scope = JSON.stringify([entry.phase, statusKey, entry.step?.body?.buildingId || entry.waitTarget || '']);
+            if (reportOperationStep(session, entry, level, message, scope)) return;
+            const production = state === 'ok' && entry.step?.request === 'StartFactoryProduceRequest';
             const batch = production ? JSON.stringify([entry.round, entry.step.body.buildingId, entry.step.body.productId]) : undefined;
-            emit(session, state === 'error' ? 'error' : 'info', formatLoopStep(entry),
-              state === 'waiting' ? { waitKey: String(statusKey)+':'+text } : batch ? { batch, factory: entry.step.displayFactory, product: entry.step.displayProduct }
-                : entry.request && entry.ok === false ? { request: entry.request, way: entry.way } : undefined);
+            emit(session, level, message, { waitScope: scope, taskKey: entry.logTaskKey || entry.taskKey || entry.step?.setting || entry.step?.kind,
+              ...(['waiting', 'pending', 'error'].includes(state) ? { waitKey: JSON.stringify([state, text]) } : {}),
+              ...(batch ? { batch, factory: entry.step.displayFactory, product: entry.step.displayProduct } : {}),
+              ...(entry.request && entry.ok === false ? { request: entry.request, way: entry.way } : {}) });
           },
         });
         if (loop.connectionFailure) throw new Error(loop.connectionFailure.reason);
@@ -5073,6 +5140,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         drains.push(closeSessionConnection(session, { includeWorld: true }));
       }
       await Promise.all(drains);
+      for (const session of sessions.values()) { session.operations.clear(true); flushBatch(session); }
       return new Promise((resolve) => server.close(() => { traceLog.close().then(resolve); }));
     },
     emit,

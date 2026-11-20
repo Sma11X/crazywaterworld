@@ -1,4 +1,5 @@
 import {checkFleetSettlement} from './fleet-settlement.mjs';
+import { summarizeUpgradeChecks } from './building-upgrade-log.mjs';
 import { militaryRewards, riverActivity, edictPassActivity, compassActivity, beautyActivity } from './seasonal-activities.mjs';
 import { claimComicDrama, claimTournamentDaily, openSeasonChests } from './side-rewards.mjs';
 import { merchantActivity } from './merchant-activity.mjs';
@@ -109,6 +110,7 @@ export async function runLoop(client, protocol, {
   executeBattle = work => work(),
   onRound,
   onStep,
+  includeRepeatedWaits = false,
   onMaintenance,
 } = {}) {
   if (!allowMutate) throw new Error('循环会持续改变账号状态，需要 --yes');
@@ -372,12 +374,12 @@ export async function runLoop(client, protocol, {
       if (controlKey && controlKey !== key) observeStep(controlKey, entry);
       if (entry.skipped && entry.reason) {
         const waitKey = phase + ':' + (key || entry.id || entry.title || entry.label || 'unknown');
-        if (dailyWaitReasons.get(waitKey) === entry.reason) return;
+        if (!includeRepeatedWaits && dailyWaitReasons.get(waitKey) === entry.reason) return;
         dailyWaitReasons.set(waitKey, entry.reason);
       } else if (key) {
         dailyWaitReasons.delete(phase + ':' + key);
       }
-      onStep?.({ round, phase, ...entry,taskKey:key||entry.taskKey });
+      onStep?.({ round, phase, ...entry,taskKey:key||entry.taskKey, logTaskKey: controlKey || key });
     };
     async function observed(keys,work){
       const active=keys.filter(enabled),before=new Map(active.map(k=>[k,rewards?.status(k)]));
@@ -420,7 +422,7 @@ export async function runLoop(client, protocol, {
       beforeStep: guard.before, afterStep: guard.after, cancelStep: guard.cancel };
     function phaseFailure(phase, title, error, taskKey) {
       if (!client.connected || error.code === 'SETTINGS_STALE' || error.code === 'RESOURCE_STALE') throw error;
-      const entry = { title,taskKey:taskKey ?? ({'万吨巨轮检查':'万吨巨轮','城战接续检查':'城战接续','装备锻造检查':'装备锻造','联盟情报':'联盟情报','世界Boss首战':'worldBoss','钓具养成':'fishEnhance','自动钓鱼':'autoFish','贸易港':'cargo'})[title], ok: false, ...(error.code === 'AUTOMATION_SKIP' ? { skipped: true, reason: error.message } : {}), error: error.message };
+      const entry = { title,operationId:error.operationId,taskKey:taskKey ?? ({'万吨巨轮检查':'万吨巨轮','城战接续检查':'城战接续','装备锻造检查':'装备锻造','联盟情报':'联盟情报','世界Boss首战':'worldBoss','钓具养成':'fishEnhance','自动钓鱼':'autoFish','贸易港':'cargo'})[title], ok: false, ...(error.code === 'AUTOMATION_SKIP' ? { skipped: true, reason: error.message } : {}), error: error.message };
       summary[phase].results.push(entry);
       stepLog(phase)(entry);
     }
@@ -530,7 +532,7 @@ export async function runLoop(client, protocol, {
       summary[phase].results.push(entry);
       if (!entry.skipped) summary[phase].planned++;
       const key = entry.key || entry.taskKey || category;
-      if (!entry.skipped || serviceWait.get(key) !== entry.reason) stepLog(phase)({ ...entry, category, taskKey: key });
+      if (includeRepeatedWaits || !entry.skipped || serviceWait.get(key) !== entry.reason) stepLog(phase)({ ...entry, category, taskKey: key });
       else observeStep(key, entry);
       if (entry.skipped) serviceWait.set(key, entry.reason); else serviceWait.delete(key);
     };
@@ -843,7 +845,7 @@ export async function runLoop(client, protocol, {
           const survey = await surveyDailies(client, protocol, { config, player, includeTask, probeGift: !isEnabled, idle: !!isEnabled, allowRecruitTickets: false, settings });
           for (const entry of survey.tasks) for (const key of dailyKeys[entry.task.id]??[]) rewards?.observe(key, entry.reason || (Number.isFinite(entry.task.progress)&&Number.isFinite(entry.task.targetProgress)?entry.task.progress+'/'+entry.task.targetProgress+(entry.task.progress>=entry.task.targetProgress?' · 今日目标已完成':' · 等待执行'):'已读取任务状态'));
            const recruit = survey.tasks.find(entry => entry.task.id === 1002 && entry.status === 'waiting');
-           if (recruit && recruit.reason !== lastRecruitWait) stepLog('dailies')({ title: recruit.task.title, skipped: true, reason: recruit.reason, taskKey: 'freeRecruit' });
+           if (recruit && (includeRepeatedWaits || recruit.reason !== lastRecruitWait)) stepLog('dailies')({ title: recruit.task.title, skipped: true, reason: recruit.reason, taskKey: 'freeRecruit' });
            lastRecruitWait = recruit?.reason;
            for (const entry of survey.tasks) {
              const keys = dailyKeys[entry.task.id] ?? [];
@@ -925,7 +927,7 @@ export async function runLoop(client, protocol, {
           const entry = await claimGuildWelfare(client, config, { player, enabled: () => enabled('guildWelfare'), scheduler: rewards });
           summary.tasks.results.push(entry);
           if (!entry.skipped) summary.tasks.planned++;
-          if (!entry.skipped || lastGuildWait !== entry.reason) logReward({...entry,taskKey:'guildWelfare'}, '联盟');
+          if (includeRepeatedWaits || !entry.skipped || lastGuildWait !== entry.reason) logReward({...entry,taskKey:'guildWelfare'}, '联盟');
           else observeStep('guildWelfare', entry);
           lastGuildWait = entry.reason;
         } catch (error) { phaseFailure('tasks', '联盟福利礼包', error, 'guildWelfare'); }
@@ -1070,7 +1072,7 @@ export async function runLoop(client, protocol, {
           await observed(['freeAntiqueRecruit','antiqueRecruitRewards'],()=>serviceAntiqueRecruit(client, config, { player, enabled, scheduler: rewards, report(entry) {
             summary.tasks.results.push(entry);
             if (!entry.skipped) summary.tasks.planned++;
-            if (!entry.skipped || antiqueWait.get(entry.key) !== entry.reason) logReward(entry, '藏品');
+            if (includeRepeatedWaits || !entry.skipped || antiqueWait.get(entry.key) !== entry.reason) logReward(entry, '藏品');
             if (entry.skipped) antiqueWait.set(entry.key, entry.reason);
             else antiqueWait.delete(entry.key);
           } }));
@@ -1086,7 +1088,7 @@ export async function runLoop(client, protocol, {
           });
           summary.tasks.results.push(entry);
           if (!entry.skipped) summary.tasks.planned++;
-          if (!entry.skipped || entry.reason !== lastFishUpgradeWait) logReward({...entry,taskKey:'fishEnhance'}, '钓鱼');
+          if (includeRepeatedWaits || !entry.skipped || entry.reason !== lastFishUpgradeWait) logReward({...entry,taskKey:'fishEnhance'}, '钓鱼');
           else observeStep('fishEnhance', entry);
           lastFishUpgradeWait = entry.reason;
         } catch (error) { phaseFailure('tasks', '钓具养成', error); }
@@ -1097,7 +1099,7 @@ export async function runLoop(client, protocol, {
           const entry = await fishOnce(client, config, () => enabled('autoFish') && (!bookMode || getSettings()?.gather.fishBook), {fishBook:bookMode,onBookComplete:onFishBookComplete});
           summary.tasks.results.push(entry);
           if (!entry.skipped) summary.tasks.planned++;
-          if (!entry.skipped || entry.reason !== lastFishWait) logReward({...entry,taskKey:'autoFish'}, '钓鱼');
+          if (includeRepeatedWaits || !entry.skipped || entry.reason !== lastFishWait) logReward({...entry,taskKey:'autoFish'}, '钓鱼');
           else observeStep('autoFish', entry);
           lastFishWait = entry.reason;
         } catch (error) { phaseFailure('tasks', '自动钓鱼', error); }
@@ -1191,12 +1193,15 @@ export async function runLoop(client, protocol, {
             const title = (order?.workerName || '未知居民') + '的订单 #' + decision.index;
             const message = title + ' · ' + decision.reason;
             nextWait.set(decision.index, message);
-            if (residentWait.get(decision.index) !== message) stepLog('world')({ title, skipped: true, reason: decision.reason });
+            if (includeRepeatedWaits || residentWait.get(decision.index) !== message) stepLog('world')({ title, skipped: true, reason: decision.reason });
           }
         }
         residentWait = nextWait;
-        if (isEnabled && enabled('upgrade') && plan.upgradeReasons.length)
-          stepLog('world')({ taskKey:'upgrade',title:'建筑升级检查',reason:plan.upgradeReasons.join('；'),skipped:true });
+        if (isEnabled && enabled('upgrade') && (includeRepeatedWaits || plan.upgradeChecks.length)) {
+          const inspection = summarizeUpgradeChecks(plan.upgradeChecks);
+          stepLog('world')({ taskKey: 'upgrade', title: '建筑升级检查', reason: inspection.message,
+            upgradeInspection: inspection, skipped: true });
+        }
         if (isEnabled && enabled('antiqueFloaters')) {
           try {
             await collectAntiqueFloaters(client,config,{enabled:()=>enabled('antiqueFloaters'),ledger:usageLedger,report(entry){
@@ -1239,7 +1244,7 @@ export async function runLoop(client, protocol, {
                   '服务器未确认升级，当前 ' + current.level + ' 级';
                 const title = displayBuilding(config, before) + '：' + detail;
                 summary.world.upgrades.push(title);
-                if (entry.ok) stepLog('world')({ title, ok: true });
+                if (entry.ok) stepLog('world')({ title, ok: true, operationId: entry.operationId });
               }
             }
             if (allowWorld('startProduce')) {
@@ -1266,7 +1271,7 @@ export async function runLoop(client, protocol, {
                   : '正在生产 ' + count + ' 格，空闲 ' + Math.max(0, survey.factorySlots - count) + ' 格';
                 const title = displayBuilding(config, b) + '：' + queue + (reasons.length ? '。' + [...new Set(reasons)].join('；') : '');
                 summary.world.factories.push(title);
-                if (count !== before || count !== survey.factorySlots) stepLog('world')({ title,taskKey:'startProduce',skipped:true,reason:title });
+                if (count !== before || count !== survey.factorySlots) stepLog('world')({ title,taskKey:'startProduce',waitTarget:b.buildingId,skipped:true,reason:title });
               }
             }
             publishFactoryDeadline();
