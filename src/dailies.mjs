@@ -313,7 +313,14 @@ export const DAILY_DRIVERS = {
 
   1011: { id: 1011, title: '累计联盟情报', probes: [], evaluate: automationReason('联盟情报领奖与派舰') },
   1012: { id: 1012, title: '累计联盟订单', probes: [], evaluate: automationReason('提交联盟订单') },
-  1013: { id: 1013, title: '累计联盟互助', probes: [['GuildAidListRequest', { type: 0 }]], evaluate: lockedReason('联盟互助') },
+  1013: {
+    id: 1013,
+    title: '累计联盟互助',
+    probes: [],
+    evaluate({ task }) {
+      return { status: task.progress >= task.targetProgress ? 'done' : 'waiting' };
+    },
+  },
   1014: { id: 1014, title: '累计请求帮助', probes: [], evaluate: lockedReason('联盟求助') },
   1015: { id: 1015, title: '城战获得功勋', probes: [], evaluate: automationReason('城战接续（20:00-21:00 限时）', '世界与挑战') },
   1016: { id: 1016, title: '博物馆探险', probes: [], evaluate: automationReason('派遣博物馆探险队', '博物馆') },
