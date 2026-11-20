@@ -91,7 +91,7 @@ import { appointments } from './appointments.mjs';
 import { surveyDailies, runDailies, formatSurvey, canClaimDailyReward } from './dailies.mjs';
 import { dailySingleState, addDailyOptions, runDailySingle } from './daily-single.mjs';
 import { surveyTasks, runTasks, formatTaskPlan, selectTaskSettings } from './tasks.mjs';
-import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, inventoryStockRows, planWorld, runWorldRound, speedUpProduction, SPEED_UP_ITEM, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
+import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, inventoryStockRows, factoryIncomingStock, manualFactoryProducts, startManualFactoryProduction, planWorld, runWorldRound, speedUpProduction, SPEED_UP_ITEM, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
 import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
 import { foldBusinessEntry, createOperationJournal } from './business-journal.mjs';
 import { upgradeChanges } from './building-upgrade-log.mjs';
@@ -1887,6 +1887,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     fields.totals=resourceFieldTotals(survey.resFields,fields.rows);
     const typeNames = new Map(config?.tables?.BuildingCfg?.data.map(row => [row.buildingType, row.name]));
     const timing = createProductionTiming({ config, ...survey.productionTiming, serverNow: survey.serverNow });
+    const incoming = factoryIncomingStock(survey.factories);
     const now = Date.now() / 1000;
     const result = {
       serverNow:survey.serverNow,
@@ -1942,6 +1943,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         return {
           buildingId: b.buildingId, displayName: displayBuilding(config, b), type: b.type, typeName: typeNames.get(b.type), level: b.level,
           queue: jobs.length, queueKnown, jobs, plannedJobs,
+          manualProducts: manualFactoryProducts(b, survey, config, incoming).map(product => ({ ...product, icon: materialIcon(product.productId) })),
           capacity: Number.isSafeInteger(survey.factorySlots) && survey.factorySlots > 0 ? survey.factorySlots : null,
           auto: b.factory.autoProductId ? displayMaterial(config, b.factory.autoProductId) : null,
           autoEnabled: !!b.factory.autoProductId && (survey.autoProduceForever || survey.autoProduceEndTime > survey.serverNow),
@@ -4091,7 +4093,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         json(await session.worldRead);
         return;
       }
-      if (route === 'POST /api/world/production-speed') {
+      if (route === 'POST /api/world/production-speed' || route === 'POST /api/world/production-start') {
+        const start = route.endsWith('/production-start');
+        const label = start ? '手动工厂排产' : '手动生产加速';
         const payload = jsonBody();
         needConfirm(payload);
         const { session } = scoped_(parsed);
@@ -4099,12 +4103,14 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const enabled = () => client?.connected && session.client === client && session.player === player
           && session.generation === generation && !session.paused && !session.productionSyncRequired;
         const result = await enqueue(session, async () => {
-          if (!enabled()) throw new Error('请先连接并同步当前账号，再使用加速器');
-          const result = await speedUpProduction(client, protocolFor(client), payload, { player, enabled });
+          if (!enabled()) throw new Error('请先连接并同步当前账号，再' + (start ? '手动排产' : '使用加速器'));
+          const result = start
+            ? await startManualFactoryProduction(client, protocolFor(client), payload, { player, enabled, config: loadConfigSafe(), settings: session.preferences })
+            : await speedUpProduction(client, protocolFor(client), payload, { player, enabled });
           session.worldRead = null;
           emit(session, result.confirmed ? 'info' : 'warn', result.label, { worldUpdated: true });
           return result;
-        }, '手动生产加速');
+        }, label);
         json(result);
         return;
       }

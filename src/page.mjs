@@ -320,6 +320,7 @@ function closeModal() {
 function openConfirm(title, bodyNodes, onOk, okLabel = '确认') {
   $('m-title').textContent = title;
   $('m-ok').textContent = okLabel;
+  $('m-ok').disabled = false;
   const body = clear($('m-body'));
   for (const node of bodyNodes) body.appendChild(node);
   $('m-ok').onclick = async () => {
@@ -1565,6 +1566,83 @@ function factoryProduct(job, recipes, num = 1) {
   return planMaterialList([{ id: job.productId, name: job.name, icon: job.icon, num }], recipes);
 }
 
+const pendingFactoryStarts = new Set();
+
+function showFactoryStartState(key, message) {
+  for (const button of document.querySelectorAll('[data-factory-start]')) {
+    if (button.dataset.factoryStart === key) button.disabled = pendingFactoryStarts.has(key);
+  }
+  for (const status of document.querySelectorAll('[data-factory-start-status]')) {
+    if (status.dataset.factoryStartStatus === key) status.textContent = message;
+  }
+}
+
+function chooseFactoryProduct(factory, account, key) {
+  const available = () => current === account && account && !snapshot.paused && !disconnected.has(account) && !pendingFactoryStarts.has(key);
+  if (!available()) return;
+  const choices = el('div', 'factory-product-choices');
+  choices.setAttribute('role', 'radiogroup');
+  choices.setAttribute('aria-label', '选择产物');
+  const detail = el('div', 'factory-recipe-detail');
+  detail.setAttribute('aria-live', 'polite');
+  let selected = factory.manualProducts.find(product => !product.reason) || factory.manualProducts[0];
+  const select = product => {
+    selected = product;
+    clear(detail);
+    detail.appendChild(el('strong', null, product.name + ' ×1'));
+    detail.appendChild(el('span', 'dim', '基础耗时 ' + productionPlanDuration(product.seconds)));
+    if (product.inputs.length) {
+      const list = el('ul', 'factory-recipe-costs');
+      for (const input of product.inputs) {
+        const row = el('li');
+        row.append(el('span', null, input.name + ' ×' + input.num),
+          el('span', 'dim', input.owned == null ? '库存未同步' : '持有 ' + input.owned));
+        list.appendChild(row);
+      }
+      detail.appendChild(list);
+    } else detail.appendChild(el('span', 'dim', '无需原料'));
+    if (product.reason) detail.appendChild(el('strong', null, product.reason));
+    $('m-ok').disabled = !!product.reason;
+  };
+  let initialInput;
+  for (const product of factory.manualProducts) {
+    const label = el('label', 'factory-product-choice');
+    const input = el('input');
+    input.type = 'radio';
+    input.name = 'manual-factory-product';
+    input.value = product.productId;
+    input.checked = product === selected;
+    if (input.checked) initialInput = input;
+    input.onchange = () => { if (input.checked) select(product); };
+    label.append(input, iconEl(product.icon, 24, product.name), el('span', null, product.name));
+    choices.appendChild(label);
+  }
+  openConfirm((factory.displayName || factory.buildingId) + ' · 手动排产',
+    [choices, detail], async () => {
+      if (!available() || selected.reason) throw Error('账号或工厂状态已变化，请重新选择产物');
+      pendingFactoryStarts.add(key);
+      showFactoryStartState(key, '正在提交排产…');
+      let message;
+      try {
+        const result = await call('/api/world/production-start', { method: 'POST', body: JSON.stringify({
+          buildingId: factory.buildingId, productId: selected.productId, productionKey: selected.productionKey, confirm: true,
+        }) });
+        message = result.label;
+      } catch (error) {
+        message = error.message;
+        throw error;
+      } finally {
+        try { if (current === account) await refreshManualWorld(true); }
+        finally {
+          pendingFactoryStarts.delete(key);
+          if (current === account) showFactoryStartState(key, message);
+        }
+      }
+    }, '加入队列 ×1');
+  select(selected);
+  initialInput.focus();
+}
+
 function factoryProductionQueue(factory, recipes, accelerators) {
   const section = el('section', 'factory-game-section');
   section.appendChild(el('h3', null, '游戏生产格'));
@@ -1573,11 +1651,14 @@ function factoryProductionQueue(factory, recipes, accelerators) {
   const queue = el('div', 'factory-queue');
   queue.setAttribute('aria-label', (factory.displayName || factory.buildingId) + '游戏生产格');
   const capacity = Number.isInteger(factory.capacity) && factory.capacity > 0 ? factory.capacity : 6;
+  const account = current, key = JSON.stringify([account, factory.buildingId]);
+  const canChoose = known && factory.capacity > 0 && factory.autoEnabled === false && factory.manualProducts?.length > 0;
   let waiting = 0;
   for (let index = 0; index < capacity; index++) {
     const job = jobs[index];
-    const slot = el('div', 'factory-slot');
-    const header = el('div', 'factory-slot-header');
+    const actionable = !job && canChoose;
+    const slot = el(actionable ? 'button' : 'div', 'factory-slot');
+    const header = el('span', 'factory-slot-header');
     header.appendChild(el('span', 'dim', '格子 ' + (index + 1)));
     slot.appendChild(header);
     if (job) {
@@ -1605,11 +1686,28 @@ function factoryProductionQueue(factory, recipes, accelerators) {
       }
     } else {
       slot.classList.add('factory-empty');
-      slot.appendChild(el('span', 'factory-product dim', known ? '空闲' : '未同步'));
+      if (actionable) {
+        slot.type = 'button';
+        slot.dataset.factoryStart = key;
+        slot.setAttribute('aria-haspopup', 'dialog');
+        slot.setAttribute('aria-label', (factory.displayName || factory.buildingId) + '空闲格 ' + (index + 1) + '，选择产物加入队尾');
+        slot.disabled = pendingFactoryStarts.has(key) || !account || snapshot.paused || disconnected.has(account);
+        slot.onclick = () => chooseFactoryProduct(factory, account, key);
+      }
+      slot.appendChild(el('span', 'factory-product' + (actionable ? '' : ' dim'), actionable ? '＋ 排产' : known ? '空闲' : '未同步'));
     }
     queue.appendChild(slot);
   }
   section.appendChild(queue);
+  const status = el('p', 'factory-start-status dim');
+  status.dataset.factoryStartStatus = key;
+  status.setAttribute('role', 'status');
+  if (pendingFactoryStarts.has(key)) status.textContent = '正在提交排产…';
+  else if (!canChoose && known && jobs.length < capacity && factory.manualProducts) {
+    status.textContent = factory.autoEnabled ? '游戏自动生产中'
+      : !factory.capacity ? '生产格容量未同步' : '当前没有可手动排产的配方';
+  }
+  section.appendChild(status);
   if (jobs.length > capacity) {
     const overflow = jobs.slice(capacity).map(job => job.name || job.productId || '产物未同步');
     section.appendChild(el('p', 'dim', '游戏队列另外返回 ' + overflow.length + ' 项：' + overflow.join('、')));
