@@ -80,7 +80,7 @@ import { iconThumb } from './art-thumbs.mjs';
 import { listWorlds, enterWorld, describeRole } from './worlds.mjs';
 import { collectState, summarize, formatState, ENTRY_QUERIES } from './game.mjs';
 import { claimRewards } from './claim-rewards.mjs';
-import { fishView, newbieView } from './collections.mjs';
+import { newbieView } from './collections.mjs';
 import { normalize } from './worlds.mjs';
 import { pirateTracker, pirateHuntOptions, startPirateHunt } from './pirates.mjs';
 import { activityEntries, activityView, runActivity, runWeekOrder } from './activities.mjs';
@@ -1084,7 +1084,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   function activityCatalogView(session, activities, catalogOnly = false) {
     const current = settingsView(session);
-    const keys = new Set(['fishBook', 'vipDaily', 'campaignReports', 'openRankRewards', ...activities.flatMap(row => row.taskKeys ?? [])]);
+    const keys = new Set(['campaignReports', 'openRankRewards', ...activities.flatMap(row => row.taskKeys ?? [])]);
     return {
       activities: activities.map(row => {
         const control = activityAutomationControl(row);
@@ -3704,12 +3704,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { account, session } = scoped_(parsed);
         const client = await ensureConnected(session, account);
         const view = await activityView(client, client.festivals, loadConfigSafe(), session.player);
-        view.vipLevel = session.player?.vip?.vipLevel ?? 0;
         view.compassSpinCount = session.preferences?.eventActions.compassDrawCount ?? session.loop.compassSpinCount;
         view.compassSpinEditable = !session.preferences;
         view.newbie = newbieView(client);
-        try { view.fish = await fishView(client, loadConfigSafe()); }
-        catch (error) { emit(session, 'error', '读取钓鱼图鉴失败：' + error.message); }
         if (view.order?.materials.length && !view.order.finished) {
           const config = loadConfigSafe();
           const typeOf = makeTypeResolver(config);

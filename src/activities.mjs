@@ -4,7 +4,7 @@ import { displayMaterial } from './config.mjs';
 import { normalize } from './worlds.mjs';
 import { claimCollection, newbieView } from './collections.mjs';
 import { toNumber } from './client.mjs';
-import { campaignReportState, claimOpenRanks, openRankState, openRanks } from './pirate-board.mjs';
+import { claimOpenRanks, openRankState, openRanks } from './pirate-board.mjs';
 import { claimReportRewards } from './missing-rewards.mjs';
 import { beginOrderMaterialSpend, cancelOrderMaterialSpend, confirmOrderMaterialSpends, confirmOrderMaterialOperation, readOrderMaterialState, settleOrderMaterialState } from './order-reservations.mjs';
 import { riverActivity, edictPassActivity } from './seasonal-activities.mjs';
@@ -12,7 +12,7 @@ import { activityTimestamp, catalogEntry, pushedActivityEntries } from './activi
 import { festivalTaskWindow } from './activity-availability.mjs';
 import { watchHeroRaidPushes } from './hero-raid-automation.mjs';
 import { claimFestivalRewards, claimWeeklyRewards, claimVipDaily, festivalRewardKeys, weeklyRewardKeys, festivalRewardState, snowballState,
-  compassState, weekChargeState, weekHeroStarState, weekFreePackState, vipDailyState, syncFestivalDay } from './free-rewards.mjs';
+  compassState, weekChargeState, weekHeroStarState, weekFreePackState, syncFestivalDay } from './free-rewards.mjs';
 
 const weekNames = { 1: '勇士战令', 2: '累计充值', 3: '英雄升星', 4: '幸运转盘', 5: '不差钱商人', 6: '芯片活动', 7: '周翻牌' };
 const serverNow = client => (Date.now() + (client.serverClockOffsetMs || 0)) / 1000;
@@ -292,11 +292,6 @@ const text = (config, rows = []) => rows.map(([id, num]) => displayMaterial(conf
 // One line per reward so each tab says what can be collected before anything is clicked.
 async function rewardStatus(client, config, activities, week, player, { readOrder, readInventory }) {
   const status = {};
-  const rankStates = new Map();
-  const readRank = rank => {
-    if (!rankStates.has(rank.type)) rankStates.set(rank.type, openRankState(client, config, player, rank));
-    return rankStates.get(rank.type);
-  };
   const put = (id, lines, ready, badge = '可领') => { status[id] = { lines, ready, badge }; };
   const safely = async (id, work) => {
     try { await work(); } catch (error) { put(id, ['状态读取失败：' + error.message], false); }
@@ -352,19 +347,9 @@ async function rewardStatus(client, config, activities, week, player, { readOrde
       put(id, [(view.name ?? '免费礼包') + '：' + (view.done ? '已领' : '可领 ' + text(config, view.reward))], !view.done);
     });
   }
-  const vip = vipDailyState(player, config, Math.floor((serverNow(client) + 8 * 3600) / 86400));
-  await safely('pirates', async () => {
-    const reports = await campaignReportState(client, config, player);
-    const rank = await readRank(openRanks[2]);
-    put('pirates', [
-      reports.pending ? '战报奖励 ' + reports.pending + ' 份待领：' + reports.rewards : '战报奖励已领完',
-      rank.open ? '剿匪冲榜 ' + rank.progress + ' 分' + (rank.me?.rank ? ' · 排名第 ' + rank.me.rank + ' 名' : ' · 未上榜') + ' · 已领 ' + rank.got + '/' + rank.total + ' 档' + (rank.next ? ' · 下一档 ' + rank.next.score + ' 分' : '') + (rank.ready.length ? '（可领 ' + rank.ready.length + ' 档）' : '') : '剿匪冲榜已结束',
-    ], reports.pending > 0 || (rank.open && rank.ready.length > 0));
-    status.pirates.rankOpen = rank.open;
-  });
   await safely('openrank', async () => {
     const ranks = [];
-    for (const rank of openRanks) ranks.push(await readRank(rank));
+    for (const rank of openRanks) ranks.push(await openRankState(client, config, player, rank));
     const open = ranks.filter(rank => rank.open);
     if (!open.length) return;
     const windows = (client.openRankActivity?.activityTime ?? []).filter(row => row.startTime <= serverNow(client) && serverNow(client) < row.endTime);
@@ -372,7 +357,6 @@ async function rewardStatus(client, config, activities, week, player, { readOrde
       startTime: windows.length ? Math.min(...windows.map(row => row.startTime)) : null, endTime: Math.max(...open.map(rank => rank.endTime)) });
     put('openrank', open.map(rank => rank.name + ' ' + rank.progress + ' 分' + (rank.me?.rank ? ' · 第 ' + rank.me.rank + ' 名' : '') + ' · 已领 ' + rank.got + '/' + rank.total + ' 档' + (rank.ready.length ? '（可领 ' + rank.ready.length + ' 档）' : '')), open.some(rank => rank.ready.length > 0));
   });
-  if (vip.level > 0) put('vip', ['VIP ' + vip.level + ' · ' + (vip.available.length ? '可领 ' + vip.available.map(row => 'VIP ' + row.level + '：' + text(config, row.reward)).join('；') : '今日已领完')], vip.available.length > 0);
   return status;
 }
 
