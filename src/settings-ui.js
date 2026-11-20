@@ -9,9 +9,9 @@ const activityOwnedSettings = new Set(['weekOrder.enabled', 'schedule.weekOrderS
   'heroRaid.enabled', 'heroRaid.challenge', 'heroRaid.retryTimes', 'heroRaid.orders', 'heroRaid.lottery', 'heroRaid.rewards']);
 const baseFamilies = [
   { id: 'construction', title: '建筑', groups: ['building'] },
-  { id: 'production', title: '生产', groups: ['factory', 'farm', 'gather'] },
+  { id: 'production', title: '生产', groups: ['factory', 'farm', 'pet', 'museum', 'gather'] },
   { id: 'events', title: '事件', groups: ['resident', 'cargo', 'events'] },
-  { id: 'foundation', title: '基础', groups: ['pet', 'museum', 'resources', 'gold'] },
+  { id: 'foundation', title: '基础', groups: ['resources', 'gold'] },
 ];
 const configLegacyGroups = new Map();
 const familyGroups = new Map();
@@ -1018,7 +1018,9 @@ function configRender() {
   for(const group of groups)scopeSelect.add(new Option(group.title,'module:'+group.id));
   for (const [category, label] of Object.entries(configCategories)) {
     const panel = el('div'); panel.id = 'config-panel-' + category; panel.dataset.configPanel = category; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', 'config-tab-' + category);
-    const selected = groups.filter(group => group.category === category);
+    const selected = category === 'base'
+      ? baseFamilies.flatMap(family => family.groups.map(id => configEditor.groups.get(id))).filter(Boolean)
+      : groups.filter(group => group.category === category);
     const singleGroup = category !== 'base' && selected.length === 1;
     let groupHost = panel;
     if (category === 'base') {

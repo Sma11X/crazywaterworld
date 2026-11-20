@@ -269,6 +269,14 @@ test('建筑与多分组分类切换、键盘导航和旧链接都能定位同�
   assert.equal(f.env.hash, '#config-group-building');
   f.env.node('config-family-construction').onkeydown({ key: 'ArrowRight', preventDefault() {} });
   assert(visible(f.env.node('config-group-farm')), '再次进入生产保留上次选择');
+  const visibleTabs = () => panel.querySelectorAll('[data-config-group]').filter(visible).map(tab => tab.dataset.configGroup);
+  assert.deepEqual(visibleTabs(), ['factory', 'farm', 'pet', 'museum', 'gather']);
+  for (const [from, to] of [['farm', 'pet'], ['pet', 'museum']]) {
+    f.env.node('config-subtab-' + from).onkeydown({ key: 'ArrowRight', preventDefault() {}, stopPropagation() {} });
+    assert(visible(f.env.node('config-group-' + to)));
+  }
+  f.env.node('config-family-foundation').onclick();
+  assert.deepEqual(visibleTabs(), ['resources', 'gold']);
   f.env.hash = '#config-group-building'; f.applyHash();
   assert(visible(f.env.node('config-group-building')));
   f.activateGroup('building', true);
