@@ -56,7 +56,7 @@ const combatGroups = { arena: '竞技场', leagueChallenge: '积分赛', leagueC
 for (const task of automationTasks) {
  if (task.key === 'stageAuto' || task.key === 'heroGrowth' || retiredAutomationTasks.has(task.key)) continue;
  if (nativeKeys.has(task.key)) continue;
- const group = ['freeRecruit','ticketRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
+ const group = ['freeRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
  const gates = task.key==='pirate' ? ['pirate.enabled'] : task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
  add('schedule.'+task.key,task.label,combatGroups[task.key] ?? group,{gates,taskKey:task.key,...(task.key==='pirate'?{configLabel:'每日免费扫荡',help:'使用当天剩余的免费次数，无需派舰。三种海盗共用次数。'}:{}),...(task.key==='guildTitleReward'?{help:'默认关闭，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
 }

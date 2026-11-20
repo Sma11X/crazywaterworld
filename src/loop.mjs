@@ -81,7 +81,7 @@ import { runWeeklyActivity } from './weekly-activity-runner.mjs';
 const automationControlLabels = new Map(automationControls.map(control => [control.key, control.label]));
 const defaultSleep = (ms, signal) => pause(ms, undefined, { signal });
 const dailyActionKeys = {
-  1002: ['freeRecruit', 'ticketRecruit'], 1005: ['arena'], 1006: ['freeGold'], 1007: ['shop'],
+  1002: ['freeRecruit'], 1005: ['arena'], 1006: ['freeGold'], 1007: ['shop'],
 };
 
 export async function runLoop(client, protocol, {
@@ -838,7 +838,7 @@ export async function runLoop(client, protocol, {
         try {
            const includeTask = id => id === 1010 && settings
              ? false : !isEnabled || dailyKeys[id]?.some(enabled);
-          const survey = await surveyDailies(client, protocol, { config, player, includeTask, probeGift: !isEnabled, idle: !!isEnabled, settings });
+          const survey = await surveyDailies(client, protocol, { config, player, includeTask, probeGift: !isEnabled, idle: !!isEnabled, allowRecruitTickets: false, settings });
           for (const entry of survey.tasks) for (const key of dailyKeys[entry.task.id]??[]) rewards?.observe(key, entry.reason || (Number.isFinite(entry.task.progress)&&Number.isFinite(entry.task.targetProgress)?entry.task.progress+'/'+entry.task.targetProgress+(entry.task.progress>=entry.task.targetProgress?' · 今日目标已完成':' · 等待执行'):'已读取任务状态'));
            const recruit = survey.tasks.find(entry => entry.task.id === 1002 && entry.status === 'waiting');
            if (recruit && recruit.reason !== lastRecruitWait) stepLog('dailies')({ title: recruit.task.title, skipped: true, reason: recruit.reason, taskKey: 'freeRecruit' });

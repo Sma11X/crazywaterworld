@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { atomicJson, readJson, withFileLock } from './json-store.mjs';
 import { accountKey, dataDirectory } from './usage-ledger.mjs';
 export { beijingDay, createUsageLedger, usageFile } from './usage-ledger.mjs';
-import { taskSettings, retiredAutomationTasks, migratedAutomationTasks } from './automation.mjs';
+import { taskSettings, retiredAutomationTasks, migratedAutomationTasks, removedScheduleKeys } from './automation.mjs';
 import { EXTENDED_DEFAULTS, EXTENDED_CONSTRAINTS, SILICON_FLEET_NUMBERS, siliconTierLabels, validateSiliconFleets } from './extended-settings.mjs';
 import { treasureRewardOptions } from './treasure-reward-filter.mjs';
 import { dailyWindowPattern } from './daily-time-windows.mjs';
@@ -22,7 +22,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 34;
+export const SETTINGS_SCHEMA_VERSION = 35;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 const treasureChaseDefaults = {
@@ -236,7 +236,7 @@ const nativeFields = {
 };
 export function applyNativeTask(settings, key, enabled) {
   const result = copy(settings);
-  if (migratedAutomationTasks.has(key)) { delete result.schedule[key]; return result; }
+  if (removedScheduleKeys.has(key)) { delete result.schedule[key]; return result; }
   if (retiredAutomationTasks.has(key)) enabled = false;
   if (Object.hasOwn(result.schedule, key)) result.schedule[key] = enabled;
   for (const field of nativeFields[key] ?? []) { const [group, name] = field.split('.'); result[group][name] = enabled; }
@@ -270,8 +270,8 @@ export function settingsFromLegacyNative(tasks, options) {
     'building.enabled': ['collect', 'finishUpgrade', 'build', 'buildSupply', 'upgrade', 'speedUp', 'adSpeedUpBuilding'],
     'factory.enabled': ['collect', 'startProduce', 'buildSupply', 'speedUp', 'adSpeedUpProduce'],
     'gather.enabled': ['autoFish', 'fishEnhance', 'floaters', 'antiqueFloaters', 'autoDive', 'diveEnhance', 'autoSalvage', 'salvageEnhance'],
-    'dailies.enabled': ['dailyRewards', 'chests', 'gift', 'freeGold', 'freeRecruit', 'ticketRecruit', 'arena', 'shop'],
-    'loop.dailies': ['freeGold', 'freeRecruit', 'ticketRecruit', 'arena', 'paidGold', 'shop'],
+    'dailies.enabled': ['dailyRewards', 'chests', 'gift', 'freeGold', 'freeRecruit', 'arena', 'shop'],
+    'loop.dailies': ['freeGold', 'freeRecruit', 'arena', 'paidGold', 'shop'],
     'museum.runEnabled': ['museumCollect', 'museumExplore', 'museumRevenue', 'museumAchievements'],
     'radar.runEnabled': ['radarAuto', 'radarRepair'],
     'progression.enabled': ['stageAuto'],
@@ -299,7 +299,7 @@ export function nativeTaskValues(settings, current) {
   for (const [key, fields] of Object.entries(nativeFields)) result[key] = fields.some(field => { const [group, name] = field.split('.'); return settings[group][name]; });
   result.heroGrowth = false; // The old mainline-only job has been retired.
   for (const key of retiredAutomationTasks) result[key] = false;
-  for (const key of migratedAutomationTasks) delete result[key];
+  for (const key of removedScheduleKeys) delete result[key];
   result.startProduce = settings.factory.produce || settings.factory.cooperateNative;
   result.speedUp = settings.building.speedUp || settings.factory.speedUp || settings.farm.speedUp || settings.factory.speedUpSources.length > 0;
   return result;
@@ -343,6 +343,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   input = migrateVersion26Settings(input);
   input = migrateVersion28Settings(input);
   input = migrateVersion29Settings(input);
+  input = migrateVersion34Settings(input);
   if (['arena', 'league'].some(group => plain(input?.[group]) && Object.hasOwn(input[group], 'keepTickets'))) input = migrateVersion23Settings(input);
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
@@ -677,7 +678,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings], [28, migrateVersion28Settings], [29, migrateVersion29Settings], [30, migrateVersion30Settings], [31, migrateVersion31Settings], [32, migrateVersion32Settings], [33, migrateVersion33Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings], [19, migrateVersion19Settings], [20, migrateVersion20Settings], [21, migrateVersion21Settings], [22, migrateVersion22Settings], [23, migrateVersion23Settings], [24, migrateVersion24Settings], [25, migrateVersion25Settings], [26, migrateVersion26Settings], [27, migrateVersion27Settings], [28, migrateVersion28Settings], [29, migrateVersion29Settings], [30, migrateVersion30Settings], [31, migrateVersion31Settings], [32, migrateVersion32Settings], [33, migrateVersion33Settings], [34, migrateVersion34Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1090,6 +1091,13 @@ function migrateVersion22Settings(settings) {
     if (plain(next[group])) next[group] = { maxPowerRatio: 0, ...next[group] };
   }
   return next;
+}
+
+function migrateVersion34Settings(settings) {
+  if (!plain(settings?.schedule) || !Object.hasOwn(settings.schedule, 'ticketRecruit')) return settings;
+  const schedule = { ...settings.schedule };
+  delete schedule.ticketRecruit;
+  return { ...settings, schedule };
 }
 
 function migrateVersion33Settings(settings) {

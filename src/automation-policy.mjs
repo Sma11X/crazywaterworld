@@ -95,7 +95,6 @@ export function nativePreferenceEnabled(settings, key) {
     paidGold: () => settings.loop.dailies && settings.gold.enabled,
     freeGold: () => settings.loop.dailies && settings.dailies.enabled,
     freeRecruit: () => settings.loop.dailies && settings.dailies.enabled,
-    ticketRecruit: () => settings.loop.dailies && settings.dailies.enabled,
     arena: () => settings.loop.dailies && settings.dailies.enabled,
     pirate: () => settings.pirate?.enabled && settings.schedule.pirate,
     shop: () => settings.loop.dailies && settings.dailies.enabled,

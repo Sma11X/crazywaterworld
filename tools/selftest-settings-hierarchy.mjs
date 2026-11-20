@@ -222,7 +222,7 @@ test('英雄、藏品、装备各有唯一设置入口，原有分组书签指�
     }
   }
   for (const [id, keys] of Object.entries({
-    'hero-recruit': ['schedule.freeRecruit', 'schedule.ticketRecruit', 'schedule.heroAdRecruit', 'schedule.heroRecruitRewards'],
+    'hero-recruit': ['schedule.freeRecruit', 'schedule.heroAdRecruit', 'schedule.heroRecruitRewards'],
     appointments: ['appointments.enabled', 'appointments.priorities'],
     'antique-recruit': ['schedule.freeAntiqueRecruit', 'schedule.antiqueAdRecruit', 'schedule.antiqueRecruitRewards'],
   })) assert.deepEqual(new Set(f.editor.groups.get(id).fields.map(field => field.key)), new Set(keys));

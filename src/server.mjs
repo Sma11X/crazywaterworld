@@ -2610,7 +2610,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           }
           if (category === 'daily') {
             const flags = nativeTaskValues(settings, session.loop.tasks);
-            const daily = await surveyDailies(client, protocolFor(client), { config, player: session.player, settings });
+            const daily = await surveyDailies(client, protocolFor(client), { config, player: session.player, settings, allowRecruitTickets: false });
             const tasks = selectTaskSettings(await surveyTasks(client, protocolFor(client), { config, player: session.player }), settings);
             const actions = [...tasks.plan];
             const trialNotes = [];

@@ -568,8 +568,19 @@ try {
       assert.throws(() => exportAutomationSettings(settings), error => !!error.fields['treasure.chaseWindows']);
     }
   });
+  test('版本34的用券单抽在读取、导入和旧页面保存时移除，保留免费招募选择', () => {
+    const expected = defaultSettings();
+    expected.schedule.freeRecruit = true;
+    const old = structuredClone(expected);
+    old.schedule.ticketRecruit = true;
+    fs.writeFileSync(file, JSON.stringify({ version: 34, accounts: { old: { settingsVersion: 34, revision: 1, settings: old } } }));
+    assert.deepEqual(loadAutomationSettings('old', { file }).settings, expected);
+    assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 34, settings: old }), expected);
+    assert.deepEqual(saveAutomationSettings('old', old, { file, revision: 1 }).settings, expected);
+    assert(!Object.hasOwn(nativeTaskValues(expected, old.schedule), 'ticketRecruit'));
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 34);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 35);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

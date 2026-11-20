@@ -1024,7 +1024,7 @@ function configRender() {
   const staticFields=new Set(groups.flatMap(g=>g.fields.map(f=>f.key)));
   // These switches used to determine the order of the numbered schedule bookmarks.
   const movedCombatTasks = new Set(['arena', 'leagueCollect', 'leaguePassRewards']);
-  const tasks = (configEditor.data.tasks ?? []).filter(task => !mapped.has(task.key)&&!hiddenFields.has('schedule.'+task.key)&&!activityOwnedSettings.has('schedule.'+task.key)&&(!staticFields.has('schedule.'+task.key)||movedCombatTasks.has(task.key))).map(task => ['freeRecruit', 'ticketRecruit'].includes(task.key) ? { ...task, group: '招募' } : task);
+  const tasks = (configEditor.data.tasks ?? []).filter(task => !mapped.has(task.key)&&!hiddenFields.has('schedule.'+task.key)&&!activityOwnedSettings.has('schedule.'+task.key)&&(!staticFields.has('schedule.'+task.key)||movedCombatTasks.has(task.key))).map(task => task.key === 'freeRecruit' ? { ...task, group: '招募' } : task);
   const destinations = { '联盟': ['cityWar', '联盟城战'], '海面': ['building', '建筑'], '领奖': ['rewards', '任务与领奖'],
     '周期活动': ['daily-weekly', '周期活动'], '限时活动': ['river-series', '限时 · 联动系列'], '藏品': ['antique-recruit', '藏品招募'],
     '招募': ['hero-recruit', '英雄招募'], '日常': ['daily-actions', '日常行动'], '挑战': ['daily-challenges', '挑战与扫荡'] };

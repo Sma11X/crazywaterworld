@@ -179,7 +179,7 @@ export const DAILY_DRIVERS = {
     id: 1002,
     title: '招募英雄',
     probes: [['OnWaterRequest', {}], ['RecruitInfoRequest', {}, probe => !recruitmentWait(probe('OnWaterRequest'))]],
-    evaluate({ task, probe, items, now, config }) {
+    evaluate({ task, probe, items, now, config, allowRecruitTickets = true }) {
       const remaining = Math.max(0, task.targetProgress - task.progress);
       if (remaining === 0) return { status: 'done' };
       const reason = recruitmentWait(probe('OnWaterRequest'));
@@ -190,14 +190,15 @@ export const DAILY_DRIVERS = {
       if (info && info.freeEndTimeSeconds <= now) {
         actions.push({ request: 'RecruitStartRequest', body: { way: 1 }, response: 'RecruitStartResponse', cost: '免费次数', note: '英雄免费招募' });
       }
-      const ticketName = displayMaterial(config, RECRUIT_ITEM);
-      const tickets = items.get(RECRUIT_ITEM) ?? 0;
-      const singles = Math.min(remaining - actions.length, tickets);
-      for (let i = 0; i < singles; i += 1) {
-        actions.push({ request: 'RecruitStartRequest', body: { way: 2 }, response: 'RecruitStartResponse', cost: `${ticketName} x1`, note: '单抽' });
-      }
-      if (actions.length === 0) {
-        return { status: 'blocked', reason: `免费次数未好，且没有${ticketName}（需要 ${remaining} 次）` };
+      if (allowRecruitTickets) {
+        const ticketName = displayMaterial(config, RECRUIT_ITEM);
+        const singles = Math.min(remaining - actions.length, items.get(RECRUIT_ITEM) ?? 0);
+        for (let i = 0; i < singles; i += 1) {
+          actions.push({ request: 'RecruitStartRequest', body: { way: 2 }, response: 'RecruitStartResponse', cost: `${ticketName} x1`, note: '单抽' });
+        }
+        if (!actions.length) return { status: 'blocked', reason: `免费次数未好，且没有${ticketName}（需要 ${remaining} 次）` };
+      } else if (!actions.length) {
+        return { status: 'blocked', reason: '等待下次免费招募' };
       }
       if (actions.length < remaining) {
         return { status: 'partial', reason: `只有 ${actions.length}/${remaining} 次可做`, actions };
@@ -352,13 +353,13 @@ function lowPower(power) {
 }
 
 // 只读调研：跑一遍前置请求，给出每个日常任务能不能做、要发什么。
-export async function surveyDailies(client, protocol, { config = null, player = null, timeout = 8000, includeTask = () => true, probeGift = true, idle = false, settings = null } = {}) {
+export async function surveyDailies(client, protocol, { config = null, player = null, timeout = 8000, includeTask = () => true, probeGift = true, idle = false, allowRecruitTickets = true, settings = null } = {}) {
   const daily = await client.request('DailyTaskInfoRequest', {}, 'DailyTaskInfoResponse', timeout);
   const tasks = (daily.dailyTask ?? []).filter(task => includeTask(task.id)).map((task) => describeDailyTask(task, config));
   const needsAction = task => task.id === 1005 && idle && settings?.arena
     ? task.progress < settings.arena.dailyBattleLimit : task.progress < task.targetProgress;
   const unfinished = id => tasks.some(task => task.id === id && task.progress < task.targetProgress);
-  const itemList = !idle || unfinished(1002) ? await client.request('AllItemRequest', {}, 'AllItemResponse', timeout) : null;
+  const itemList = allowRecruitTickets && unfinished(1002) ? await client.request('AllItemRequest', {}, 'AllItemResponse', timeout) : null;
   const items = new Map();
   for (const item of itemList?.items ?? []) {
     const id = item.itemId ?? item.id;
@@ -416,7 +417,7 @@ export async function surveyDailies(client, protocol, { config = null, player = 
     }
     let verdict;
     try {
-      verdict = normalize(driver.evaluate({ task, probe, items, ruby, now, config, player, settings, client, dailyResetTime: daily.dailyResetTime }));
+      verdict = normalize(driver.evaluate({ task, probe, items, ruby, now, config, player, settings, client, allowRecruitTickets, dailyResetTime: daily.dailyResetTime }));
     } catch (error) {
       verdict = { status: 'error', reason: error.message };
     }
