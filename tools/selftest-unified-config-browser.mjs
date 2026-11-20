@@ -78,9 +78,10 @@ try {
   {
     const history = page.locator('#config-history-dialog');
     const action = name => history.getByRole('button', { name, exact: true });
+    const record = name => history.locator('.history-record').filter({ hasText: name });
     const preview = async name => {
       await page.locator('#config-history-open').click();
-      await history.locator('.history-record').filter({ hasText: name }).getByRole('button').click();
+      await record(name).getByRole('button', { name: '查看与恢复' }).click();
     };
     await page.locator('#config-history-save').click();
     await history.getByLabel('配置名称').fill('日常方案');
@@ -122,6 +123,33 @@ try {
     assert.equal(loadAutomationSettings('config-a').settings.factory.keepStock, 334);
     await page.reload(); await openConfig();
     console.log('通过：命名快照、差异、跨账号隔离、草稿取回修正和恢复版本冲突');
+
+    const beforeDelete = loadAutomationSettings('config-a');
+    const wrongAccount = await fetch(base + '/api/settings/history/delete?account=config-b', {
+      method: 'POST', body: JSON.stringify({ confirm: true, id: entries[0].id }),
+    });
+    assert.equal(wrongAccount.ok, false);
+    await page.locator('#config-history-open').click();
+    const draftDelete = record('待补水位').getByRole('button', { name: '删除' });
+    page.once('dialog', dialog => dialog.dismiss());
+    await draftDelete.click();
+    assert.deepEqual(await list('config-a'), entries);
+    page.once('dialog', dialog => dialog.accept());
+    await draftDelete.click();
+    await record('待补水位').waitFor({ state: 'detached' });
+    assert.deepEqual(await list('config-a'), [entries[1]]);
+    assert.equal(await history.getByRole('status').isVisible(), false);
+    assert((await history.boundingBox()).height < 200, '一条记录的弹窗应紧凑');
+    await page.setViewportSize({ width: 320, height: 800 });
+    assert(await history.evaluate(node => node.scrollWidth <= node.clientWidth));
+    page.once('dialog', dialog => dialog.accept());
+    await record('日常方案').getByRole('button', { name: '删除' }).click();
+    await history.getByText('暂无历史配置。').waitFor();
+    assert.deepEqual(await list('config-a'), []);
+    assert.deepEqual(loadAutomationSettings('config-a'), beforeDelete);
+    await action('关闭').click();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    console.log('通过：取消删除、逐条删除草稿和快照、空列表及窄屏布局');
   }
   assert.equal(await page.locator('#tabs [data-tab=idle], #tab-idle').count(), 0);
   assert.equal(await page.locator('#tabs [data-tab=lineups]').count(), 1);

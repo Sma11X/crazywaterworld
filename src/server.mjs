@@ -2354,10 +2354,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         json({ itemIds, reason: view.reason });
         return;
       }
-      if (route === 'GET /api/settings/history' || route === 'POST /api/settings/history') {
+      if (['GET /api/settings/history', 'POST /api/settings/history', 'POST /api/settings/history/delete'].includes(route)) {
         const { account } = resolve(parsed);
         if (account.id !== parsed.searchParams.get('account')) throw Error('请选择当前游戏账号');
         res.setHeader('cache-control', 'no-store');
+        if (route === 'POST /api/settings/history/delete') {
+          const payload = jsonBody();
+          needConfirm(payload);
+          json({ entries: settingsHistory.remove(account.id, payload.id) });
+          return;
+        }
         if (req.method === 'GET' && !parsed.searchParams.has('id')) {
           json({ entries: settingsHistory.list(account.id) });
           return;

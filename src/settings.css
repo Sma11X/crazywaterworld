@@ -181,19 +181,22 @@
   .config-row { min-height:52px }
 }
 
-#config-history-dialog { width:min(660px,calc(100% - 24px)); max-height:85dvh; padding:20px; overflow:auto; border:1px solid var(--border); border-radius:14px; color:var(--foreground); background:var(--background) }
-#config-history-title { font-size:18px; font-weight:700 }
-#config-history-status { margin:6px 0 12px; color:var(--muted-foreground); overflow-wrap:anywhere }
-#config-history-body,.history-differences { display:grid; gap:8px }
+#config-history-dialog { width:min(480px,calc(100% - 24px)); max-height:85dvh; padding:14px; gap:10px; overflow:auto; border:1px solid var(--border); border-radius:14px; color:var(--foreground); background:var(--background) }
+#config-history-title { margin:0; font-size:18px; font-weight:700; overflow-wrap:anywhere }
+#config-history-status { margin:0; color:var(--muted-foreground); overflow-wrap:anywhere }
+#config-history-status:empty,#config-history-body:empty { display:none }
+#config-history-body,.history-differences { display:grid; gap:6px }
 .history-record,.history-change { padding:10px; border:1px solid var(--border); border-radius:8px; overflow-wrap:anywhere }
-.history-record { display:flex; align-items:center; justify-content:space-between; gap:8px }
+.history-record { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; padding:8px 10px }
+.history-record-info { flex:1 1 140px; min-width:0 }
+.history-record-actions { display:flex; gap:6px; margin-left:auto }
 .history-record small,.history-change p { display:block; margin-top:4px; color:var(--muted-foreground) }
 .history-name { display:grid; gap:6px }
 .history-name input { padding:8px; border:1px solid var(--border); border-radius:6px }
-#config-history-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:14px }
-.history-action { min-height:36px; padding:6px 10px; border:1px solid var(--border); border-radius:7px }
+#config-history-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px }
+.history-action { min-height:32px; padding:4px 8px; border:1px solid var(--border); border-radius:7px }
 .history-action.primary { background:var(--primary); color:var(--primary-foreground) }
-.history-record .history-action { flex:none }
+.history-delete { color:var(--destructive) }
 #config-history-dialog[aria-busy=true] .history-action { opacity:.55; cursor:wait }
 @media (max-width:768px) { .history-action { min-height:44px } }
 .history-full { padding:8px 10px; border:1px solid var(--border); border-radius:8px }
