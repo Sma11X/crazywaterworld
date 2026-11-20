@@ -91,7 +91,7 @@ import { appointments } from './appointments.mjs';
 import { surveyDailies, runDailies, formatSurvey, canClaimDailyReward } from './dailies.mjs';
 import { dailySingleState, addDailyOptions, runDailySingle } from './daily-single.mjs';
 import { surveyTasks, runTasks, formatTaskPlan, selectTaskSettings } from './tasks.mjs';
-import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, inventoryStockRows, planWorld, runWorldRound, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
+import { makeTypeResolver, displayBuilding, weekFactoryInfo, surveyWorld, inventoryStockRows, planWorld, runWorldRound, speedUpProduction, SPEED_UP_ITEM, submitResidentOrder, rerollResidentOrder, watchResidentRefreshes, formatWorldPlan, formatFieldReport, loadMapAsset } from './world.mjs';
 import { runLoop, formatLoopRound, formatLoopStep } from './loop.mjs';
 import { describeLogError } from './log-errors.mjs';
 import { classifyLog } from './log-categories.mjs';
@@ -1848,6 +1848,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const now = Date.now() / 1000;
     const result = {
       serverNow:survey.serverNow,
+      accelerators: survey.stockKnown ? survey.have(SPEED_UP_ITEM) : null,
       population: `${survey.population}/${survey.maxPopulation}`,
       farms: survey.buildings.filter(b => b.type === '农田').map(b => {
         const productId = b.farm?.productId || null;
@@ -1877,11 +1878,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           ? timing.factoryQueue(b, [...queue, ...planned.map(step => step.body)]).jobs : [];
         const finishes = new Map(schedule.map(entry => [entry.job, entry.finish]));
         let canEstimate = queueKnown && (!queue.length || queue.some(job => job?.finishTime > 0));
-        const jobs = queue.map((job, index) => {
+        const jobs = queue.map(job => {
+          const index = job?.idx ?? 0;
           const finishTime = Number.isFinite(job?.finishTime) && job.finishTime > 0 ? job.finishTime : null;
           if (!finishTime && !finishes.has(job)) canEstimate = false;
           return {
-            index: Number.isSafeInteger(job?.idx) && job.idx >= 0 ? job.idx : index,
+            index: Number.isSafeInteger(index) && index >= 0 ? index : null,
             productId: job?.productId || null,
             name: job?.productId ? displayMaterial(config, job.productId) : '产物未同步',
             icon: job?.productId ? materialIcon(job.productId) : null,
@@ -4012,6 +4014,23 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           session.worldRead = job; session.worldReadSpeedUp = allowAccelerators;
         }
         json(await session.worldRead);
+        return;
+      }
+      if (route === 'POST /api/world/production-speed') {
+        const payload = jsonBody();
+        needConfirm(payload);
+        const { session } = scoped_(parsed);
+        const { client, player, generation } = session;
+        const enabled = () => client?.connected && session.client === client && session.player === player
+          && session.generation === generation && !session.paused && !session.productionSyncRequired;
+        const result = await enqueue(session, async () => {
+          if (!enabled()) throw new Error('请先连接并同步当前账号，再使用加速器');
+          const result = await speedUpProduction(client, protocolFor(client), payload, { player, enabled });
+          session.worldRead = null;
+          emit(session, result.confirmed ? 'info' : 'warn', result.label, { worldUpdated: true });
+          return result;
+        }, '手动生产加速');
+        json(result);
         return;
       }
       if (route === 'POST /api/world/order/submit' || route === 'POST /api/world/order/reroll') {

@@ -66,6 +66,10 @@
   --header-h: 97px;
 }
 
+@media (max-width: 768px) {
+  :root { --text-sm: 0.8125rem; --text-sm--line-height: 1.45; }
+}
+
 html[data-theme="dark"] {
   color-scheme: dark;
   --background: oklch(0.145 0 0);
@@ -397,36 +401,46 @@ html[data-theme="dark"] {
 
 }
 
-/* 四列以上的表格在窄屏变成一行一张卡片，避免内容被挤成竖排。 */
-@container main (max-width: 600px) {
-  :is(.table-stack, .sea-records) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .table-stack :is(table, tbody, tr) { display: block; width: 100%; }
-  .table-stack tr { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
-  .table-stack tr:last-child { border-bottom: 0; }
-  .table-stack td { display: block; position: relative; min-height: 1.5rem; padding: 0.25rem 0 0.25rem 5.5rem; border: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
-  .table-stack td::before { content: attr(data-label); position: absolute; left: 0; top: 0.3125rem; width: 5rem; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 400; line-height: 1.4; }
-  .table-stack td:first-child { padding-left: 0; font-weight: 500; }
-  .table-stack td:first-child::before { display: none; }
-  .table-stack td:empty { display: none; }
-}
-
-/* 海面的小表共用表头，工厂和订单在窄屏按记录换行。 */
-:is(#world-factories, #world-orders, #production-plan-result) th { height:2rem; padding-inline:0.625rem; color:var(--muted-foreground); font-size:0.75rem; }
-:is(#world-factories, #world-orders, #production-plan-result) td { padding:0.25rem 0.625rem; overflow-wrap:anywhere; }
+/* 建筑、订单与排产共用的小表。 */
+:where(#world-factories, #world-orders, #production-plan-result) th { height:2rem; padding-inline:0.625rem; color:var(--muted-foreground); font-size:0.75rem; }
+:where(#world-factories, #world-orders, #production-plan-result) td { padding:0.25rem 0.625rem; overflow-wrap:anywhere; }
 @container main (max-width: 600px) {
   #production-plan-result .plan-demand-table td { padding:0; }
-  #production-plan-result .table-stack td:not(:first-child) { padding-inline-start:5.5rem; }
-  .sea-records :is(table, tbody) { display: block; }
-  .sea-records tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem 0.75rem; align-items: start; padding: 0.5rem 0.625rem; }
-  .sea-records tbody tr.factory-detail[hidden] { display: none; }
-  :is(#world-factories, #world-orders) .sea-records td { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.375rem; min-width: 0; padding: 0; }
-  .sea-records td::before { content: attr(data-label); color: var(--muted-foreground); font-size: 0.75rem; }
-  .sea-records td:first-child { font-weight: 600; }
-  .sea-records td:first-child::before, #world-orders td:last-child::before { content: none; }
-  .world-factory-section td:first-child, .world-factory-section td:nth-child(4), #world-orders td:nth-child(n+3) { grid-column: 1 / -1; }
-  .world-farm-section td:nth-child(n+3), .world-factory-section .factory-detail td { grid-column:1 / -1; }
-  .world-factory-section .factory-detail td { font-weight: normal; }
-  .world-farm-section th { white-space: normal; }
+}
+
+/* 窄屏下每条记录独占一行，让字段名与可换行的值各占一列。 */
+@container main (max-width: 46.5rem) {
+  :is(.table-stack, .sea-records) thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  :is(.table-stack, .sea-records) :is(table, tbody) { display:block; width:100%; }
+  :is(.table-stack, .sea-records) td { display:grid; grid-template-columns:var(--record-label, 5rem) minmax(0, 1fr); align-items:baseline; gap:0.375rem; min-width:0; padding:0; border:0; white-space:normal; overflow-wrap:anywhere; text-align:start; }
+  :is(.table-stack, .sea-records) td > * { min-width:0; max-width:100%; justify-self:start; }
+  :is(.table-stack, .sea-records) td::before { content:attr(data-label); font-size:0.75rem; font-weight:400; color:var(--muted-foreground); }
+  :is(.table-stack, .sea-records) td:first-child { display:block; font-weight:600; }
+  :is(.table-stack, .sea-records) td:first-child::before { content:none; }
+  .table-stack tbody tr { display:grid; gap:0.25rem; padding:0.5rem 0; }
+  #production-plan-result .table-stack tbody tr { padding-inline:0.625rem; }
+  .table-stack td:empty { display:none; }
+
+  .sea-records { --record-label:3.75rem; }
+  .sea-records tbody tr { display:grid; grid-template-columns:minmax(0, 1fr) fit-content(48%); gap:0.25rem 0.5rem; align-items:center; padding:0.5rem 0.625rem; border:0; }
+  .sea-records tbody tr + tr { border-top:1px solid var(--border); }
+  .sea-records td { grid-column:1 / -1; align-items:start; }
+  .sea-records td:has(.plan-material-roots)::before { line-height:1.5rem; }
+  .sea-records td:first-child { grid-column:1; grid-row:1; }
+  :is(.world-factory-section, .world-slot-section) td:nth-child(3),
+  :is(.world-farm-section, #world-orders) td:nth-child(2) {
+    grid-column:2; grid-row:1; grid-template-columns:auto minmax(0, 1fr); justify-self:end; font-size:0.75rem;
+  }
+  .world-factory-section td:nth-child(2) { grid-column:1; grid-row:2; }
+  .world-factory-section td:nth-child(5) { grid-column:2; grid-row:2; grid-template-columns:auto minmax(0, 1fr); justify-self:end; }
+  .world-factory-section .factory-detail td { grid-column:1 / -1; font-weight:400; }
+  .sea-records .factory-toggle { max-width:100%; height:auto; min-height:2.5rem; text-align:start; white-space:normal; }
+  .sea-records .factory-toggle > span:last-child { min-width:0; overflow-wrap:anywhere; }
+}
+
+@media (max-width:768px) and (pointer:coarse) {
+  [data-slot=button]:is([data-size=sm], [data-size=default]), .hosting-controls #loop-every { min-height:2.75rem; }
+  #theme-trigger { min-width:2.75rem; min-height:2.75rem; }
 }
 
 /* 只放必须盖过工具类的规则。 */

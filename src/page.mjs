@@ -1513,12 +1513,58 @@ function worldProductionTimer(finishTime, readyText, activeText = '剩余 ') {
   return timer;
 }
 
+const pendingProductionSpeeds = new Set();
+function updateProductionSpeedButton(button, now) {
+  const { productionSpeedUntil, speedStock, speedKey } = button.dataset;
+  const minutes = Math.max(0, Math.ceil((Number(productionSpeedUntil) - now) / 60));
+  const cost = Math.min(minutes, Number(speedStock));
+  const pending = pendingProductionSpeeds.has(speedKey);
+  button.hidden = !minutes;
+  button.disabled = !cost || pending || snapshot.paused || disconnected.has(current);
+  button.textContent = pending ? '加速中…' : cost > 0 ? '加速 ×' + cost
+    : speedStock === '' ? '库存未同步' : '加速器不足';
+  button.setAttribute('aria-label', button.title + '，' + button.textContent);
+  button.dataset.speedCost = String(cost);
+}
+
+function productionSpeedButton(target, stock, label) {
+  const button = component('ui-button');
+  const account = current, key = JSON.stringify([account, target.kind, target.buildingId, target.index]);
+  button.type = 'button';
+  button.title = '使用加速器加速' + label + '，每个缩短 1 分钟';
+  button.dataset.productionSpeedUntil = String(target.finishTime);
+  button.dataset.speedStock = Number.isSafeInteger(stock) && stock >= 0 ? String(stock) : '';
+  button.dataset.speedKey = key;
+  const now = () => (Date.now() + orderClockOffset) / 1000;
+  updateProductionSpeedButton(button, now());
+  button.onclick = async () => {
+    if (current !== account || !account) return;
+    updateProductionSpeedButton(button, now());
+    if (button.disabled) return;
+    const maxUse = Number(button.dataset.speedCost);
+    pendingProductionSpeeds.add(key);
+    updateProductionSpeedButton(button, now());
+    try {
+      const result = await call('/api/world/production-speed', { method: 'POST',
+        body: JSON.stringify({ ...target, maxUse, confirm: true }) });
+      if (current === account) $('hint').textContent = result.label;
+    } catch (error) {
+      if (current === account) reportError(error, '手动生产加速');
+    } finally {
+      try { if (current === account) await refreshManualWorld(true); }
+      finally { pendingProductionSpeeds.delete(key); updateWorldProductionTimers(); }
+    }
+  };
+  return button;
+}
+
 function updateWorldProductionTimers() {
   for (const node of document.querySelectorAll('[data-production-finish-at]')) {
     node.textContent = worldProductionTime(Number(node.dataset.productionFinishAt),
       node.dataset.productionReadyText, node.dataset.productionActiveText);
   }
   const now = (Date.now() + orderClockOffset) / 1000;
+  for (const button of document.querySelectorAll('[data-production-speed-until]')) updateProductionSpeedButton(button, now);
   for (const badge of document.querySelectorAll('[data-factory-active-until]')) {
     if (Number(badge.dataset.factoryActiveUntil) <= now) {
       badge.textContent = '待收取';
@@ -1537,7 +1583,7 @@ function factoryProduct(job, recipes, num = 1) {
   return planMaterialList([{ id: job.productId, name: job.name, icon: job.icon, num }], recipes);
 }
 
-function factoryProductionQueue(factory, recipes) {
+function factoryProductionQueue(factory, recipes, accelerators) {
   const section = el('section', 'factory-game-section');
   section.appendChild(el('h3', null, '游戏生产格'));
   const known = Array.isArray(factory.jobs) && factory.queueKnown !== false;
@@ -1570,6 +1616,10 @@ function factoryProductionQueue(factory, recipes) {
         const time = el('div', 'factory-finish');
         time.append(el('span', 'dim', '完成时间'), el('span', null, factoryFinishClock.format(job.finishTime * 1000)));
         slot.appendChild(time);
+        if (badge.dataset.factoryActiveUntil && job.productId && Number.isSafeInteger(job.index)) {
+          slot.appendChild(productionSpeedButton({ kind: 'factory', buildingId: factory.buildingId, index: job.index,
+            productId: job.productId, finishTime: job.finishTime }, accelerators, job.name || job.productId));
+        }
       }
     } else {
       slot.classList.add('factory-empty');
@@ -1640,7 +1690,7 @@ function factoryCurrentProduction(factory, recipes) {
   return current;
 }
 
-function factoryProductionSection(factories, expanded, recipes) {
+function factoryProductionSection(factories, expanded, recipes, accelerators) {
   const headers = ['建筑', '类型', '等级', '当前产物', '自动生产', '游戏排队'];
   const result = table(headers, factories.map(b => {
     const button = component('ui-factory-toggle');
@@ -1675,7 +1725,7 @@ function factoryProductionSection(factories, expanded, recipes) {
       clear(cell);
       if (open) {
         const sections = el('div', 'factory-detail-sections');
-        sections.append(factoryProductionQueue(factory, recipes), factoryPlannedProduction(factory, recipes));
+        sections.append(factoryProductionQueue(factory, recipes, accelerators), factoryPlannedProduction(factory, recipes));
         cell.appendChild(sections);
       }
     };
@@ -1746,7 +1796,7 @@ function renderWorld(data) {
   clear(fbox);
   if (data.factories?.length) {
     const factories = [...data.factories].sort((a, b) => a.buildingId.localeCompare(b.buildingId, 'zh-CN', { numeric: true }));
-    fbox.appendChild(factoryProductionSection(factories, expanded, recipes));
+    fbox.appendChild(factoryProductionSection(factories, expanded, recipes, data.accelerators));
   }
   if (data.farms?.length) {
     const plots = [...data.farms].sort((a, b) => a.plot.localeCompare(b.plot, 'zh-CN', { numeric: true }));
@@ -1754,6 +1804,12 @@ function renderWorld(data) {
       let status = plot.status || '未同步';
       if (plot.productId && plot.ripeTime > 0) {
         status = worldProductionTimer(plot.ripeTime, '已成熟', '生长中 · 剩余 ');
+        if (plot.state === 'growing' && plot.ripeTime > (Date.now() + orderClockOffset) / 1000) {
+          const controls = el('div', 'production-speed-controls');
+          controls.append(status, productionSpeedButton({ kind: 'farm', buildingId: plot.plot,
+            productId: plot.productId, finishTime: plot.ripeTime }, data.accelerators, plot.productName || plot.productId));
+          status = controls;
+        }
       } else if (plot.state === 'building' && plot.finishTime > 0) {
         status = worldProductionTimer(plot.finishTime, '待竣工', '建造中 · 剩余 ');
       } else if (plot.productId) {
@@ -1817,7 +1873,7 @@ function refreshManualWorld(force = false) {
   const version = ++worldVersion;
   worldRead = { account, version };
   $('world-view').textContent = '正在读取海面数据…';
-  call('/api/world').then(data => {
+  return call('/api/world').then(data => {
     if (version === worldVersion && current === account) renderWorld(data);
   }).catch(error => {
     if (version === worldVersion && current === account) {
@@ -1854,15 +1910,16 @@ function putCell(td, spec) {
   }
   if ('cell' in spec || spec.cells) {
     const list = spec.cells ?? [{ name: spec.text, icon: spec.cell }];
-    if (spec.prefix) td.appendChild(el('span', 'dim', spec.prefix));
+    const value = el('div');
+    if (spec.prefix) value.appendChild(el('span', 'dim', spec.prefix));
     for (const entry of list) {
       const who = el('span', 'who-cell');
       if (entry?.icon) who.appendChild(iconEl(entry.icon, 26, entry.name));
       who.appendChild(el('span', null, entry ? entry.name + (entry.num != null ? ' x' + fmt(entry.num) : '') : spec.text));
-      td.appendChild(who);
-      td.appendChild(document.createTextNode(' '));
+      value.append(who, ' ');
     }
-    if (!list.length) td.appendChild(el('span', 'dim', '齐'));
+    if (!list.length) value.appendChild(el('span', 'dim', '齐'));
+    td.appendChild(value);
     return;
   }
   td.textContent = spec.text || '';

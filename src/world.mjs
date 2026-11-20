@@ -1450,6 +1450,50 @@ export async function submitResidentOrder(client, protocol, { index, orderKey, c
   return { index, label: '已' + entry.step.label + '，获得' + prize, reward };
 }
 
+export async function speedUpProduction(client, protocol, target, { player, enabled }) {
+  const { kind, buildingId, index, productId, finishTime, maxUse } = target;
+  const farm = kind === 'farm';
+  if ((!farm && kind !== 'factory') || typeof buildingId !== 'string' || !buildingId
+    || typeof productId !== 'string' || !productId || !Number.isSafeInteger(finishTime) || finishTime <= 0
+    || !Number.isSafeInteger(maxUse) || maxUse <= 0
+    || (!farm && (!Number.isSafeInteger(index) || index < 0 || index > 2147483647))) {
+    throw new Error('请刷新后选择正在生产的格子或生长中的农田');
+  }
+  const request = farm ? 'FarmSpeedUpRequest' : 'SpeedUpFactoryProduceRequest';
+  if (!protocol[request]) throw new Error('当前游戏协议不支持这项加速');
+  if (!enabled() || !player) throw new Error('账号连接已变化，请刷新建筑一览');
+  const bag = farmInventory(normalize(await client.request('AllItemRequest', {}, 'AllItemResponse')));
+  const useNum = Math.min(maxUse, bag.get(SPEED_UP_ITEM) ?? 0);
+  if (!useNum) throw new Error('加速器库存为 0');
+  const speedUp = { type: SPEED_UP_ITEM_TYPE, useNum };
+  const step = {
+    kind: farm ? 'farm' : 'speedUpProduce', request, manualCheck: true,
+    body: farm ? { buildingId, param: speedUp } : { buildingId, index, speedUp },
+    verify: { productId, finishTime }, costs: [{ id: SPEED_UP_ITEM, num: useNum }],
+    label: buildingId + ' · 加速' + productId,
+  };
+  const { results: [entry] } = await runWorld(client, protocol, { actions: [step] }, { player, enabled, allowMutate: true });
+  if (!entry?.ok) throw new Error(entry?.error || '账号状态已变化，已取消加速');
+  if (entry.status !== 'confirmed') return { confirmed: false, label: step.label + '，结果待同步' };
+  const spent = entry.step.costs[0].num;
+  const result = { confirmed: true, useNum: spent, label: step.label + '，已使用 ' + spent + ' 个加速器' };
+  if (farm || !enabled()) return result;
+  // The game's factory button collects this factory's finished products after acceleration.
+  try {
+    const water = normalize(await client.request('OnWaterRequest', {}, 'OnWaterResponse'));
+    const factory = water.building?.find(b => b.buildingId === buildingId)?.factory;
+    if (factory?.finishedProducts?.length && enabled()) {
+      await confirmFactoryProductionBeforeHarvest(client, protocol, buildingId, { player, enabled });
+      if (!enabled()) return result;
+      const reply = await client.request('GainFactoryProduceRequest', { buildingId }, 'GainFactoryProduceResponse');
+      result.label += reply?.products?.asset?.length ? '，已收取成品' : '，成品领取结果待同步';
+    }
+  } catch (error) {
+    result.label += '，成品领取待核对：' + error.message;
+  }
+  return result;
+}
+
 // 逐条执行。同类动作失败就跳过该类的剩余动作；被服务端拒过的具体动作记进 rejected，
 // 循环模式下后续轮次不再重发（否则每轮都会骚扰一次同一个必败请求）。
 export async function runWorld(client, protocol, plan, {
@@ -1585,26 +1629,28 @@ export async function runWorld(client, protocol, plan, {
           if (prior && Date.now() < prior.until) { results.push({step,skipped:true,reason:prior.pending?'前次目标调整待确认':'目标调整冷却中'}); continue; }
           checks.set(step.body.buildingId,{until:Date.now()+300000,pending:true});
         }
-        let waterSnapshot;
-        if (step.kind === 'speedUpProduce' && step.verify) {
+        let waterSnapshot, checkSpeedTime;
+        if (step.verify && (step.kind === 'speedUpProduce' || step.request === 'FarmSpeedUpRequest')) {
           waterSnapshot = normalize(await client.request('OnWaterRequest', {}, 'OnWaterResponse'));
-          const factory = waterSnapshot.building?.find(b => b.buildingId === step.body.buildingId)?.factory;
-          const job = factory?.factoryQ?.find(row => (row.idx ?? 0) === step.body.index);
-          const serverNow = Math.floor((Date.now() + (client.serverClockOffsetMs || 0)) / 1000);
-          if (job?.productId !== step.verify.productId || job.finishTime !== step.verify.finishTime || job.finishTime <= serverNow)
-            throw new AutomationSkip('目标生产格已变化或完工，等待重新检查');
-          const useNum = Math.min(step.body.speedUp.useNum, Math.ceil((job.finishTime - serverNow) / 60));
-          if (useNum < step.body.speedUp.useNum) actual = { ...step, body: { ...step.body, speedUp: { ...step.body.speedUp, useNum } },
-            costs: [{ id: SPEED_UP_ITEM, num: useNum }],
-            label: `使用 ${useNum} 个加速器加速${step.displayFactory}生产` };
+          const building = waterSnapshot.building?.find(b => b.buildingId === step.body.buildingId);
+          const farm = step.request === 'FarmSpeedUpRequest';
+          const jobs = building?.factory?.factoryQ?.filter(row => (row.idx ?? 0) === step.body.index);
+          const job = farm ? building?.farm : jobs?.length === 1 ? jobs[0] : null;
+          const finishTime = farm ? job?.ripeTime : job?.finishTime;
+          const minutesLeft = () => Math.ceil((finishTime - Math.floor((Date.now() + (client.serverClockOffsetMs || 0)) / 1000)) / 60);
+          if (job?.productId !== step.verify.productId || finishTime !== step.verify.finishTime || minutesLeft() <= 0)
+            throw new AutomationSkip('目标生产格或农田已变化或完成，请刷新后再试');
+          const field = farm ? 'param' : 'speedUp';
+          const speedUp = step.body[field], useNum = Math.min(speedUp.useNum, minutesLeft());
+          if (useNum < speedUp.useNum) actual = { ...step, body: { ...step.body, [field]: { ...speedUp, useNum } },
+            costs: [{ id: SPEED_UP_ITEM, num: useNum }], label: step.manualCheck ? step.label : `使用 ${useNum} 个加速器加速${step.displayFactory}生产` };
+          checkSpeedTime = () => {
+            if (!enabled(step.kind) || minutesLeft() < useNum) throw new AutomationSkip('状态或剩余时间已变化，请重新加速');
+          };
         }
         ticket = await prepareAction?.(actual, { waterSnapshot });
         prepared = true;
-        if (step.kind === 'speedUpProduce' && step.verify) {
-          const serverNow = Math.floor((Date.now() + (client.serverClockOffsetMs || 0)) / 1000);
-          if (Math.ceil((step.verify.finishTime - serverNow) / 60) < actual.body.speedUp.useNum)
-            throw new AutomationSkip('剩余生产时间已变化，等待重新计算加速器数量');
-        }
+        checkSpeedTime?.();
         if (!enabled(step.kind) || (!step.manualCheck && !worldActionAllowed(getSettings?.() ?? settings, actual, config))) {
           if (prepared) await cancelAction?.(actual, ticket, { notSent: true });
           if(step.request==='SetFactoryAutoProduceRequest')nativeTargetChecks.get(client)?.delete(step.body.buildingId);
@@ -1626,7 +1672,7 @@ export async function runWorld(client, protocol, plan, {
         } else {
           // 没有配套 Response：静默即成功，回包是 PromptResponse 就是被拒。
           dispatched = writePending = true;
-          const sent = await client.sendWatch(step.request, actual.body, { window });
+          const sent = await client.sendWatch(step.request, actual.body, { window, beforeSend: checkSpeedTime });
           writePending = false;
           entry = { step: actual, ok: true, sent };
           if (step.request === 'SetFactoryAutoProduceRequest') {

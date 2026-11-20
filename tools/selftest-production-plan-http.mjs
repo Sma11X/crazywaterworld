@@ -33,7 +33,8 @@ const { watchHeroRaidPushes } = await import('../src/hero-raid-automation.mjs');
 const { captureSpendOperation } = await import('../src/spend-evidence.mjs');
 const { beginOrderMaterialSpend, pendingOrderMaterialSpends } = await import('../src/order-reservations.mjs');
 const requests = ['OnWater', 'AllItem', 'AllResource', 'GameEffect', 'MonthCard', 'AllHero', 'WeekInfo', 'WeekOrderInfo', 'CargoShips', 'GuildOrder', 'RadarInfo'];
-const protocol = createDeclaredProtocol(requests.flatMap(name => [name + 'Request', name + 'Response']));
+const protocol = createDeclaredProtocol([...requests.flatMap(name => [name + 'Request', name + 'Response']),
+  'SpeedUpFactoryProduceRequest', 'FarmSpeedUpRequest', 'GainFactoryProduceRequest', 'GainFactoryProduceResponse']);
 const states = new Map(), live = new Set(), apps = new Set();
 let sequence = 0, passed = 0;
 
@@ -187,6 +188,78 @@ try {
       assert.equal(missing.get('金属').cap, undefined);
       assert.equal(missing.get('金属').num, 5860);
       assert.equal(missing.get('ARENA_POINT').cap, 10);
+    } finally { await f.close(); }
+  });
+  await test('手动加速使用所点格的协议编号，农田可耗尽库存，重复点击、过期目标和未确认扣款均不会重发', async () => {
+    const f = await fixture();
+    try {
+      const speed = target => f.response('world/production-speed', { confirm: true, ...target });
+      const crop = { kind: 'farm', buildingId: '1农田', productId: '小麦', finishTime: f.state.now + 660, maxUse: 6 };
+      assert.equal((await speed(crop)).status, 400);
+      assert.equal(f.state.logins, 0);
+      await f.api('connect', {});
+      const { client, preferences } = f.session();
+      preferences.loop.world = preferences.farm.enabled = preferences.factory.enabled = false;
+      preferences.resources.keepAccelerators = 500;
+      const [factory, farm] = f.state.responses.OnWaterRequest.building;
+      const job = { productId: '面包', finishTime: f.state.now + 174 };
+      const active = { kind: 'factory', buildingId: factory.buildingId, index: 0, ...job, maxUse: 6 };
+      factory.factory.factoryQ.push({ idx: 12, productId: '盐', finishTime: f.state.now + 1000 }, job, { idx: 5, productId: '面包' });
+      farm.farm = { productId: crop.productId, ripeTime: crop.finishTime, plantTime: f.state.now - 60 };
+      const stock = { itemId: '加速器', num: 6 };
+      f.state.responses.AllItemRequest.items.push(stock);
+      const world = await f.api('world');
+      assert.equal(world.accelerators, 6);
+      assert.equal(world.factories[0].jobs[1].index, 0, '省略的协议零号格不等于数组位置');
+      const writes = [];
+      let apply = true;
+      client.sendWatch = async (name, body, options) => {
+        options.beforeSend();
+        writes.push({ name, body });
+        if (!apply) return;
+        if (name === 'SpeedUpFactoryProduceRequest') {
+          assert.deepEqual(body, { buildingId: active.buildingId, index: 0, speedUp: { type: 2, useNum: 3 } });
+          stock.num -= body.speedUp.useNum;
+          factory.factory.factoryQ.splice(1, 1);
+          factory.factory.finishedProducts.push({ id: '面包', num: 1 });
+        } else {
+          assert.equal(name, 'FarmSpeedUpRequest');
+          stock.num -= body.param.useNum;
+          farm.farm.ripeTime -= body.param.useNum * 60;
+        }
+      };
+      const read = client.request.bind(client);
+      client.request = async (name, body, ...rest) => {
+        if (name !== 'GainFactoryProduceRequest') return read(name, body, ...rest);
+        assert.equal(rest[0], 'GainFactoryProduceResponse');
+        writes.push({ name, body });
+        return { products: { asset: factory.factory.finishedProducts.splice(0) } };
+      };
+      assert.equal((await speed({ ...active, index: 5 })).status, 400, '排队格不可加速');
+      assert.equal((await speed({ ...crop, productId: '过期作物' })).status, 400);
+      assert.equal((await speed({ ...crop, maxUse: 0 })).status, 400);
+      assert.equal(writes.length, 0);
+      const pair = await Promise.all([speed(active), speed(active)]);
+      assert.deepEqual(pair.map(r => r.status).sort(), [200, 400]);
+      assert.match(pair.find(r => r.status === 200).data.label, /使用 3 个加速器，已收取成品/);
+      assert.equal(factory.factory.factoryQ[0].idx, 12);
+      assert.deepEqual(writes[1], { name: 'GainFactoryProduceRequest', body: { buildingId: factory.buildingId } });
+      const partial = await speed(crop);
+      assert.equal(partial.status, 200, JSON.stringify(partial.data));
+      assert.deepEqual(writes[2], { name: 'FarmSpeedUpRequest', body: { buildingId: crop.buildingId, param: { type: 2, useNum: 3 } } });
+      assert.equal(partial.data.confirmed, true);
+      assert.equal(stock.num, 0);
+      assert.equal((await speed({ ...crop, finishTime: farm.farm.ripeTime })).status, 400);
+      stock.num = 7;
+      assert.equal((await speed(crop)).status, 400, '部分加速后的旧截止时间失效');
+      apply = false;
+      const fresh = { ...crop, finishTime: farm.farm.ripeTime, maxUse: 1 };
+      const unknown = await speed(fresh);
+      assert.equal(unknown.data.confirmed, false);
+      assert.equal(writes[3].body.param.useNum, 1, '加速量不超过点击时显示的消耗');
+      assert.equal((await speed(fresh)).status, 400);
+      assert.equal(writes.length, 4, '尚未确认的消费不能重复发送');
+      assert.equal(preferences.resources.keepAccelerators, 500);
     } finally { await f.close(); }
   });
   await test('真实HTTP保留全部当前订单与完整库存并保持零游戏写入', async () => {
