@@ -539,8 +539,7 @@ summary.plan-material-label::after { width:12px; height:12px }
 .account-add-body .phone-help { padding-top:16px }
 @media (max-width:520px) {
   .account-page,.account-grid { gap:12px }
-  .account-page-heading { align-items:flex-start; gap:8px }
-  .account-page-title { gap:8px }
+  .account-page-heading,.account-page-title { gap:6px }
   .account-page-actions { gap:4px }
   .account-channel-grid { grid-template-columns:minmax(0,1fr) }
   .account-channel { min-height:88px }

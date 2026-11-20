@@ -644,7 +644,7 @@ try {
       return { controls, tabs, overflow: document.documentElement.scrollWidth > innerWidth };
     });
     assert.equal(layout.overflow, false, width + 'px 页面无横向溢出');
-    assert(layout.controls.every(item => Math.abs(item.top - layout.controls[0].top) <= 1 && item.height >= 40 && item.left >= 0 && item.right <= width && !item.overflow), JSON.stringify({ width, layout }));
+    assert(layout.controls.every(item => Math.abs(item.top - layout.controls[0].top) <= 1 && item.height === 32 && item.left >= 0 && item.right <= width && !item.overflow), JSON.stringify({ width, layout }));
     assert.equal(layout.tabs.length, 6);
     assert(layout.tabs.every(item => item.visible && !item.overflow && Math.abs(item.top - layout.tabs[0].top) <= 1), JSON.stringify({ width, layout }));
     assert.equal(await mobile.evaluate(() => [...document.querySelectorAll('.config-subtabs,.config-families')].filter(node => node.getClientRects().length).every(bar => {

@@ -247,10 +247,10 @@ export function accountPage() {
     <div className="account-page-heading">
       <div className="account-page-title"><h2 className="text-xl font-semibold">账号</h2><span id="account-count" className="dim" aria-live="polite">正在读取</span></div>
       <div className="account-page-actions">
-        <Button id="import-accounts" type="button" variant="outline">导入账号</Button>
+        <Button id="import-accounts" type="button" variant="outline" aria-label="导入账号"><span>导入<span className="max-sm:hidden">账号</span></span></Button>
         <input id="import-accounts-file" type="file" accept=".json,application/json" aria-label="选择账号备份文件" hidden />
-        <Button id="export-accounts" type="button" variant="outline" aria-haspopup="dialog" aria-controls="account-export-dialog">导出账号</Button>
-        <Button id="account-add" type="button" aria-haspopup="dialog" aria-controls="account-add-dialog"><Plus aria-hidden="true" />添加账号</Button>
+        <Button id="export-accounts" type="button" variant="outline" aria-label="导出账号" aria-haspopup="dialog" aria-controls="account-export-dialog"><span>导出<span className="max-sm:hidden">账号</span></span></Button>
+        <Button id="account-add" type="button" aria-label="添加账号" aria-haspopup="dialog" aria-controls="account-add-dialog"><Plus aria-hidden="true" /><span>添加<span className="max-sm:hidden">账号</span></span></Button>
       </div>
     </div>
     <p className="dim">新账号默认不挂机，点击「开始挂机」后才会持续运行；每个账号可通过「登录设置」单独配置自动重连策略。</p>

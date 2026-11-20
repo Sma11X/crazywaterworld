@@ -84,6 +84,28 @@ try {
     await page.locator('#tabs [data-tab="account"]').click();
     const cards = page.locator('#accounts .account-card');
     await cards.nth(0).getByRole('button', {name:'区服管理'}).waitFor();
+    const heading = page.locator('.account-page-heading');
+    const title = await heading.locator('h2').boundingBox();
+    const count = await heading.locator('#account-count').boundingBox();
+    for (const name of ['导入账号', '导出账号', '添加账号']) {
+      const button = await heading.getByRole('button', { name, exact: true }).boundingBox();
+      const centerY = button.y + button.height / 2;
+      assert.ok([title, count].every(box => centerY >= box.y && centerY <= box.y + box.height),
+        width + 'px账号标题、数量及操作保持同一行');
+      if (width < 768) assert.equal(button.height, 32, width + 'px手机工具栏使用紧凑按钮');
+    }
+    if (width < 768) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      for (const selector of ['#loop-every', '#logs-open', '#import-accounts']) {
+        const hit = await page.locator(selector).evaluate(control => {
+          const box = control.getBoundingClientRect();
+          const target = control.closest('label') ?? control;
+          return [-21, 21].every(offset => target.contains(document.elementFromPoint(
+            box.x + box.width / 2, box.y + box.height / 2 + offset)));
+        });
+        assert.ok(hit, width + 'px触屏点击控件上下边缘可命中 ' + selector);
+      }
+    }
     if (width === 1280) {
       await cards.nth(0).getByText('连接后读取资源').waitFor();
       assert.deepEqual(logins, [], '恢复账号页只显示保存的角色资料');
@@ -229,8 +251,11 @@ try {
         const box = actions.getBoundingClientRect();
         return [...actions.children].filter(button => !button.hidden).map(button => {
           const rect = button.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(button);
+          const text = range.getBoundingClientRect();
           return { top: rect.top, fits: rect.left >= box.left - 1 && rect.right <= box.right + 1,
-            textFits: button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight };
+            textFits: text.left >= rect.left && text.right <= rect.right && text.top >= rect.top && text.bottom <= rect.bottom };
         });
       });
       assert.ok(layout.every(button => button.fits && button.textFits), width + 'px按钮及文字完整可见');
