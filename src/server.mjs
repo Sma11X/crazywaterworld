@@ -116,7 +116,7 @@ import { captureManualProductionMaterialState } from './order-reservations.mjs';
 import { createStageTask } from './stages.mjs';
 import { createChallengeRun } from './challenge-automation.mjs';
 import { runAction } from './actions.mjs';
-import { accountId, loadStore, saveStore, upsertAccount, removeAccount, setActive, pickAccount, describeAccount, revealAccount, rememberSeen, DATA_DIR } from './accounts.mjs';
+import { accountId, loadStore, saveStore, loginProfiles, matchingProfile, upsertAccount, removeAccount, setActive, pickAccount, describeAccount, revealAccount, rememberSeen, DATA_DIR } from './accounts.mjs';
 import { ACCOUNT_BACKUP_MAX_BYTES, exportAccountBackup, previewAccountImport, importAccountBackup } from './account-backup.mjs';
 import { startCapture, stopCapture, captureState, inspectCaptureRecovery, recoverCapture, DEFAULT_PROXY_PORT } from './capture.mjs';
 import { createPhoneLogin, loadDeviceProfile, saveDeviceProfile, DEVICE_PROFILE_PATH } from './phone-login.mjs';
@@ -187,6 +187,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   const globalLog = [];
   const streams = new Set();
   const sessions = new Map();
+  const hostingChanges = new Map();
+  const worldReads = new Map();
   let closing = false;
   let settingsWatchStarted = false;
   const resources = resourceUpdater || (resourceUpdates ? createResourceUpdater({ onEvent: ({ level, message }) => emit(null, level, message) }) : null);
@@ -391,42 +393,55 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
 
   async function readPhoneWorlds(credential, { signal } = {}) {
+    const identity = accountId(credential);
+    while (worldReads.has(identity) || hostingChanges.has(identity)) {
+      await (worldReads.get(identity) ?? hostingChanges.get(identity)).catch(() => {});
+    }
     if (closing) throw new Error('控制台已关闭');
     signal?.throwIfAborted();
-    const session = sessions.get(accountId(credential));
-    if (session?.connecting) await session.connecting.catch(() => {});
+    const profiles = loginProfiles(loadStore(), credential);
+    const session = profiles.map(profile => sessions.get(profile.id)).find(s => s && !s.paused);
+    if (session?.connecting) {
+      await session.connecting.catch(() => {});
+      return readPhoneWorlds(credential, { signal });
+    }
     signal?.throwIfAborted();
     const activeClient = session?.client;
     if (activeClient?.connected && !session.paused) {
       const generation = session.generation;
-      return readJob(session, () => {
+      return readJob(session, async () => {
         signal?.throwIfAborted();
         if (closing || session.client !== activeClient || !activeClient.connected || session.generation !== generation || session.paused) {
           throw new Error('账号连接已变化，请重新读取角色列表');
         }
-        return listWorlds(activeClient);
+        return { ...await listWorlds(activeClient), player: describeRole(session.player) };
       });
     }
     const client = new GameClient({ url: credential.url, protocol: currentProtocol() });
+    let release;
+    worldReads.set(identity, new Promise(resolve => { release = resolve; }));
     phonePreviewClients.add(client);
     const stop = () => client.stop();
     signal?.addEventListener('abort', stop, { once: true });
     try {
       // 只登录最近区服并查询列表，选择阶段不逐个进入其他区服。
-      await client.connect({ ...credential.login, worldId: 0 });
+      const response = await client.connect({ ...credential.login, worldId: 0 });
       signal?.throwIfAborted();
       if (closing) throw new Error('控制台已关闭');
-      return await listWorlds(client);
+      return { ...await listWorlds(client), player: describeRole(response.playerInfo) };
     } finally {
       signal?.removeEventListener('abort', stop);
       client.stop();
       phonePreviewClients.delete(client);
+      worldReads.delete(identity);
+      release();
     }
   }
 
   async function readPhoneRoles(entry, options) {
     try {
       const worlds = await readPhoneWorlds(entry.credential, options);
+      entry.player = worlds.player;
       const previous = new Map(entry.choices.map(choice => [choice.worldId, choice.id]));
       const seen = new Set();
       entry.choices = worlds.recentWorlds.filter(world => {
@@ -440,16 +455,41 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     }
   }
 
+  // 旧采集记录的 worldId=0 表示最近登录。添加其他角色前，先绑定旧记录的真实入口。
+  function pinLegacyWorld(store, entry) {
+    const legacy = loginProfiles(store, entry.credential).find(profile => !Number(profile.login.worldId));
+    if (!legacy) return;
+    const choices = entry.choices;
+    const seen = legacy.lastSeen;
+    const known = seen?.worldId && choices.filter(c => c.role.worldId === seen.worldId && c.role.nickname === seen.nickname);
+    const choice = choices.find(c => legacy.roleId && uidText(c.role.id) === legacy.roleId)
+      ?? (known?.length === 1 ? known[0] : choices.find(c => uidText(c.role.id) === uidText(entry.player?.id)));
+    if (choice) {
+      legacy.login = { ...legacy.login, worldId: choice.worldId };
+      legacy.roleId = uidText(choice.role.id);
+      legacy.loginFrameHex = null;
+    }
+  }
+
   function roleChoices(entry, store) {
+    pinLegacyWorld(store, entry);
     const idOfAccount = accountId(entry.credential);
-    const existing = store.accounts.find(account => account.id === idOfAccount);
-    return entry.choices.map(choice => ({
-      id: choice.id, accountId: idOfAccount, userName: entry.userName,
-      nickname: choice.role.nickname || '未命名角色', level: choice.role.level ?? null, power: choice.role.power ?? null,
-      worldId: choice.worldId, worldName: choice.worldName,
-      roleWorldId: choice.role.worldId || choice.worldId, roleWorldName: choice.role.worldName || choice.worldName,
-      matched: Boolean(existing), existingTitle: existing ? describeAccount(existing).title : null,
-    }));
+    return entry.choices.map(choice => {
+      const existing = matchingProfile(store, entry.credential, choice.worldId);
+      return {
+        id: choice.id, accountId: idOfAccount, userName: entry.userName,
+        nickname: choice.role.nickname || '未命名角色', level: choice.role.level ?? null, power: choice.role.power ?? null,
+        worldId: choice.worldId, worldName: choice.worldName,
+        roleWorldId: choice.role.worldId || choice.worldId, roleWorldName: choice.role.worldName || choice.worldName,
+        matched: Boolean(existing), existingTitle: existing ? describeAccount(existing).title : null,
+      };
+    });
+  }
+
+  function selectedSession(entry, choice) {
+    const store = loadStore();
+    pinLegacyWorld(store, entry);
+    return sessions.get(matchingProfile(store, entry.credential, choice.worldId)?.id);
   }
 
   function phonePreview(pending) {
@@ -467,13 +507,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
 
   async function saveSelectedRole(entry, choice, { sourceLabel = 'APP 登录', stopExisting = false, validateSelection = () => {} } = {}) {
-    const idOfAccount = accountId(entry.credential);
-    const session = sessions.get(idOfAccount);
+    const session = selectedSession(entry, choice);
     if (session?.connectionDrain) await session.connectionDrain;
     if (closing) throw new Error('控制台已关闭');
     validateSelection();
     const roleWorldId = choice.role.worldId || choice.worldId;
-    const previous = loadStore().accounts.find(account => account.id === idOfAccount);
+    const previous = loadStore().accounts.find(account => account.id === session?.id);
     const currentRoleId = uidText(session?.player?.playerId ?? session?.player?.id);
     const selectedRoleId = uidText(choice.role.id);
     const sameRole = currentRoleId && selectedRoleId ? currentRoleId === selectedRoleId
@@ -494,11 +533,14 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     if (closing) throw new Error('控制台已关闭');
     validateSelection();
     const store = loadStore();
-    const existing = store.accounts.find(account => account.id === idOfAccount);
-    const credential = { ...entry.credential, login: { ...entry.credential.login, worldId: choice.worldId } };
+    pinLegacyWorld(store, entry);
+    const existing = matchingProfile(store, entry.credential, choice.worldId);
+    const credential = { ...entry.credential, login: { ...entry.credential.login, worldId: choice.worldId },
+      loginFrameHex: Number(entry.credential.login.worldId) === choice.worldId ? entry.credential.loginFrameHex : null };
     const fallbackLabel = ['alipay', 'wechat', 'douyin'].includes(entry.credential.source) ? '未命名角色' : entry.userName;
     const label = existing?.label && existing.label !== existing.lastSeen?.nickname ? existing.label : choice.role.nickname || fallbackLabel;
     const { account, created } = upsertAccount(store, credential, { label });
+    account.roleId = selectedRoleId;
     account.automation = { ...account.automation, autoStart: autoStartEnabled(account), loginBlocked: false, loginRecovery: null };
     rememberSeen(account, { ...choice.role, nickname: choice.role.nickname || '未命名角色', worldId: roleWorldId });
     setActive(store, account.id);
@@ -511,7 +553,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     void startAutomaticLoop(savedSession);
     return {
       ok: true,
-      account: { ...describeAccount(account, { active: true }), status: accountStatus(savedSession) },
+      account: { ...describeAccount(account, { active: true, hasSiblingRoles: loginProfiles(store, account).length > 1 }), status: accountStatus(savedSession) },
       selectedRole: { nickname: choice.role.nickname || '未命名角色', worldId: choice.worldId, worldName: choice.worldName,
         roleWorldId, roleWorldName: choice.role.worldName || choice.worldName },
     };
@@ -642,6 +684,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       productionSyncDrain: null,
       syncingProduction: null,
       generation: 0,
+      hostingPauseRevision: 0,
       client: null,
       connecting: null,
       connectionDrain: null,
@@ -1544,6 +1587,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       throw new Error('连接已取消');
     }
     session.player = response.playerInfo || null;
+    if (account.roleId && uidText(session.player?.playerId ?? session.player?.id) !== account.roleId) {
+      client.stop();
+      session.player = null;
+      throw Object.assign(new Error('登录返回的角色与保存记录不一致，请在添加账号时重新选择角色'), { recoverable: false });
+    }
     watchResidentRefreshes(client,usageFor(session),session.player);
     client.send('LoginFinishRequest', {});
     if (readLineupRuntime(session.id).pending) {
@@ -1607,6 +1655,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   }
 
   async function connect(session, account, { backgroundRecovery = false, explicitLogin = false, loginRecoveryController = null } = {}) {
+    const identity = accountId(account);
+    while (worldReads.has(identity)) await worldReads.get(identity);
     if (closing || session.connectionDrain) throw new Error('账号正在结束当前挑战并恢复阵容，请稍后连接');
     if (session.paused) throw new Error('账号已暂停，请先恢复托管');
     const authorizedRecovery = loginRecoveryController && loginRecoveryController === session.loginRecoveryController
@@ -1915,7 +1965,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       throw new Error('抖音游戏登录报文缺少凭证字段');
     }
     const credential = { url, login: body, loginFrameHex: rawFrameHex, source: platform === 'douyin' ? 'douyin-mitm' : 'mitm', capturedAt: new Date().toISOString() };
-    const store = loadStore();
+    let store = loadStore();
+    const unpinned = loginProfiles(store, credential).find(row => !Number(row.login.worldId));
+    if (Number(body.worldId) && unpinned?.lastSeen) {
+      const worlds = await readPhoneWorlds(credential);
+      store = loadStore();
+      pinLegacyWorld(store, { credential, choices: worlds.recentWorlds.filter(row => uidText(row.role?.id)), player: worlds.player });
+      if (store.accounts.some(row => row.id === unpinned.id && !Number(row.login.worldId))) {
+        throw new Error('未能确认旧角色的登录区服，请先在账号详情加载区服并核对角色');
+      }
+    }
     const { account, created } = upsertAccount(store, credential);
     account.automation = { ...account.automation, autoStart: autoStartEnabled(account) };
     saveStore(store);
@@ -1979,7 +2038,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       const found = resolve(url);
       scoped = found.session;
       if (req.method === 'POST' && !['/api/settings', '/api/settings/validate', '/api/logs/clear',
-        '/api/connect', '/api/disconnect', '/api/accounts/pause', '/api/accounts/active', '/api/accounts/label', '/api/accounts/remove',
+        '/api/connect', '/api/disconnect', '/api/accounts/pause', '/api/accounts/active', '/api/accounts/label', '/api/accounts/remove', '/api/worlds/save-role',
         '/api/loop/stop', '/api/loop/auto-start', '/api/stages/stop', '/api/pirates/advance/stop',
         '/api/guild/mutual/stop', '/api/trials/stop'].includes(parsed.pathname)) assertSettingsReady(found.session);
       if (req.method === 'POST' && found.session.syncingProduction
@@ -2598,7 +2657,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         json({
           activeId: store.activeId,
           accounts: store.accounts.map((account) => ({
-            ...describeAccount(account, { active: account.id === store.activeId }),
+            ...describeAccount(account, { active: account.id === store.activeId, hasSiblingRoles: loginProfiles(store, account).length > 1 }),
             status: accountStatus(sessionFor(account.id)),
           })),
         });
@@ -2746,7 +2805,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!choice || payload.worldId !== undefined) throw new Error('请选择列表中的区服和角色后再保存');
         alipaySaving = true;
         try {
-          const session = sessions.get(accountId(pending.entry.credential));
+          const session = selectedSession(pending.entry, choice);
           const save = () => saveAlipayRole(pending, choice);
           const result = session && !session.paused ? await enqueue(session, save) : await save();
           // 凭证已落盘，临时浏览器清理失败也应返回已保存的账号。
@@ -2810,7 +2869,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!choice || payload.worldId !== undefined) throw new Error('请选择列表中的区服和角色后再保存');
         wechatSaving = true;
         try {
-          const session = sessions.get(accountId(pending.entry.credential));
+          const session = selectedSession(pending.entry, choice);
           const save = () => saveWechatRole(pending, choice);
           const result = session && !session.paused ? await enqueue(session, save) : await save();
           // 凭证已落盘，临时授权会话清理失败也应返回已保存的账号。
@@ -2937,7 +2996,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!selected) throw new Error('请选择列表中的区服和角色后再保存');
         pending.busy = true;
         try {
-          const session = sessions.get(accountId(selected.entry.credential));
+          const session = selectedSession(selected.entry, selected.choice);
           const save = () => {
             if (closing) throw new Error('控制台已关闭');
             if (pendingPhoneLogins.get(pending.id) !== pending || Date.now() - pending.createdAt >= PHONE_PENDING_MS) {
@@ -2966,41 +3025,19 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (typeof paused !== 'boolean') throw new Error('请选择暂停或恢复');
         if (typeof start !== 'boolean' || (start && paused)) throw new Error('开始托管需要先恢复账号');
         if (start) needConfirm(payload);
-        if (session.connectionDrain) await session.connectionDrain;
-        if (closing || sessions.get(session.id) !== session || !loadStore().accounts.some(entry => entry.id === account.id)) {
-          throw new Error('账号已移除或控制台已关闭');
-        }
-        if (!paused && !session.paused && loginRecoveryActive(session) && (!start || session.loop.running)) {
+        if (paused) {
+          session.hostingPauseRevision++;
+          await changeHosting(session, account, true, false);
           json(accountStatus(session));
           return;
         }
-        if (session.paused !== paused || (!paused && session.loginBlocked) || (paused && session.syncingProduction)) {
-          cancelLoginRecovery(session);
-          saveAutomation(account.id, { paused, ...(!paused ? { loginBlocked: false } : {}) });
-          session.paused = paused;
-          if (!paused) {
-            session.loginBlocked = false;
-            saveLoginRecovery(session, null);
-          }
-          session.generation++;
-          if (paused) {
-            requireProductionSync(session);
-            stopLoop(session, '账号暂停，结束挂机', { preserveAutoStart: true });
-            session.stages.stop('账号已暂停'); session.mutualAid.stop('账号已暂停'); for (const task of session.trials.values()) task.stop('账号已暂停');
-            await closeSessionConnection(session, { includeWorld: true });
-            emit(session, 'state', '账号已暂停，可以自行上号', { pauseChanged: true });
-          } else {
-            emit(session, 'state', '账号已恢复托管', { pauseChanged: true });
-            if (!start) await startAutomaticLoop(session);
-          }
-        }
-        if (start) {
-          const generation = session.generation;
-          if (session.loop.controller?.signal.aborted) await session.loop.job;
-          if (!closing && sessions.get(session.id) === session && generation === session.generation && !session.loop.running && !session.paused) {
-            startLoop(session, account, { explicitLogin: true });
-          }
-        }
+        const identity = accountId(account);
+        const revision = session.hostingPauseRevision;
+        const previous = hostingChanges.get(identity);
+        const change = (previous ?? Promise.resolve()).catch(() => {}).then(() => changeHosting(session, account, false, start, revision));
+        hostingChanges.set(identity, change);
+        try { await change; }
+        finally { if (hostingChanges.get(identity) === change) hostingChanges.delete(identity); }
         json(accountStatus(session));
         return;
       }
@@ -3892,10 +3929,41 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         json(await job);
         return;
       }
-      if (route === 'GET /api/worlds') {
+      if (route === 'GET /api/worlds' || route === 'POST /api/worlds/save-role') {
         const { account, session } = scoped_(parsed);
-        const instance = await ensureConnected(session, account);
-        json({ ...(await listWorlds(instance)), currentPlayer: describeRole(session.player) });
+        const payload = route.startsWith('POST') ? jsonBody() : null;
+        if (payload) needConfirm(payload);
+        const client = await ensureConnected(session, account);
+        const worlds = await readJob(session, async () => {
+          if (session.client !== client || !client.connected) throw new Error('账号连接已变化，请重新加载区服');
+          return { ...await listWorlds(client), player: describeRole(session.player) };
+        });
+        const choices = worlds.recentWorlds.filter(world => uidText(world.role?.id) && world.worldId > 0);
+        const store = loadStore();
+        const owner = store.accounts.find(row => row.id === account.id);
+        if (!owner || closing) throw new Error('账号已移除或控制台已关闭');
+        pinLegacyWorld(store, { credential: owner, choices, player: worlds.player });
+        if (!payload) {
+          json({ ...worlds, currentPlayer: worlds.player, recentWorlds: worlds.recentWorlds.map(world => ({
+            ...world, saved: Boolean(matchingProfile(store, owner, world.worldId)),
+          })) });
+          return;
+        }
+        const choice = choices.find(world => world.worldId === payload.worldId);
+        if (!choice) throw new Error('请选择该账号已有角色的登录区服');
+        const existing = matchingProfile(store, owner, choice.worldId);
+        if (existing && Number(existing.login.worldId)) {
+          saveStore(store);
+          json({ id: existing.id });
+          return;
+        }
+        const { account: saved } = upsertAccount(store, {
+          ...owner, login: { ...owner.login, worldId: choice.worldId }, loginFrameHex: null,
+        }, { label: choice.role.nickname, refreshCredentials: false });
+        saved.roleId = uidText(choice.role.id);
+        rememberSeen(saved, choice.role);
+        saveStore(store);
+        json({ id: saved.id });
         return;
       }
       // 进服自己开一条短连接，所以不会打扰控制台这边正在跑的会话。
@@ -3905,6 +3973,9 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { account, session } = scoped_(parsed);
         if (!payload.worldId) throw new Error('要指定 worldId');
         if (session.paused) throw new Error('账号已暂停，请先恢复托管');
+        if (loginProfiles(loadStore(), account).length > 1 && Number(payload.worldId) !== Number(account.login.worldId)) {
+          throw new Error('该账号已按角色托管，请在目标角色卡片切换托管');
+        }
         const client = new GameClient({ url: account.url, protocol: currentProtocol() });
         session.worldClient = client;
         try {
@@ -4385,6 +4456,62 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     if (Object.hasOwn(change, 'autoStart') && sessions.has(id)) sessions.get(id).loop.autoStart = change.autoStart;
   }
 
+  async function pauseHosting(session) {
+    cancelLoginRecovery(session);
+    session.paused = true;
+    session.generation++;
+    saveAutomation(session.id, { paused: true });
+    requireProductionSync(session);
+    stopLoop(session, '账号暂停，结束挂机', { preserveAutoStart: true });
+    session.stages.stop('账号已暂停');
+    session.mutualAid.stop('账号已暂停');
+    for (const task of session.trials.values()) task.stop('账号已暂停');
+    await closeSessionConnection(session, { includeWorld: true });
+    emit(session, 'state', '账号已暂停，可以自行上号', { pauseChanged: true });
+  }
+
+  async function changeHosting(session, account, paused, start, revision) {
+    if (session.connectionDrain) await session.connectionDrain;
+    const checkTarget = () => {
+      if (closing || sessions.get(session.id) !== session || !loadStore().accounts.some(row => row.id === account.id)) {
+        throw new Error('账号已移除或控制台已关闭');
+      }
+    };
+    checkTarget();
+    if (paused) {
+      if (!session.paused || session.syncingProduction) await pauseHosting(session);
+      return;
+    }
+    if (revision !== session.hostingPauseRevision) return;
+    if (!session.paused && loginRecoveryActive(session) && (!start || session.loop.running)) return;
+    const siblings = loginProfiles(loadStore(), account).filter(row => row.id !== account.id);
+    if (start && siblings.length && !session.loop.running) validateLoopStart(session);
+    for (const sibling of siblings) {
+      if (revision !== session.hostingPauseRevision) return;
+      const old = sessionFor(sibling.id);
+      if (!old.paused) await pauseHosting(old);
+      await Promise.allSettled([old.connectionDrain, old.productionSyncDrain, old.loop.job, old.loginRecoveryJob]);
+    }
+    checkTarget();
+    if (revision !== session.hostingPauseRevision) return;
+    if (session.paused || session.loginBlocked) {
+      cancelLoginRecovery(session);
+      saveAutomation(account.id, { paused: false, loginBlocked: false });
+      session.paused = session.loginBlocked = false;
+      saveLoginRecovery(session, null);
+      session.generation++;
+      emit(session, 'state', '账号已恢复托管', { pauseChanged: true });
+      if (!start) await startAutomaticLoop(session);
+    }
+    if (start) {
+      const generation = session.generation;
+      if (session.loop.controller?.signal.aborted) await session.loop.job;
+      if (!closing && sessions.get(session.id) === session && generation === session.generation && !session.loop.running && !session.paused) {
+        startLoop(session, account, { explicitLogin: true });
+      }
+    }
+  }
+
   function autoStartEnabled(account) {
     return account.automation?.autoStart ?? account.automation?.enabled ?? false;
   }
@@ -4416,12 +4543,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     emit(session, 'info', reason);
   }
 
-  function startLoop(session, account, options = {}) {
+  function validateLoopStart(session, options = {}) {
     assertSettingsReady(session);
-    if (session.paused) throw new Error('账号已暂停，请先恢复托管');
-    if (session.loginBlocked && !options.explicitLogin && !loginRecoveryActive(session)) throw new Error('账号在别处登录，请先恢复托管或重新开始挂机');
-    const loop = session.loop;
-    if (loop.running) throw new Error('这个账号的挂机已在运行');
     const current = settingsView(session);
     validateRuntimeSettings(current.settings, loadConfigSafe());
     // 网页开始/恢复挂机一律持续循环；兼容旧配置时不再继承有限轮数。
@@ -4430,7 +4553,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     const everySeconds = options.everySeconds ?? current.settings.loop.everySeconds;
     if (!Number.isSafeInteger(rounds) || rounds < 0 || rounds > 100000) throw new Error('轮数必须是 0–100000 的整数');
     if (!Number.isSafeInteger(everySeconds) || everySeconds < 1 || everySeconds > 86400) throw new Error('间隔秒数需要为 1–86400 的整数');
-    if (!Object.values(loop.tasks).some(Boolean) && !hasExtraWork(session.preferences) && !(session.preferences?.radar?.runEnabled !== false && session.preferences?.radar?.enabled) && !session.preferences?.worldBoss?.enabled && !treasureAutomationEnabled(session.preferences) && !cityWarEnabled(session.preferences) && !forgeEnabled(session.preferences) && !antiqueEnabled(session.preferences)) throw new Error('请至少启用一个自动项目');
+    if (!Object.values(session.loop.tasks).some(Boolean) && !hasExtraWork(session.preferences) && !(session.preferences?.radar?.runEnabled !== false && session.preferences?.radar?.enabled) && !session.preferences?.worldBoss?.enabled && !treasureAutomationEnabled(session.preferences) && !cityWarEnabled(session.preferences) && !forgeEnabled(session.preferences) && !antiqueEnabled(session.preferences)) throw new Error('请至少启用一个自动项目');
+    return { current, rounds, everySeconds };
+  }
+
+  function startLoop(session, account, options = {}) {
+    if (session.paused) throw new Error('账号已暂停，请先恢复托管');
+    if (session.loginBlocked && !options.explicitLogin && !loginRecoveryActive(session)) throw new Error('账号在别处登录，请先恢复托管或重新开始挂机');
+    const loop = session.loop;
+    if (loop.running) throw new Error('这个账号的挂机已在运行');
+    const { current, rounds, everySeconds } = validateLoopStart(session, options);
     // Persist only continuous runs for restart. Reserve this account before login awaits.
     if (current.revision && (current.settings.loop.rounds !== rounds || current.settings.loop.everySeconds !== everySeconds)) {
       const next = structuredClone(current.settings);

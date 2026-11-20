@@ -203,7 +203,7 @@ export function templates() {
             <div><dt>战力</dt><dd data-account-field="power" /></div>
           </dl>
         </CardContent>
-        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button><Button type="button" variant="outline" size="sm" className="px-2" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-2" data-account-action="loop">开始挂机</Button></div></CardFooter>
+        <CardFooter className="account-card-footer items-stretch"><p className="dim" data-account-field="seen" /><div className="account-card-actions"><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="details" aria-haspopup="dialog" aria-controls="account-info-dialog">查看详情</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="login-settings" aria-haspopup="dialog" aria-controls="account-login-dialog">登录设置</Button><Button type="button" variant="outline" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="select">切换账号</Button><Button type="button" size="sm" className="px-1 text-xs sm:px-1.5 sm:text-sm" data-account-action="loop">开始挂机</Button></div></CardFooter>
       </Card>
     </template>
   </>)

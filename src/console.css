@@ -357,7 +357,7 @@ html:has(.world-map-detail:modal) { overflow:hidden }
 .account-card-world>[data-account-field=world] { min-width:0 }
 .account-card-footer { flex-direction:column; align-items:stretch; gap:16px; margin-top:auto }
 .account-card-footer [data-account-field=seen] { font-size:12px; overflow-wrap:anywhere }
-.account-card-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px }
+.account-card-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:4px }
 .account-card-menu { position:relative }
 .account-card-menu>summary { width:32px; height:32px; justify-content:center }
 .account-card-menu>summary::after { display:none }

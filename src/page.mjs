@@ -778,8 +778,10 @@ function renderHostingControl() {
   $('loop-toggle').textContent = snapshot.loopStopping ? '暂停中…' : running ? '暂停挂机' : '开始挂机';
   $('loop-toggle').title = snapshot.paused ? '请先恢复托管' : running ? '停止自动循环，保留游戏连接和手动操作' : '按已保存的任务持续挂机，直到手动暂停';
   $('account-pause').disabled = pending || ((resume || !hosting) && (!!snapshot.loopStopping || loopAccount !== current));
-  $('account-pause').textContent = resume ? '恢复托管' : hosting ? '暂停托管' : '开始托管';
+  const switchRole = snapshot.paused && accounts.find(account => account.id === current)?.hasSiblingRoles;
+  $('account-pause').textContent = switchRole ? '切换并托管' : resume ? '恢复托管' : hosting ? '暂停托管' : '开始托管';
   $('account-pause').title = resume ? '重新登录游戏并按已保存的任务开始持续托管' : hosting ? '停止任务并断开游戏连接，方便自行上号' : '按已保存的任务开始持续托管';
+  if (switchRole) $('account-pause').title = '先暂停同一账号的其他角色，再按本角色的配置开始托管';
 }
 function renderAccountSelect() {
   appointmentsAccountChanged();
@@ -1917,7 +1919,8 @@ function renderAccounts() {
       channel: accountChannel(account.source),
       status: connectingAccounts.has(account.id) ? '连接中…' : connectionStatus(status),
       role: seen?.nickname || '待连接读取',
-      world: seen?.worldName || '待连接读取',
+      world: account.hasSiblingRoles && account.loginWorldName && seen?.worldName && seen.worldName !== account.loginWorldName
+        ? account.loginWorldName + '（现 ' + seen.worldName + '）' : seen?.worldName || account.loginWorldName || '待连接读取',
       level: seen?.level == null ? '—' : String(seen.level),
       power: seen?.power == null ? '—' : fmt(seen.power),
       seen: seen?.at ? '更新于 ' + when(seen.at) : '连接后更新角色资料',
@@ -1940,6 +1943,10 @@ function renderAccounts() {
     loop.disabled = hostingActions.has(account.id) || !!status.loopStopping || (!running && account.id === current && loopAccount !== current);
     loop.textContent = status.loopStopping ? '暂停中…' : hostingActions.has(account.id) ? '处理中…' : running ? '暂停挂机' : '开始挂机';
     loop.title = running ? '停止此账号自动循环，保留游戏连接和手动操作' : '按此账号已保存的任务持续挂机，直到手动暂停';
+    if (account.hasSiblingRoles && status.paused && !loop.disabled) {
+      loop.textContent = '切换并托管';
+      loop.title = '先暂停同一账号的其他角色，再按本角色的配置开始托管';
+    }
     if (box.children[index] !== card) box.insertBefore(card, box.children[index] || null);
   });
 }
@@ -1972,6 +1979,23 @@ async function renderWorlds() {
     const enter = smallButton('进入');
     enter.onclick = () => enterWorld(world.worldId);
     top.appendChild(enter);
+    if (role.id) {
+      const save = smallButton(world.saved ? '已添加' : '添加角色');
+      save.disabled = world.saved;
+      save.onclick = async () => {
+        save.disabled = true;
+        try {
+          await call('/api/worlds/save-role?account=' + encodeURIComponent(owner), {
+            method: 'POST', body: JSON.stringify({ confirm: true, worldId: world.worldId }),
+          });
+          if (current !== owner) return;
+          save.textContent = '已添加';
+          await loadAccounts(false);
+          renderAccounts();
+        } catch (error) { save.disabled = false; reportError(error); }
+      };
+      top.appendChild(save);
+    }
     row.appendChild(top);
     box.appendChild(row);
   }
