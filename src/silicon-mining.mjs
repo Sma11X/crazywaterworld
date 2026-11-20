@@ -45,7 +45,7 @@ function openingReason(config, player, time) {
   if (!exactAutomationId(player?.worldId) || !exactAutomationId(player?.playerId)) return '角色或区服身份未确认';
   return '';
 }
-export { openingReason as siliconOpeningReason };
+export { openingReason as siliconOpeningReason, idle as isIdleSiliconFleet };
 export { siliconInWindow };
 const pursuitEnabled = fleet => !fleet.huntEnabled && fleet.pursuit && !fleet.emptyOnly && fleet.tiers.some(tier => tier !== 'BLUE');
 export const siliconInterval = settings => settings?.silicon?.fleets?.some(fleet => fleet.enabled && (fleet.huntEnabled || pursuitEnabled(fleet))) ? 120000 : 600000;
@@ -144,6 +144,8 @@ export async function readSiliconMining(client, protocol, config, player, { sett
 }
 
 const opponentKey = player => hash([nameKey(player.nickname), player.guildIdx]);
+const protectedOpponent = (policy, player) => (policy.safePlayers ?? []).some(name => nameKey(name) === nameKey(player.nickname))
+  || (policy.safeGuilds ?? []).some(id => String(id) === String(player.guildIdx));
 export function siliconPursuitActive(snapshot, policy, settings) {
   // rewardResetTime 是服务端三日周期，不把每15分钟产奖误当作三日重置。
   const start = snapshot.reward?.rewardResetTime - 3 * 86400;
@@ -188,7 +190,7 @@ function miningCandidates(snapshot, policy, settings, state, fleet, used, planne
     for (const position of mine.positions) {
       const target = position.player;
       if (!target || target.fleetId || target.guildIdx === snapshot.guildIdx || !nameKey(target.nickname) || !integer(fleet?.power, 1) || target.power > fleet.power * (policy.maxPowerRatio ?? 100) / 100) continue;
-      if ((policy.safePlayers ?? []).some(name => nameKey(name) === nameKey(target.nickname)) || (policy.safeGuilds ?? []).map(String).includes(String(target.guildIdx))) continue;
+      if (protectedOpponent(policy, target)) continue;
       if (policy.failureLimit > 0 && (state.failures[policy.id + ':' + opponentKey(target)] ?? 0) >= policy.failureLimit) continue;
       if (policy.huntEnabled && !(policy.huntPlayers ?? []).some(name => nameKey(name) === nameKey(target.nickname))) continue;
       if (pursuit && (!state.defeated[opponentKey(target)] || snapshot.blacklist.filter(member => member.name === nameKey(target.nickname)).length !== 1)) continue;
@@ -360,8 +362,18 @@ async function reconcile(client, protocol, snapshot, ledger) {
   state.reports = state.reports.slice(-500); persistState(ledger, snapshot.worldId, state);
 }
 
-async function sendAndCheck(client, protocol, player, options, snapshot, step, counters = {}, limits = {}) {
+async function sendAndCheck(client, protocol, player, options, snapshot, step, counters = {}) {
   const { getSettings, ledger, enabled = () => true, report = () => {} } = options, settings = getSettings(), who = identity(player), today = day(snapshot.checkedAt);
+  let limits = {};
+  if (step.kind === 'siliconDispatch') {
+    counters = { siliconPetrol: step.cost, siliconDispatches: 1 };
+    if (step.opponent) {
+      const counter = 'siliconAttacks' + fleetNumber(step.buildingId);
+      const cap = settings.silicon.fleets.find(fleet => fleet.id === step.buildingId).dailyAttackLimit;
+      counters[counter] = 1;
+      if (cap > 0) limits[counter] = cap;
+    }
+  }
   const baseKey = step.kind === 'siliconDispatch' ? slotKey(snapshot.worldId, step.buildingId) : step.kind === 'siliconRetreat' ? 'silicon-retreat:' + snapshot.worldId + ':' + fleetNumber(step.buildingId) : 'silicon-' + step.kind.slice(7).toLowerCase() + ':' + snapshot.worldId + ':' + fleetNumber(step.buildingId);
   const key = step.kind === 'siliconSpeed' ? baseKey + ':' + step.mode + ':' + step.moveStartTs : baseKey;
   if (ledger.hasKey(key)) return false;
@@ -414,11 +426,18 @@ async function sendAndCheck(client, protocol, player, options, snapshot, step, c
 }
 
 function shortcutIntent(intent) {
-  if (!intent || !['dispatch', 'retreat'].includes(intent.kind)) throw Error('仅支持空位采集或撤回自己的舰队');
+  if (!intent || !['dispatch', 'attack', 'retreat'].includes(intent.kind)) throw Error('请选择采集、抢占或撤回');
   if (!integer(intent.gridId, 1)) throw Error('请选择明确的矿区');
-  if (intent.kind === 'dispatch' && !integer(intent.index)) throw Error('请选择明确的空矿位');
-  if (intent.kind === 'retreat' && !fleetNumber(intent.fleetId)) throw Error('请选择自己的采矿舰队');
-  return { kind: intent.kind, gridId: intent.gridId, ...(intent.kind === 'dispatch' ? { index: intent.index } : { fleetId: intent.fleetId }) };
+  const { kind, gridId, index, fleetId } = intent;
+  if (kind === 'retreat') {
+    if (!fleetNumber(fleetId)) throw Error('请选择自己的采矿舰队');
+    return { kind, gridId, fleetId };
+  }
+  if (!integer(index)) throw Error('请选择明确的矿位');
+  if (kind === 'dispatch') return { kind, gridId, index };
+  const { nickname, guildIdx, power } = intent.opponent ?? {};
+  if (typeof nickname !== 'string' || !nickname.trim() || !integer(guildIdx) || !integer(power)) throw Error('抢占目标未同步，请刷新矿位');
+  return { kind, gridId, index, opponent: { nickname, guildIdx, power } };
 }
 
 // 快捷操作只指定一次动作，不修改自动化开关、时段或目标策略；仍共用预算与舰队锁。
@@ -450,16 +469,28 @@ function planSiliconShortcut(snapshot, settings, ledger, client, intent, fleetId
   if (blocked) throw Error(blocked);
   const personal = mine.tier === 'BLUE', positions = mine.positions.filter(row => row.player);
   if (intent.index >= (personal ? 3 : mine.positionNum)) throw Error('矿位不存在');
-  if (personal ? positions[intent.index] : positions.some(row => row.index === intent.index)) throw Error('矿位已被占领，请刷新后选择空位');
+  const occupant = (personal ? positions[intent.index] : positions.find(row => row.index === intent.index))?.player;
+  if (intent.kind === 'dispatch' && occupant) throw Error('矿位已被占领，请刷新后选择空位');
   if (!personal && (positions.length !== mine.occupiedNum || mine.occupiedNum > mine.positionNum)) throw Error('矿位数量未同步，请刷新');
   const records = Object.values(ledger.keyRecords()).filter(record => record.details?.worldId === snapshot.worldId && record.details.active !== false);
   if (records.some(record => record.details.kind === 'siliconDispatch' && record.details.gridId === mine.gridId && record.details.index === intent.index
+    && !(personal && positions.some(position => position.player.fleetId === record.details.buildingId))
     || record.details.kind === 'siliconRetreat' && record.details.huntTarget?.gridId === mine.gridId && record.details.huntTarget?.index === intent.index)) throw Error('该矿位已有派遣或返航追击任务');
-  const intendedFuel = records.filter(record => record.details.kind === 'siliconRetreat' && record.details.huntTarget).length * snapshot.petrolCost;
+  const returningHunts = records.filter(record => record.details.kind === 'siliconRetreat' && record.details.huntTarget).length;
+  if (intent.kind === 'attack') {
+    if (personal || occupant?.fleetId || occupant?.guildIdx === snapshot.guildIdx) throw Error('仅可抢占其他玩家的公共矿位');
+    if (!occupant || occupant.nickname !== intent.opponent.nickname || occupant.guildIdx !== intent.opponent.guildIdx || occupant.power !== intent.opponent.power) throw Error('抢占目标已变化，请刷新矿位后重新选择');
+    if (protectedOpponent(policy, occupant)) throw Error('目标在这支舰队的安全名单中');
+    const pending = ledger.pendingCounters();
+    const pendingAttacks = [1, 2, 3].reduce((sum, n) => sum + (pending['siliconAttacks' + n] ?? 0), 0);
+    if (snapshot.fightTimes + pendingAttacks + returningHunts >= snapshot.maxFightTimes) throw Error('今日共享抢占次数不足');
+    if (policy.dailyAttackLimit > 0 && (ledger.snapshot().counters['siliconAttacks' + fleetNumber(fleetId)] ?? 0) >= policy.dailyAttackLimit) throw Error('这支舰队已达每日抢占上限');
+  }
+  const intendedFuel = returningHunts * snapshot.petrolCost;
   if (snapshot.fuel - pendingPetrol(ledger) - intendedFuel < snapshot.petrolCost) throw Error('汽油不足');
   return { kind: 'siliconDispatch', request: 'ChipMineSendFleetRequest', body: { gridId: mine.gridId, index: intent.index, fleetId },
-    buildingId: fleetId, gridId: mine.gridId, index: intent.index, color: mine.color, opponent: null,
-    cost: snapshot.petrolCost, costs: [{ id: '汽油', num: snapshot.petrolCost }], label: fleetId + '手动采集' + mine.name };
+    buildingId: fleetId, gridId: mine.gridId, index: intent.index, color: mine.color, opponent: occupant ?? null,
+    cost: snapshot.petrolCost, costs: [{ id: '汽油', num: snapshot.petrolCost }], label: fleetId + (occupant ? '手动抢占' : '手动采集') + mine.name };
 }
 
 export async function previewSiliconShortcut(client, protocol, config, player, rawIntent, options) {
@@ -481,6 +512,7 @@ export async function previewSiliconShortcut(client, protocol, config, player, r
   });
   const mine = snapshot.mines.find(row => row.gridId === intent.gridId);
   return { intent, checkedAt: snapshot.checkedAt, worldId: snapshot.worldId, mineName: mine?.name || '硅矿',
+    fightsRemaining: intent.kind === 'attack' && integer(snapshot.maxFightTimes) ? Math.max(0, snapshot.maxFightTimes - snapshot.fightTimes) : null,
     fuel: snapshot.fuel, cost: intent.kind === 'retreat' ? 0 : snapshot.petrolCost, fleets,
     reason: snapshot.reason || (!fleets.length ? '没有已同步的远征舰队' : ''),
     automatic: !!settings.silicon.enabled };
@@ -504,9 +536,7 @@ export async function runSiliconShortcut(client, protocol, config, player, previ
     if (!enabled() || who !== identity(player) || settings !== getSettings()) throw Error('账号或配置已变化，操作未发送');
     reserveDispatch(client, 'silicon', [fleetId]);
     let result;
-    await sendAndCheck(client, protocol, player, { ...options, config, manualShortcut: true, report: entry => { result = entry; options.report?.(entry); } }, snapshot, step,
-      intent.kind === 'dispatch' ? { siliconPetrol: step.cost, siliconDispatches: 1 } : {},
-      {});
+    await sendAndCheck(client, protocol, player, { ...options, config, manualShortcut: true, report: entry => { result = entry; options.report?.(entry); } }, snapshot, step);
     return { ...(result || { ok: false, status: 'skipped', reason: '状态已变化，操作未发送，请重新读取' }), cost: step.cost, kind: intent.kind, fleetId };
   } finally { reserveDispatch(client, 'silicon', []); active.delete(client); }
 }
@@ -678,9 +708,7 @@ export async function runSiliconMining(client, protocol, config, player, options
         constrainFuel(fresh);
         const reviewed = planSiliconMining(fresh, settings, ledger, client, options.heldForEvent).actions.find(action => action.kind === proposed.kind && action.buildingId === proposed.buildingId && action.gridId === proposed.gridId && action.index === proposed.index && hash(action.opponent) === hash(proposed.opponent) && hash(action.huntTarget) === hash(proposed.huntTarget));
         if (!reviewed) continue;
-        const counters = reviewed.kind === 'siliconDispatch' ? { siliconPetrol: reviewed.cost, siliconDispatches: 1, ...(reviewed.opponent ? { ['siliconAttacks' + fleetNumber(reviewed.buildingId)]: 1 } : {}) } : {};
-        const policy = settings.silicon.fleets.find(fleet => fleet.id === reviewed.buildingId), limits = { ...(reviewed.opponent && policy.dailyAttackLimit > 0 ? { ['siliconAttacks' + fleetNumber(reviewed.buildingId)]: policy.dailyAttackLimit } : {}) };
-        const confirmed = await sendAndCheck(client, protocol, player, { ...options, config, enabled, report }, fresh, reviewed, counters, limits);
+        const confirmed = await sendAndCheck(client, protocol, player, { ...options, config, enabled, report }, fresh, reviewed);
         if (reviewed.kind === 'siliconDispatch') {
           const key = slotKey(fresh.worldId, reviewed.buildingId);
           if (confirmed || ledger.hasKey(key)) sentPetrol.set(key, reviewed.cost);

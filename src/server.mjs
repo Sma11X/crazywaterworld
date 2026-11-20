@@ -3777,12 +3777,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         if (!enabled()) throw Error('账号或配置已变化，请重新操作');
         const quotes = session.siliconShortcutQuotes ??= new Map();
         for (const [key, quote] of quotes) if (Date.now() > quote.expiresAt && (!quote.job || quote.completed)) quotes.delete(key);
-        if (quotes.size >= 30) throw Error('待处理的确认过多，请稍后再试');
+        const previous = quotes.get(intent.previousToken);
+        if (previous && !previous.job && previous.client === client && previous.preview.intent.kind === preview.intent.kind &&
+          previous.preview.intent.gridId === preview.intent.gridId && previous.preview.intent.index === preview.intent.index &&
+          previous.preview.intent.fleetId === preview.intent.fleetId) quotes.delete(intent.previousToken);
         const token = preview.fleets.some(fleet => fleet.step) ? randomUUID() : null, expiresAt = Date.now() + 120000;
+        if (token && quotes.size >= 30) throw Error('待处理的确认过多，请稍后再试');
         if (token) quotes.set(token, { preview, expiresAt, enabled, settings, client, player, job: null });
         json({ token, expiresAt, kind: preview.intent.kind, gridId: preview.intent.gridId,
           index: preview.intent.index ?? null, mineName: preview.mineName, cost: preview.cost, fuel: preview.fuel,
-          reason: preview.reason, automatic: preview.automatic,
+          reason: preview.reason, automatic: preview.automatic, fightsRemaining: preview.fightsRemaining,
           fleets: preview.fleets.map(({ step, ...fleet }) => ({ ...fleet, available: !!step })) }); return;
       }
       if (route === 'POST /api/silicon/action') {
@@ -3800,7 +3804,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             return runSiliconShortcut(quote.client, protocolFor(quote.client), loadConfigSafe(), quote.player, quote.preview, quote.fleetId,
               { getSettings: () => quote.settings, ledger: usageFor(session), enabled: quote.enabled,
                 report: entry => emit(session, entry.ok ? 'info' : 'warn', (entry.label || '硅矿快捷操作') + '：' + (entry.reason || entry.error || '状态待确认')) });
-          }, quote.preview.intent.kind === 'dispatch' ? '手动派遣采矿' : '手动撤回采矿舰队').finally(() => { quote.completed = true; });
+          }, { dispatch: '手动派遣采矿', attack: '手动抢占矿位', retreat: '手动撤回采矿舰队' }[quote.preview.intent.kind]).finally(() => { quote.completed = true; });
         }
         json(await quote.job); return;
       }
@@ -3812,7 +3816,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           const enabled = () => session.client === client && client.connected && !session.paused && generation === session.generation && session.player === player;
           const job = readJob(session, async () => {
             if (!enabled()) throw new Error('账号连接已变化，请重新读取硅矿');
-            const view = await readSiliconOverview(client, protocolFor(client), loadConfigSafe(), player, { enabled });
+            const view = await readSiliconOverview(client, protocolFor(client), loadConfigSafe(), player, { enabled, ledger: usageFor(session) });
             if (!enabled()) throw new Error('账号连接已变化，请重新读取硅矿');
             if (view.fleetsSynced) observeOwnedFleets(session, view.fleets.map(fleet => ({ buildingId: fleet.id })), { complete: true });
             return view;

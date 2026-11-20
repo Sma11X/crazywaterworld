@@ -146,21 +146,21 @@ export function overviewPage() {
         <DialogFooter><Button id="resource-fields-action-back" variant="outline" hidden>返回选田</Button><Button id="resource-fields-action-confirm" disabled hidden>确认派遣</Button></DialogFooter>
       </dialog>
     </Panel>
-    <Panel title="硅矿概览" help="空矿位的详情浮层可选择舰队采集；自己的采矿舰队首奖后可撤回。单次派遣与撤回不会改变自动配置。自动刷新仅影响此概览；鼠标悬停、键盘聚焦或手机轻触矿位查看详情。奖励由服务器自动发放，倒计时结束后需同步确认。" titleAfter={<div className="bar"><a className="inline-link" href="#config-group-silicon">硅矿配置</a><Button id="silicon-refresh" variant="outline" size="sm" disabled>刷新硅矿</Button></div>}>
+    <Panel title="硅矿概览" help="选择矿位，在该矿区底部查看详情、选择舰队并确认操作。空位可派遣采集，其他玩家的公共矿位可抢占，自己的舰队在首奖后可撤回。每日抢占次数由所有舰队共享。" titleAfter={
+      <div className="silicon-controls">
+        <a className="inline-link" href="#config-group-silicon" aria-label="硅矿配置"><span className="silicon-control-context">硅矿</span>配置</a>
+        <Button id="silicon-refresh" variant="outline" size="sm" aria-label="刷新硅矿" disabled><span>刷新<span className="silicon-control-context">硅矿</span></span></Button>
+        <Button id="silicon-auto-refresh" size="sm" variant="outline" aria-pressed="true">自动刷新：开</Button>
+        <label className="world-refresh-setting">每<input id="silicon-refresh-seconds" aria-label="硅矿自动刷新秒数" type="number" min="5" max="300" step="1" defaultValue="30" />秒</label>
+      </div>
+    }>
       <section id="silicon-overview" aria-label="硅矿概览">
-        <div className="silicon-toolbar"><span id="silicon-status" className="dim" role="status">连接账号后读取硅矿</span><div className="world-refresh-controls"><Button id="silicon-auto-refresh" size="sm" variant="outline" aria-pressed="true">自动刷新：开</Button><label className="world-refresh-setting">每<input id="silicon-refresh-seconds" aria-label="硅矿自动刷新秒数" type="number" min="5" max="300" step="1" defaultValue="30" />秒</label></div></div>
-        <p id="silicon-feedback" className="silicon-feedback" role="status" hidden />
+        <p id="silicon-status" className="dim" role="status">连接账号后读取硅矿</p>
         <div id="silicon-summary" className="silicon-summary" />
         <div id="silicon-fleets" className="silicon-fleets" aria-label="硅矿舰队状态" />
         <div id="silicon-mines" className="silicon-mines" />
         <p id="silicon-notes" className="dim" />
       </section>
-      <aside id="silicon-slot-popover" role="dialog" aria-label="矿位详情" hidden />
-      <dialog id="silicon-action-dialog" aria-labelledby="silicon-action-title">
-        <DialogHeader><DialogTitle id="silicon-action-title">硅矿快捷操作</DialogTitle></DialogHeader>
-        <div id="silicon-action-body" />
-        <DialogFooter><Button id="silicon-action-confirm" disabled>确认操作</Button><Button id="silicon-action-cancel" variant="outline">取消</Button></DialogFooter>
-      </dialog>
     </Panel>
   </div>)
 }
