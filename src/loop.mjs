@@ -1048,15 +1048,30 @@ export async function runLoop(client, protocol, {
             publishFactoryDeadline();
           } catch (error) { factorySchedule.failed(); publishFactoryDeadline(); phaseFailure('world', '核对海面建筑状态', error); }
         }
-        if (isEnabled && enabled('cargo') && player?.level >= (config?.tables?.CargoUnlockCfg?.data[0]?.playerLevel ?? 9)) {
+        if (isEnabled && enabled('cargo')) {
+          const unlockLevel = config?.tables?.CargoUnlockCfg?.data?.[0]?.playerLevel ?? 9;
           try {
-            await serviceCargo(client, config, { enabled: () => enabled('cargo'), getSettings, ledger: usageLedger,
-              beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel, log(title, details) {
-              const entry = { title, ok: !details?.skipped, ...details };
-              summary.world.planned++;
-              summary.world.results.push(entry);
-              stepLog('world')(entry);
-            } });
+            let waitReason;
+            if (player?.level >= unlockLevel) {
+              waitReason = '已检查贸易港，暂无可交付或领取的货物';
+              await serviceCargo(client, config, {
+                enabled: () => enabled('cargo'), getSettings, ledger: usageLedger,
+                beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
+                log(title, details) {
+                  waitReason = details?.reason;
+                  const entry = { taskKey: 'cargo', title, note: title, ok: !details?.skipped, ...details };
+                  summary.world.planned++;
+                  summary.world.results.push(entry);
+                  stepLog('world')(entry);
+                },
+              });
+            } else {
+              waitReason = player?.level ? '贸易港需要角色达到 ' + unlockLevel + ' 级' : '角色等级尚未同步';
+            }
+            if (waitReason && enabled('cargo')) {
+              rewards.observe('cargo', waitReason);
+              rewards.expect('cargo', rewards.now() + Math.ceil(getEveryMs() / 1000));
+            }
           } catch (error) { phaseFailure('world', '贸易港', error); }
         }
       }
