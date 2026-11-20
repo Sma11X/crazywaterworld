@@ -449,7 +449,7 @@ try {
     assert.throws(() => importAutomationSettings(unknown), /不支持/);
   });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 18);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 19);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
@@ -463,6 +463,21 @@ try {
     assert.equal(exported.version, SETTINGS_SCHEMA_VERSION);
     assert.deepEqual(importAutomationSettings(exported), migrated);
     assert.deepEqual(importAutomationSettings(exportAutomationSettings(importAutomationSettings(exported))), migrated);
+  });
+  test('旧配置和已打开的页面移除六项锻造与套装限制，保留其他选择', () => {
+    const expected = defaultSettings();
+    Object.assign(expected.forge, { universal: true, universalReserve: 8, recipeIds: ['1001'] });
+    Object.assign(expected.antique, { suit: true, suitQualities: ['BLUE'] });
+    const old = structuredClone(expected);
+    Object.assign(old.forge, { goldReserve: 50, materialReserve: 20, dailyLimit: 1, dailyGoldLimit: 100 });
+    Object.assign(old.antique, { goldReserve: 80, dailyGoldLimit: 60 });
+    const document = { format: SETTINGS_FORMAT, version: 18, settings: old };
+    assert.deepEqual(importAutomationSettings(document), expected);
+    fs.writeFileSync(file, JSON.stringify({ version: 18, accounts: { test: { settingsVersion: 18, revision: 7, settings: old } } }));
+    assert.deepEqual(loadAutomationSettings('test', { file }).settings, expected);
+    const saved = saveAutomationSettings('test', old, { file, revision: 7 });
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)).accounts.test.settings, expected);
+    assert.deepEqual(exportAutomationSettings(saved.settings).settings, expected);
   });
   test('旧货轮开关迁移为类型多选，保留兜底和显式空选', () => {
     const all = ['ORANGE', 'PURPLE', 'BLUE'];

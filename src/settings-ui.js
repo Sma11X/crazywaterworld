@@ -54,7 +54,7 @@ function configPlacePanel(root, panel) {
   }
 }
 const configZeroHints={
- 'gather.fishingGoldReserve':'0 表示不保留强化金币。','forge.materialReserve':'0 表示不保留普通材料。','forge.universalReserve':'0 表示不保留万能材料。','forge.goldReserve':'0 表示不保留金币。',
+ 'gather.fishingGoldReserve':'0 表示不保留强化金币。','forge.universalReserve':'0 表示不保留万能材料。',
  'museum.stockThreshold':'0 表示关闭库存条件。','resources.keepAccelerators':'0 表示不保留加速器。','resources.diamondThreshold':'0 表示不保留钻石。','gold.times':'0 表示不自动付费点金。',
  'treasure.minDurabilityPercent':'0 表示不设比例门槛，零耐久仍需维修。','radar.minDurabilityPercent':'0 表示不设比例门槛，仍须有耐久。',
  'pirateHunt.minDurabilityPercent':'0 表示不设比例门槛，仍须有耐久。','heroes.keepExp':'0 表示不保留英雄经验。',
@@ -109,14 +109,14 @@ const guildShipActivityFields = [
 ];
 for (const field of guildShipActivityFields) activityOwnedSettings.add(field.key);
 const weeklyActivityFields = [
-  configField('weeklyActivity.enabled','活动总开关','switch',{help:'总挂机运行时，已选分项按服务器当日主题独立执行，即使对应普通自动化开关关闭也可参与。普通任务始终按自身开关运行；积分达标只停止本活动。各分项沿用已选对象、目标、材料保留和每日预算，不修改保存配置。停止总挂机会同时暂停军备竞赛。'}),
+  configField('weeklyActivity.enabled','活动总开关','switch',{help:'总挂机运行时，已选分项按服务器当日主题独立执行，即使对应普通自动化开关关闭也可参与。普通任务始终按自身开关运行；积分达标只停止本活动。各分项沿用对应模块已选的对象和资源使用设置，不修改保存配置。停止总挂机会同时暂停军备竞赛。'}),
   configField('schedule.armsRaceRewards','自动领奖','switch',{help:'按本人积分、房间等级、当日主题判断5档奖励；独立补给页只领标价为零的礼包。此领奖开关独立保存。'}),
   ...[
     ['farm','周一 · 种田发育','活动日独立收获和种植，不受普通农田开关限制；已选自定义种植时沿用作物目标，否则智能种植。普通联盟城市募兵按本页次数参与。种田加速仍遵守加速器保留量和消费权限。'],
     ['pet','周二 · 海兽培养','按基地 → 海兽中已选的物种范围和最高品质参与培育，按本页品质顺序选择可执行方案。未选物种时等待。'],
-    ['antique','周三 · 藏品培养','活动日独立执行藏品升星和套装经验养成，不要求开启普通养成开关。复用藏品配置中已选的升星与套装品质及目标，未选品质时等待，继续遵守金币预算及万能材料权限。'],
+    ['antique','周三 · 藏品培养','活动日独立执行藏品升星和套装经验养成，不要求开启普通养成开关。复用藏品配置中已选的升星与套装品质及目标，未选品质时等待，升星时沿用万能碎片设置。'],
     ['order','周四 · 基地订单','复用基地 → 居民订单的材料过滤、最低奖励及每日次数限制；货船和工厂加速仅按原有开关、目标及预算参与。'],
-    ['forge','周五 · 装备打造','装备打造主题当天独立领取和制造，即使普通自动锻造、领取或续产开关关闭也可执行。复用已选工厂、配方、材料保留和每日预算，按本页品质顺序选配方。其他日子或活动达标后，普通锻造仍按自身开关运行。游戏原生模式由游戏处理。'],
+    ['forge','周五 · 装备打造','装备打造主题当天独立领取和制造，即使普通自动锻造、领取或续产开关关闭也可执行。沿用已选工厂、配方和万能材料设置，按本页品质顺序选配方。其他日子或活动达标后，普通锻造仍按自身开关运行。游戏原生模式由游戏处理。'],
     ['hero','周日 · 英雄培养','英雄培养主题当天独立执行指定英雄升星，不要求开启普通英雄养成或升星开关。复用英雄名单、星级目标及材料权限；未选择英雄时等待。普通用券招募按自身开关运行。'],
   ].flatMap(([kind, label, help]) => {
     const prefix = 'weeklyActivity.' + kind;
@@ -298,20 +298,16 @@ const configGroups = [
     configField('pet.advance', '自动进阶', 'switch', { help: '对已入驻的海兽投喂进阶材料；达到喂养和等级要求后进阶。' }),
   ] },
   { id: 'forge', title: '装备自动锻造', category: 'equipment', fields: [
-    configField('forge.enabled', '自动锻造总开关', 'switch', { help: '控制普通锻造，随每轮挂机检查所选工厂。军备竞赛的装备打造独立运行：对应活动日可使用本组工厂、配方与预算领取和制造，即使本开关关闭；其他日子普通锻造仍按本开关执行。保存配置后需启动挂机；预览不执行动作。停止总挂机会暂停全部工具锻造，不会关闭游戏内已开启的原生自动锻造。' }),
+    configField('forge.enabled', '自动锻造总开关', 'switch', { help: '控制普通锻造，随每轮挂机检查所选工厂。军备竞赛的装备打造独立运行：对应活动日可在所选工厂领取装备并按所选配方制造，即使本开关关闭；其他日子普通锻造仍按本开关执行。保存配置后需启动挂机；预览不执行动作。停止总挂机会暂停全部工具锻造，不会关闭游戏内已开启的原生自动锻造。' }),
     configField('forge.buildingIds', '锻造工厂', 'multi', { catalog: 'forgeBuildings', empty: '请选择装备工厂' }),
-    configField('forge.nativeAuto', '使用游戏原生自动锻造', 'switch', { help: '开启后由游戏自己的逻辑领取和锻造，本组工具领取、续产、分解、配方、材料保留及预算均不生效，原配置保留；周活动的品质顺序和积分停止规则也不限制游戏原生。需要游戏的装备工厂自动锻造月卡权益，不会自动购买。保存后在挂机运行时同步开关并回读确认。关闭此项后，工具会关闭由本工具开启的原生开关，再按工具配置执行；如需停掉原生自动，请关闭此项并保持挂机运行到确认关闭后再停止。' }),
-    configField('forge.collect', '自动领取完工装备', 'switch', { when: d => !d.forge.nativeAuto, help: '领取所选工厂已完成的装备；达到锻造次数或金币预算上限仍可领取。只需领取时，可关闭“自动续产”。' }),
-    configField('forge.craft', '自动续产', 'switch', { when: d => !d.forge.nativeAuto, help: '工厂空闲时按下方配方、材料保留和预算继续制造。开启自动领取时，先确认装备入库再续产。' }),
+    configField('forge.nativeAuto', '使用游戏原生自动锻造', 'switch', { help: '开启后由游戏自己的逻辑领取和锻造，本组工具领取、续产、分解、配方及万能材料设置均不生效，原配置保留；周活动的品质顺序和积分停止规则也不限制游戏原生。需要游戏的装备工厂自动锻造月卡权益，不会自动购买。保存后在挂机运行时同步开关并回读确认。关闭此项后，工具会关闭由本工具开启的原生开关，再按工具配置执行；如需停掉原生自动，请关闭此项并保持挂机运行到确认关闭后再停止。' }),
+    configField('forge.collect', '自动领取完工装备', 'switch', { when: d => !d.forge.nativeAuto, help: '领取所选工厂已完成的装备。只需领取时，可关闭“自动续产”。' }),
+    configField('forge.craft', '自动续产', 'switch', { when: d => !d.forge.nativeAuto, help: '工厂空闲时按下方配方和可用材料、金币继续制造。开启自动领取时，先确认装备入库再续产。' }),
     configField('forge.decompose','自动分解','switch',{when:d=>!d.forge.nativeAuto,help:'每轮核对全部库存及穿戴、养成状态，处理所选品质的闲置未养成对象。游戏客户端本地锁定名单不可读。'}),
     configField('forge.decomposeQualities','处理品质','multi',{ parent: 'forge.decompose',catalog:'equipQualities',empty:'未选择，不处理',when:d=>!d.forge.nativeAuto && d.forge.decompose}),
-    configField('forge.recipeIds', '配方优先顺序', 'multi', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, catalog: 'forgeRecipes', empty: '请选择锻造配方', help: '按勾选先后依次尝试，使用首个满足赛季、材料和预算的配方。产出装备和星级遵守游戏随机规则。' }),
-    configField('forge.universal', '允许万能材料补足', 'switch', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, help: '仅补实际不足的对应品质材料，不用来绕过普通材料保留量。' }),
-    configField('forge.materialReserve', '普通材料保留量', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '每种', help: '一次锻造后，每种消耗的普通材料不得低于此值。' }),
+    configField('forge.recipeIds', '配方优先顺序', 'multi', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, catalog: 'forgeRecipes', empty: '请选择锻造配方', help: '按勾选先后依次尝试，使用首个符合当前赛季且材料和金币足够的配方。产出装备和星级遵守游戏随机规则。' }),
+    configField('forge.universal', '允许万能材料补足', 'switch', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, help: '普通材料不足时，使用对应品质的万能材料补足差额。' }),
     configField('forge.universalReserve', '万能材料保留量', 'number', { parent: 'forge.universal', unit: '每种', when: d => !d.forge.nativeAuto && d.forge.craft && d.forge.universal }),
-    configField('forge.goldReserve', '锻造后保留金币', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '金币' }),
-    configField('forge.dailyLimit', '每日锻造次数上限', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '次', help: '至少1次；只计本工具下单，未知结果仍占额度。' }),
-    configField('forge.dailyGoldLimit', '每日锻造金币预算', 'number', { parent: 'forge.craft', when: d => !d.forge.nativeAuto && d.forge.craft, unit: '金币', help: '至少1金币，跨轮和重启保留；不自动购买材料、不消耗钻石或加速器。' }),
   ] },
   { id: 'museum', title: '博物馆探宝', category: 'base', fields: [
     configField('museum.runEnabled', '博物馆探宝总开关', 'switch', { help: '统一暂停博物馆升级、领奖、藏品上架和探宝，保留细项选择。未选择任何执行动作时不会操作。' }),
@@ -462,8 +458,6 @@ const configGroups = [
     configField('antique.targetMasterLevel', '大师目标等级', 'number', { parent: 'antique.master', unit: '级', when: d => d.antique.master, help: '0 表示升到当前配置最高等级。' }),
     configField('antique.suit', '自动激活/升级套装', 'switch', { help: '普通套装需集齐本套装藏品；红色套装至少激活 2 件。升级消耗金币和对应颜色藏品经验。' }),
     configField('antique.suitQualities', '套装品质', 'multi', { parent: 'antique.suit', catalog: 'antiqueQualities', empty: '未选择，不升级套装', when: d => d.antique.suit }),
-    configField('antique.goldReserve', '套装升级后保留金币', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.suit }),
-    configField('antique.dailyGoldLimit', '每日套装金币预算', 'number', { parent: 'antique.suit', unit: '金币', when: d => d.antique.suit, help: '0 表示不限额；跨日重置，未确认的消耗仍占预算。' }),
   ] },
   { id: 'hero-recruit', title: '英雄招募', category: 'heroes', fields: [
     configField('schedule.heroAdRecruit','英雄广告招募','switch',{help:'每天3次，不消耗招募券或钻石。无免广告权益时按设置的等待时间领取。'}),

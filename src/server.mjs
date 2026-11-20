@@ -1562,7 +1562,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         session.productionSyncRequired = false;
         if (session.productionSyncDrain === drain) session.productionSyncDrain = null;
         emit(session, 'info', result.message + '；继续按当前状态执行已启用任务', { pauseChanged: true });
-        if (forge.factories.length) emit(session, 'info', '已同步手动操作后的装备厂，后续按当前批次和库存继续执行。历史锻造用量仍计入预算。');
+        if (forge.factories.length) emit(session, 'info', '已同步手动操作后的装备厂，后续按当前批次和库存继续执行。');
       } catch (error) {
         // 读取暂时失败可以自动重试，但不能开放任何经营写操作。
         const cause = client.closeReason;
@@ -2351,7 +2351,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           }
           if (category === 'antique') {
             const state = await readAntiqueUpgrade(client, protocolFor(client), config, session.player);
-            const plan = planAntiqueUpgrade(state, config, settings, { usage, keys: usageFor(session).keyRecords() });
+            const plan = planAntiqueUpgrade(state, config, settings, { keys: usageFor(session).keyRecords() });
             return { ...output(plan, { antiques: state.antiques.length, suits: state.suits.length }, '藏品养成'),
               antique: { count: state.antiques.length, suits: state.suits.length, masterLv: state.masterLv, gold: state.gold } };
           }
@@ -2389,7 +2389,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           if (category === 'forge') {
             const player = session.player, generation = session.generation;
             const { snapshot: state, plan } = await previewEquipmentForge(client, protocolFor(client), config, player, settings,
-              { usage, keys: usageFor(session).keyRecords(), enabled: () => session.client === client && client.connected
+              { keys: usageFor(session).keyRecords(), enabled: () => session.client === client && client.connected
                 && !session.paused && session.player === player && session.generation === generation });
             return { ...output(plan, { factories: state.buildings.length }, '装备锻造'), forge: {
               factories: plan.factories, gold: state.gold, season: state.season, forgeLevel: state.forgeLevel } };

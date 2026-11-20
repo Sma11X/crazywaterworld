@@ -138,8 +138,11 @@ try {
       assert.equal(field.when?.(draft), false, field.key + '在原生模式不可见');
     }
     draft.forge.nativeAuto = false;
-    for (const key of ['collect', 'craft', 'decompose', 'recipeIds', 'materialReserve', 'dailyLimit', 'dailyGoldLimit']) {
+    for (const key of ['collect', 'craft', 'decompose', 'recipeIds', 'universal', 'universalReserve']) {
       assert.equal(fields.find(field => field.key === 'forge.' + key).when(draft), true);
+    }
+    for (const key of ['forge.materialReserve', 'forge.goldReserve', 'forge.dailyLimit', 'forge.dailyGoldLimit', 'antique.goldReserve', 'antique.dailyGoldLimit']) {
+      assert(!groups.some(group => group.fields.some(field => field.key === key)), key);
     }
     assert.deepEqual(draft.forge, { ...saved, nativeAuto: false });
     draft.forge.craft = false;
@@ -522,7 +525,7 @@ try {
     }
     const legacy = defaultSettings();
     for (const key of retiredAutomationTasks) legacy.schedule[key] = true;
-    Object.assign(legacy.forge, { enabled: true, buildingIds: ['1装备厂'], recipeIds: ['1001'], dailyLimit: 7 });
+    Object.assign(legacy.forge, { enabled: true, buildingIds: ['1装备厂'], recipeIds: ['1001'], universalReserve: 7 });
     const normalized = validateSettings(legacy);
     assert.deepEqual(normalized.forge, legacy.forge, '兼容旧装备开关时不改已授权的锻造设置');
     for (const key of retiredAutomationTasks) {

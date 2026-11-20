@@ -21,7 +21,7 @@ export const settingsFile = () => path.join(dataDirectory(), 'automation-setting
 export const SETTINGS_FORMAT = 'crazywaterworld-automation';
 // 文件 version / 账号 settingsVersion 是格式编号，只随结构迁移调整；
 // revision 是每次保存递增的修订号，仅用于并发冲突检查，不能用作格式版本。
-export const SETTINGS_SCHEMA_VERSION = 18;
+export const SETTINGS_SCHEMA_VERSION = 19;
 const LEGACY_SETTINGS_FORMAT = 'crazywaterword-automation';
 const treasureQualityLabels = { ORANGE: '万吨货轮', PURPLE: '中型货轮', BLUE: '小型货轮' };
 export const DEMAND_SOURCES = [
@@ -92,10 +92,10 @@ export const DEFAULT_SETTINGS = {
   cityWar: { enabled: false, fleetIds: [], defenceFleetIds: [], targetMode: 'alliance', targetPriority: 'fewestAllied', cityRefs: [],
     defenceTargetMode: 'alliance', defenceTargetPriority: 'fewestAllied', defenceCityRefs: [], fleetStrategies: {}, autoRepair: false,
     nativeCommissionLimit: -1, repairBelowPercent: 80, reserveDuringWar: false, checkEverySeconds: 15 },
-  forge: { decompose: false, decomposeQualities: [], enabled: false, nativeAuto: false, collect: true, craft: true, buildingIds: [], recipeIds: [], universal: false, materialReserve: 0,
-    universalReserve: 0, goldReserve: 0, dailyLimit: 5, dailyGoldLimit: 100000, checkEverySeconds: 30 },
+  forge: { decompose: false, decomposeQualities: [], enabled: false, nativeAuto: false, collect: true, craft: true, buildingIds: [], recipeIds: [], universal: false,
+    universalReserve: 0, checkEverySeconds: 30 },
   antique: { enabled: false, activate: false, activateQualities: [], star: false, starQualities: [], targetStar: 0, universal: false,
-    master: false, targetMasterLevel: 0, suit: false, suitQualities: [], goldReserve: 0, dailyGoldLimit: 20000,
+    master: false, targetMasterLevel: 0, suit: false, suitQualities: [],
     maxActions: 20, checkEverySeconds: 60 },
 };
 
@@ -175,14 +175,13 @@ const constraints = {
   'cityWar.defenceCityRefs': strings(100),
   'cityWar.fleetStrategies': { kind: 'cityWarFleetStrategies' },
   'cityWar.repairBelowPercent': int(100, 1), 'cityWar.checkEverySeconds': int(300, 5),
-  'forge.buildingIds': strings(10), 'forge.recipeIds': strings(100), 'forge.materialReserve': int(),
-  'forge.universalReserve': int(), 'forge.goldReserve': int(), 'forge.dailyLimit': int(1000, 1),
-  'forge.dailyGoldLimit': int(1000000000, 1), 'forge.checkEverySeconds': int(300, 10), // 兼容旧配置；锻造检查已跟随每轮挂机。
+  'forge.buildingIds': strings(10), 'forge.recipeIds': strings(100), 'forge.universalReserve': int(),
+  'forge.checkEverySeconds': int(300, 10), // 兼容旧配置；锻造检查已跟随每轮挂机。
   'antique.activateQualities': { ...strings(4), values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
   'antique.starQualities': { ...strings(4), values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
   'antique.suitQualities': { ...strings(4), values: ['BLUE', 'PURPLE', 'ORANGE', 'RED'] },
-  'antique.targetStar': int(25), 'antique.targetMasterLevel': int(100), 'antique.goldReserve': int(),
-  'antique.dailyGoldLimit': int(100000000), 'antique.maxActions': int(100, 1), 'antique.checkEverySeconds': int(3600, 10),
+  'antique.targetStar': int(25), 'antique.targetMasterLevel': int(100),
+  'antique.maxActions': int(100, 1), 'antique.checkEverySeconds': int(3600, 10),
 };
 
 export class SettingsError extends Error {
@@ -314,6 +313,7 @@ function validateCurrentSettings(input, { partial = false, catalog = null } = {}
   input = migrateVersion14Settings(migrateVersion13Settings(input));
   if (plain(input?.treasure) && Object.hasOwn(input.treasure, 'onlyTenThousand')) input = migrateVersion15Settings(input);
   input = migrateVersion17Settings(migrateVersion16Settings(input));
+  input = migrateVersion18Settings(input);
   if (plain(input?.resourceFields) && !Object.hasOwn(input.resourceFields, 'refillAfterLoss')) {
     input = { ...input, resourceFields: { ...input.resourceFields, refillAfterLoss: false } };
   }
@@ -636,7 +636,7 @@ export function importAutomationSettings(document, options) {
   return validateSettings(migrateSettingsVersion(document.settings, document.version), { ...options, partial: false });
 }
 
-const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings]]);
+const settingsMigrations = new Map([[1, migrateVersion1Settings], [2, migrateVersion2Settings], [3, migrateVersion3Settings], [4, migrateVersion4Settings], [5, migrateVersion5Settings], [6, migrateVersion6Settings], [7, migrateVersion7Settings], [8, migrateVersion8Settings], [9, migrateVersion9Settings], [10, migrateVersion10Settings], [11, migrateVersion11Settings], [12, migrateVersion12Settings], [13, migrateVersion13Settings], [14, migrateVersion14Settings], [15, migrateVersion15Settings], [16, migrateVersion16Settings], [17, migrateVersion17Settings], [18, migrateVersion18Settings]]);
 const supportedSettingsVersion = version => Number.isSafeInteger(version) && version >= 1;
 const entrySettingsVersion = entry => Object.hasOwn(entry, 'settingsVersion') ? entry.settingsVersion : 1;
 function newestSettingsVersion(store) {
@@ -1003,4 +1003,18 @@ function migrateVersion17Settings(settings) {
   if (!plain(settings?.cityWar) || !Object.hasOwn(settings.cityWar, 'dailyDispatchLimit')) return settings;
   const { dailyDispatchLimit, ...cityWar } = settings.cityWar;
   return { ...settings, cityWar };
+}
+
+function migrateVersion18Settings(settings) {
+  if (!plain(settings)) return settings;
+  const input = { ...settings };
+  if (plain(input.forge)) {
+    const { materialReserve, goldReserve, dailyLimit, dailyGoldLimit, ...forge } = input.forge;
+    input.forge = forge;
+  }
+  if (plain(input.antique)) {
+    const { goldReserve, dailyGoldLimit, ...antique } = input.antique;
+    input.antique = antique;
+  }
+  return input;
 }

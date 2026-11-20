@@ -235,7 +235,7 @@ await check('蓝紫橙自然高星可放生，红色已升星保持保护', asyn
 
 await check('锻造正常入口无新领取时也处理闲置库存', async () => {
   const f = warForgeFixture(), settings = warForgeSettings();
-  Object.assign(settings.forge, { decompose: true, decomposeQualities: ['BLUE'], dailyLimit: 0 });
+  Object.assign(settings.forge, { decompose: true, decomposeQualities: ['BLUE'], craft: false });
   f.config.tables.EquipCfg = { data: [{ id: '旧装备', quality: 'BLUE' }] };
   f.state.equipment[0].refineLv = 0;
   const request = f.client.request;
