@@ -88,7 +88,6 @@ function fixture({ navigation = false } = {}) {
     const closeHelpTip = () => {};
     const location = { get hash() { return env.hash; } };
     const history = { replaceState(state, title, hash) { env.hash = hash; } };
-    const Option = function(text, value) { const option = el('option', '', text); option.value = value; return option; };
     const clear = node => { for (const child of [...node.children]) child.remove(); return node; };
     configRenderUsage = () => {};
     configUpdateState = () => {};
@@ -218,7 +217,7 @@ test('英雄、藏品、装备各有唯一设置入口，原有分组书签指�
       f.env.hash = '#config-group-' + group; f.applyHash();
       assert(visible(f.env.node('config-group-' + group)));
       assert.equal(f.editor.category, category);
-      assert.equal(f.env.node('config-preview-scope').value, 'module:' + group);
+      assert.equal(f.editor.selectedGroups[category], group);
     }
   }
   for (const [id, keys] of Object.entries({
@@ -232,7 +231,7 @@ test('英雄、藏品、装备各有唯一设置入口，原有分组书签指�
   f.env.hash = '#config-group-equipment-legacy'; f.applyHash();
   assert(visible(f.env.node('config-group-forge')));
   assert.equal(f.editor.category, 'equipment');
-  assert.equal(f.env.node('config-preview-scope').value, 'module:forge');
+  assert.equal(f.editor.selectedGroups.equipment, 'forge');
   f.env.hash = '#config-group-daily-collections'; f.applyHash();
   assert(visible(f.env.node('config-group-hero-recruit')));
   assert.equal(f.env.saves, 0);
@@ -266,7 +265,7 @@ test('建筑与多分组分类切换、键盘导航和旧链接都能定位同�
   f.activateGroup('farm');
   f.env.node('config-family-construction').onclick();
   assert(visible(f.env.node('config-group-building')));
-  assert.equal(f.env.node('config-preview-scope').value, 'module:building');
+  assert.equal(f.editor.selectedGroups.base, 'building');
   assert.equal(f.env.hash, '#config-group-building');
   f.env.node('config-family-construction').onkeydown({ key: 'ArrowRight', preventDefault() {} });
   assert(visible(f.env.node('config-group-farm')), '再次进入生产保留上次选择');

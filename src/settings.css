@@ -124,16 +124,19 @@
 .config-ranking-scroll tr.is-own { background:var(--muted) }
 .config-ranking-scroll td:nth-child(2) { max-width:320px; overflow:hidden; text-overflow:ellipsis }
 @media(max-width:600px) { .config-ranking-summary { grid-template-columns:repeat(2,minmax(0,1fr)) } }
-#config-usage { margin-top:12px; line-height:1.6; color:var(--muted-foreground); font-variant-numeric:tabular-nums }
+#config-usage:not(:empty) { margin-top:12px; line-height:1.6 }
+#config-usage .runtime-row { margin-top:6px }
+#config-preview-summary:not(:empty) { display:grid; gap:6px; margin-top:12px; font-size:14px }
+.preview-condition { margin:0; line-height:1.6; overflow-wrap:anywhere }
+.preview-notes { list-style:disc; padding-left:20px; max-height:20rem; overflow:auto; overflow-wrap:anywhere }
+.preview-history>summary,.preview-inspection>summary { width:fit-content; padding-block:4px }
+.preview-history[open]>summary,.preview-inspection[open]>summary { margin-bottom:8px }
 .config-preview-list { margin:8px 0 0; padding-left:20px }
 .config-preview-list li { padding:4px 0; overflow-wrap:anywhere }
 .config-preview-cost { display:block; color:var(--muted-foreground) }
 #config-preview-result details { margin-top:8px }
 #config-preview-result summary { width:fit-content }
 #config-preview-result details ul { padding-left:18px; max-height:360px; overflow:auto; scrollbar-width:thin }
-.config-preview-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; max-width:100% }
-.config-preview-controls label { color:var(--muted-foreground); font-weight:400 }
-.config-preview-controls .config-select { width:auto; min-width:120px }
 
 @media (max-width:768px) {
   .config-tabs { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)) max-content; width:100%; overflow:visible }

@@ -19,7 +19,7 @@ import { isMiningSilicon,  dispatchOrder, reserveDispatch, dispatchReservationRe
 import { runAllianceRadar } from './alliance-radar.mjs';
 import { claimVipDaily, claimLimitedFree, claimWeekHeroStar, claimLinkageFree, recruitWithSkipAds } from './extra-free-rewards.mjs';
 import { collectAntiqueFloaters } from './antique-floaters.mjs';
-import { summarizeTrialChecks, stepObservation } from './runtime-progress.mjs';
+import { summarizeTrialChecks, stepObservation, worldObservationKeys } from './runtime-progress.mjs';
 // 自动循环：每轮依次跑 任务领取 → 日常（含任务奖励与活跃度宝箱） → 海面（收成品/竣工/建造/交单/排产/升级）。
 //
 // 循环是显式开的：必须同时给 --loop 与 --yes，且每轮都是「先只读探测，再算计划，再执行」，
@@ -368,6 +368,8 @@ export async function runLoop(client, protocol, {
       const key=entry.taskKey||entry.key||(entry.step?.request==='SetFactoryAutoProduceRequest'?'nativeProduce':entry.step?.setting)
         ||(entry.step?.kind?worldTaskKey(entry.step.kind):null);
       if (key) observeStep(key, entry);
+      const controlKey = worldObservationKeys[entry.step?.kind];
+      if (controlKey && controlKey !== key) observeStep(controlKey, entry);
       if (entry.skipped && entry.reason) {
         const waitKey = phase + ':' + (key || entry.id || entry.title || entry.label || 'unknown');
         if (dailyWaitReasons.get(waitKey) === entry.reason) return;
@@ -572,7 +574,7 @@ export async function runLoop(client, protocol, {
       try { await runResourceFields(client, protocol, config, player, { getSettings, ledger: usageLedger,
         enabled: () => !stop.aborted && runtimeActive() && client.connected !== false && getSettings()?.resourceFields?.enabled,
         report: entry => serviceReport('world', '资源田')({ ...entry, taskKey: 'resourceFields.enabled' }) }); }
-      catch (error) { phaseFailure('world', '资源田检查', error); }
+      catch (error) { phaseFailure('world', '资源田检查', error, 'resourceFields.enabled'); }
       finally { resourceFieldsAt = preference === getSettings()?.resourceFields ? Date.now() + preference.checkEverySeconds * 1000 : 0; }
     }
     async function checkSilicon() {
@@ -586,7 +588,7 @@ export async function runLoop(client, protocol, {
       try { await runSiliconMining(client, protocol, config, player, { getSettings, ledger: usageLedger, guard, heldForEvent,
         enabled: () => !stop.aborted && runtimeActive() && client.connected !== false && getSettings()?.silicon?.enabled,
         report: entry => serviceReport('world', '硅矿')({ ...entry, taskKey: 'silicon.enabled' }) }); }
-      catch (error) { phaseFailure('world', '硅矿检查', error); }
+      catch (error) { phaseFailure('world', '硅矿检查', error, 'silicon.enabled'); }
       finally { siliconAt = version === siliconVersion ? Date.now() + siliconInterval(getSettings()) : 0; }
     }
     async function checkExtended() {
@@ -806,7 +808,7 @@ export async function runLoop(client, protocol, {
             stepLog('world')({ ...entry, title: entry.title || entry.label || '军备竞赛', category: '周活动', taskKey: 'weeklyActivity' });
           },
         });
-      } catch (error) { phaseFailure('world', '军备竞赛', error); }
+      } catch (error) { phaseFailure('world', '军备竞赛', error, 'weeklyActivity'); }
     }
 
     const adContext = { ...adChannel, player, getSettings, enabled, ledger: usageLedger, scheduler: rewards };
@@ -924,7 +926,7 @@ export async function runLoop(client, protocol, {
           summary.tasks.results.push(entry);
           if (!entry.skipped) summary.tasks.planned++;
           if (!entry.skipped || lastGuildWait !== entry.reason) logReward({...entry,taskKey:'guildWelfare'}, '联盟');
-          rewards?.observe('guildWelfare',entry.reason||entry.error||entry.label||'已检查',entry.ok?'ok':entry.skipped?'waiting':'error');rewards?.expect('guildWelfare',rewards.now()+Math.ceil(getEveryMs()/1000));
+          else observeStep('guildWelfare', entry);
           lastGuildWait = entry.reason;
         } catch (error) { phaseFailure('tasks', '联盟福利礼包', error, 'guildWelfare'); }
       } else if (!isEnabled?.('guildWelfare')) lastGuildWait = undefined;
@@ -1085,7 +1087,7 @@ export async function runLoop(client, protocol, {
           summary.tasks.results.push(entry);
           if (!entry.skipped) summary.tasks.planned++;
           if (!entry.skipped || entry.reason !== lastFishUpgradeWait) logReward({...entry,taskKey:'fishEnhance'}, '钓鱼');
-          rewards?.observe('fishEnhance',entry.reason||entry.error||entry.label||'已检查',entry.ok?'ok':entry.skipped?'waiting':'error');rewards?.expect('fishEnhance',rewards.now()+Math.ceil(getEveryMs()/1000));
+          else observeStep('fishEnhance', entry);
           lastFishUpgradeWait = entry.reason;
         } catch (error) { phaseFailure('tasks', '钓具养成', error); }
       } else lastFishUpgradeWait = undefined;
@@ -1096,7 +1098,7 @@ export async function runLoop(client, protocol, {
           summary.tasks.results.push(entry);
           if (!entry.skipped) summary.tasks.planned++;
           if (!entry.skipped || entry.reason !== lastFishWait) logReward({...entry,taskKey:'autoFish'}, '钓鱼');
-          rewards?.observe('autoFish',entry.reason||entry.error||entry.label||'已检查',entry.ok?'ok':entry.skipped?'waiting':'error');rewards?.expect('autoFish',rewards.now()+Math.ceil(getEveryMs()/1000));
+          else observeStep('autoFish', entry);
           lastFishWait = entry.reason;
         } catch (error) { phaseFailure('tasks', '自动钓鱼', error); }
       } else lastFishWait = undefined;
@@ -1169,6 +1171,11 @@ export async function runLoop(client, protocol, {
           minOrderExp: settings ? settings.resident.minExp : isEnabled && enabled('denyOrder') ? null : 0,
         });
         if (settings?.factory?.cooperateNative && allowWorld('startProduce')) observeNativePlan(survey, plan);
+        for (const [kind, key] of Object.entries(worldObservationKeys)) {
+          if (!allowWorld(kind) || !nativePreferenceEnabled(settings, kind)) continue;
+          const count = plan.actions.filter(action => action.kind === kind).length;
+          rewards?.observe(key, count ? '本轮计划 ' + count + ' 项' : '本轮没有符合条件的动作');
+        }
         for(const key of ['collect','finishUpgrade','build','buildSupply','upgrade','finishOrder','startProduce','farm','speedUp','denyOrder'])if(enabled(key)){
           const actions=plan.actions.filter(a=>worldTaskKey(a.kind)===key);
           rewards?.observe(key,actions.length?'本次计划 '+actions.length+' 项，执行结果见日志':'已读取基地状态，当前无符合设置的可执行动作');
@@ -1336,10 +1343,10 @@ export async function runLoop(client, protocol, {
           rewards?.observe('loop.heroes','已读取英雄信息，检查养成与展示领奖条件');rewards?.expect('loop.heroes',rewards.now()+Math.ceil(getEveryMs()/1000));
           const results = await runHeroPlan(client, protocol, plan, { allowMutate, config, player, enabled, getSettings: getHeroSettings,
             beforeAction: heroGuard.before, afterAction: heroGuard.after, cancelAction: heroGuard.cancel,
-            onStep: entry => stepLog('tasks')({ ...entry, category: '英雄', title: heroStepLabel(entry.step, entry.targetLevel) }) });
+            onStep: entry => stepLog('tasks')({ ...entry, taskKey: 'loop.heroes', category: '英雄', title: heroStepLabel(entry.step, entry.targetLevel) }) });
           summary.tasks.planned += results.length;
           summary.tasks.results.push(...results);
-        } catch (error) { phaseFailure('tasks', '自动英雄养成', error); }
+        } catch (error) { phaseFailure('tasks', '自动英雄养成', error, 'loop.heroes'); }
       }
       await checkForge();
       yield;
@@ -1418,7 +1425,7 @@ export function formatLoopStep(entry) {
   const title = entry.step?.label || entry.title || entry.label;
   const action = [title, entry.note && entry.note !== title ? entry.note : null].filter(Boolean).join(' · ') || '检查任务';
   const message = category + ' · ' + action;
-  if (entry.status==='pending'||entry.status==='unknown') return message+'等待确认：'+(entry.reason||entry.error||'保留记录，不重复提交');
+  if (stepObservation(entry).state === 'pending') return message+'等待确认：'+(entry.reason||entry.error||'保留记录，不重复提交');
   if (entry.skipped) {
     const reason = entry.reason || entry.error;
     if(reason===title)return category+' · '+reason+'（等待）';
@@ -1432,17 +1439,11 @@ export function formatLoopStep(entry) {
 
 export function formatLoopRound(summary) {
   const results = [...summary.tasks.results, ...summary.dailies.results, ...summary.world.results];
-  const skipped = results.filter(entry => entry.skipped).length;
-  const failed = results.filter(entry => !entry.skipped && entry.ok === false && !['unknown','pending'].includes(entry.status)).length;
-  const sent = results.filter(entry => !entry.skipped && entry.ok && 'sent' in entry).length;
-  const done = results.filter(entry => !entry.skipped && entry.ok && !('sent' in entry)).length;
-  const pending=results.filter(entry=>['pending','unknown'].includes(entry.status)).length;
-  const counts = [];
-  if(pending)counts.push('待确认 '+pending+' 项');
-  if (done) counts.push('完成 ' + done + ' 项');
-  if (sent) counts.push('已发送 ' + sent + ' 项');
-  if (skipped) counts.push('跳过 ' + skipped + ' 项');
-  if (failed) counts.push('失败 ' + failed + ' 项');
+  const totals = {pending:0, ok:0, sent:0, waiting:0, error:0};
+  for (const entry of results) totals[stepObservation(entry).state]++;
+  const labels = {pending:'待确认', ok:'完成', sent:'已发送', waiting:'跳过', error:'失败'};
+  const counts = Object.entries(labels).filter(([state]) => totals[state])
+    .map(([state, label]) => label + ' ' + totals[state] + ' 项');
   return '挂机第 ' + summary.round + ' 轮结束 · ' + (counts.join('，') || '本轮没有可执行的操作')
     + (summary.world.population ? ' · 人口 ' + summary.world.population : '');
 }

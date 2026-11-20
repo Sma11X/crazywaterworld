@@ -16,8 +16,9 @@ for (const [key,label] of [
  ['farm.enabled','农田总开关'],['resident.enabled','自动交居民订单'],['resident.reroll','刷新不符合条件的订单'],['resident.rewards','领取居民订单进度奖励'],['cargo.enabled','贸易港自动交货与收货'],['events.enabled','处理已支持的随机事件'],
  ['pet.enabled','海兽培育总开关'],['museum.runEnabled','博物馆探宝总开关'],['museum.upgrade','升级博物馆技能与展区'],['museum.revenue','自动领取人气币'],['museum.achievements','自动领取人气奖励'],['museum.display','自动上架藏品'],['museum.enabled','自动探宝'],['gold.enabled','每日钻石点金'],
 ]) {
- const base = key.split('.')[0], gates = key === 'gold.enabled' ? ['loop.dailies'] : key === 'museum.runEnabled' ? [] : ['loop.world'];
+ const base = key.split('.')[0], gates = key === 'gold.enabled' ? ['loop.dailies'] : ['loop.world'];
  if (['building','factory'].includes(base) && !key.endsWith('.enabled')) gates.push(base+'.enabled');
+ if (key === 'resident.reroll') gates.push('resident.enabled');
  if (base === 'museum' && key !== 'museum.runEnabled') gates.push('museum.runEnabled');
  add(key,label,'基地',{gates});
 }
@@ -43,6 +44,9 @@ add('antique.enabled','藏品自动养成','藏品',{
  help:'开启后，挂机按下方已选动作培养藏品。关闭会暂停藏品养成，仍可编辑各项设置。养成只使用已有资源。',
 });
 add('appointments.enabled','自动英雄委任','英雄',{configLabel:'自动委任',help:'开启后，挂机按下方优先级使用游戏的一键委任功能分配英雄，已有任命可能调整。'});
+add('weeklyActivity.enabled','军备竞赛主题行动','活动',{
+  configuredFields:['farm','pet','antique','order','forge','hero'].map(kind=>'weeklyActivity.'+kind+'Enabled'),
+});
 add('resourceFields.enabled','自动占领资源田','世界与挑战',{help:'按比例或配额占领本盟城市内的资源田，每次检查最多派一队。名额已满时，可放弃超过目标块数的田地来补足其他资源，也会把同类低级田换成可占的高级田。'});
 add('trials.paid','试炼钻石扫荡','世界与挑战',{gates:['resources.allowDiamonds']});
 add('trials.ads','试炼免广告扫荡','世界与挑战');

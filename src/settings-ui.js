@@ -456,7 +456,7 @@ const configGroups = [
     configField('schedule.guildWelfare', '领取联盟福利礼包'),
     configField('schedule.guildTitleReward', '联盟每日职级礼包', 'switch', { help:'默认关闭。按服务器提供的可领取职级核对每日礼包，不以当前职位替代；确认奖励回执及当日领取时间后才记为成功。' }),
     configField('schedule.worldOnlineRewards', '领取城战在线奖励', 'switch', { help: '在服务器城战时段内，按实际计时逐档领取免费在线奖励。独立于下方城战接续开关；默认关闭，保存后随挂机检查，不自动启动挂机。请求结果未知时等待计数确认，不重复领取。' }),
-    configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。下方预览范围选择“联盟城战”；不会宣战或改变集结目标。' }),
+    configField('cityWar.enabled', '城战接续总开关', 'switch', { help: '按下方原生委任次数决定何时接续正常出战，每支参与舰队可指定进攻或防守。可在本页只读预览各队的接续条件。' }),
     configField('cityWar.fleetIds', '城战参与舰队', 'multi', { catalog: 'expeditionFleets', empty: '请选择参与接续的舰队' }),
     configField('cityWar.defenceFleetIds', '舰队职责与策略', 'cityWarRoles', { parent: 'cityWar.fleetIds', wide: true, help: '为已选舰队分别选择进攻或防守；展开后可设置本队策略、维修加速和派遣加速。策略可跟随全局，也可独立设置目标来源、城市和优先策略。加速需开启城战接续和“基础 → 加速与钻石”中的自动钻石消耗总开关，每队每项上限与全局钻石预算同时生效。切换职责保留本队另一套策略；新加入的舰队默认进攻。进攻只选择本盟已宣战且仍属于敌方的城市，防守只选择被宣战且仍属于本盟的城市；没有对应目标时等待，不自动换职责。使用舰队已保存的英雄编队，不自动换阵。职责仅约束工具接管后的派遣；已解锁原生委任的账号要立即按此分工执行，将原生委任次数设为 0。' }),
     configField('cityWar.nativeCommissionLimit', '原生委任次数', 'number', { unit: '次', help: '未解锁原生委任时，工具直接按所选舰队的攻守设置接管，无需修改次数。已解锁时，-1 表示等待服务器 VIP 额度用尽，0 表示立即关闭原生委任，正数表示先用指定次数（最多用完 VIP 额度）。需要关闭时，工具会回读确认后再接管。' }),
@@ -582,6 +582,7 @@ function configSet(key, value) {
     const target = parts.reduce((object, part) => object[part], draft);
     target[field] = value;
   }
+  const hadPreview = !!configEditor.previewSummary;
   configEditor.previewSummary=null;
   if (key === 'cityWar.fleetIds') {
     draft.cityWar.defenceFleetIds = (draft.cityWar.defenceFleetIds ?? []).filter(id => value.includes(id));
@@ -598,7 +599,7 @@ function configSet(key, value) {
     if (!Object.keys(configEditor.errors).length) configMessage('');
   }
   configRenderUsage();
-  if ($('config-preview-result').childNodes.length) clear($('config-preview-result')).append(el('p', 'config-help', '草稿已更改，请重新预览计划。'));
+  if (hadPreview || $('config-preview-result').childNodes.length) clear($('config-preview-result')).append(el('p', 'config-help', '草稿已更改，请重新预览计划。'));
   configUpdateVisibility();
   configEditor.saveRetries = 0;
   configScheduleSave();
@@ -721,7 +722,6 @@ function configActivate(category, focus = false, writeHash = true) {
   if (!Object.hasOwn(configCategories, category)) return;
   closeHelpTip(false);
   const changed = category !== configEditor.category;
-  if (changed) clear($('config-preview-result'));
   configEditor.category = category;
   for (const node of document.querySelectorAll('[data-config-tab]')) {
     const selected = node.dataset.configTab === category;
@@ -733,12 +733,12 @@ function configActivate(category, focus = false, writeHash = true) {
   const selected = choices.find(group => group.id === configEditor.selectedGroups[category]) || choices[0];
   if (selected) configActivateGroup(selected.id, false, writeHash, changed);
 }
-function configActivateGroup(id, focus = false, writeHash = true, forcePreview = false) {
+function configActivateGroup(id, focus = false, writeHash = true, categoryChanged = false) {
   const group = configEditor.groups.get(id);
   if (!group || group.category !== configEditor.category) return;
   closeHelpTip(false);
   const changed = configEditor.selectedGroups[group.category] !== id;
-  configEditor.selectedGroups = { ...configEditor.selectedGroups, [group.category]: id };
+  if (changed || categoryChanged) configEditor.selectedGroups = { ...configEditor.selectedGroups, [group.category]: id };
   const panel = $('config-panel-' + group.category);
   const family = baseFamilies.find(item => item.groups.includes(id));
   if (family) {
@@ -758,9 +758,9 @@ function configActivateGroup(id, focus = false, writeHash = true, forcePreview =
     if (selected) { if (focus) tab.focus({ preventScroll: true }); configRevealTab(tab); }
   }
   for (const section of panel.querySelectorAll('.config-section')) section.hidden = section.id !== 'config-group-' + id;
-  if (changed || forcePreview) {
+  if (changed || categoryChanged) {
+    configEditor.previewSummary = null;
     clear($('config-preview-result'));
-    $('config-preview-scope').value = 'module:'+id;
   }
   configRenderUsage();
   configWeeklyRankingSync();
@@ -1010,6 +1010,7 @@ function configRevealSection(widget) {
 
 function configRender() {
   closeHelpTip(false);
+  configEditor.previewSummary = null;
   clear($('config-preview-result'));
   configEditor.fields.clear(); configEditor.widgets.clear(); configEditor.groups.clear(); configEditor.playerWidgets = [];
   const root = clear($('config-fields'));
@@ -1084,9 +1085,6 @@ function configRender() {
       movedFields.has(field.parent) ? { ...field, parent: undefined } : field)];
     configEditor.groups.set(group.id, group);
   }
-  const scopeSelect=$('config-preview-scope');
-  for(const opt of [...scopeSelect.options])if(!['base','daily','activity'].includes(opt.value))opt.remove();
-  for(const group of groups)scopeSelect.add(new Option(group.title,'module:'+group.id));
   for (const [category, label] of Object.entries(configCategories)) {
     const panel = el('div'); panel.id = 'config-panel-' + category; panel.dataset.configPanel = category; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', 'config-tab-' + category);
     const selected = category === 'base'
@@ -1139,7 +1137,6 @@ function configRender() {
     root.append(panel);
   }
   configActivate(configEditor.category, false, false);
-  scopeSelect.value='module:'+configEditor.selectedGroups[configEditor.category];
   configApplyHash(); configUpdateVisibility(); configUpdateState(); configRenderUsage();
   if (!configEditor.playerData && configGet('treasure.followPlayerIds').length) void configRefreshPlayers();
 }
@@ -1368,34 +1365,106 @@ function configLineupPicker(spec, id) {
 }
 
 function configRenderUsage() {
-  const group=configEditor.groups.get(configEditor.selectedGroups[configEditor.category]),preview=configEditor.previewSummary;
-  const relevant=(configEditor.runtime?.controls??[]).filter(c=>group?.controlKeys?.includes(c.key));
-  const active=relevant.filter(c=>c.enabled&&!/^(控制项|分组控制)/.test(c.observation?.text??''));
-  const success=active.filter(c=>c.observation?.state==='ok').length,waiting=active.filter(c=>c.observation?.state==='waiting').length,pending=active.filter(c=>['pending','error'].includes(c.observation?.state)).length;
-  const usePreview=preview?.group===group?.id&&preview?.scope===$('config-preview-scope').value;
-  const type=usePreview?preview.scopeLabel:group?.title||'当前模块';
-  const unseen=active.filter(c=>!c.observation?.checkedAt).length;
-  let progress=active.length?(unseen===active.length?'尚无执行检查记录':'最近结果：成功 '+success+' 项 · 等待 '+waiting+' 项 · 未确认/失败 '+pending+' 项'+(unseen?' · 未检查 '+unseen+' 项':'')):relevant.length?'当前未开启具体执行项目':'尚无执行记录';
-  const actualProgress=usePreview?(preview.notes??[]).find(text=>/今日已用|已领至|已领取至|今日.*已完成|当前进度/.test(text)):null;
-  if(actualProgress)progress=actualProgress;else if(active.length===1&&active[0].observation?.checkedAt)progress=active[0].observation.text;
-  if (!usePreview && group?.id === 'weekly-activities' && configEditor.draft?.weeklyActivity?.enabled) {
-    const selected = ['farm','pet','antique','order','forge','hero'].filter(kind => configEditor.draft.weeklyActivity[kind + 'Enabled']).length;
-    if (selected) progress = '已配置 ' + selected + ' 项全天活动；执行情况见日志';
+  const group = configEditor.groups.get(configEditor.selectedGroups[configEditor.category]);
+  const root = $('config-usage'), runtime = configEditor.runtime;
+  const preview = configEditor.previewSummary;
+  const summary = $('config-preview-summary');
+  const matching = group && preview?.group === group.id ? preview : null;
+  if (summary.preview !== matching) {
+    summary.preview = matching;
+    clear(summary);
+    if (matching) {
+      const facts = configPreviewFacts(matching);
+      const head = el('div', 'runtime-summary');
+      head.append(el('strong', '', facts.result));
+      if (matching.checkedAt) head.append(el('span', '', new Date(matching.checkedAt).toLocaleTimeString('zh-CN', {timeZone:'Asia/Shanghai', hour12:false})+' 预览'));
+      summary.append(head);
+      if (facts.condition) summary.append(el('p', 'preview-condition', facts.condition));
+      if (facts.evidence) summary.append(el('p', 'config-help', facts.evidence));
+      if (facts.more.length) {
+        const details = el('details', 'runtime-other'), list = el('ul', 'preview-notes');
+        details.append(el('summary', '', '其他检查说明（'+facts.more.length+'）'), list);
+        for (const note of facts.more) list.append(el('li', '', note));
+        summary.append(details);
+      }
+    }
   }
-  // 条件包含等待、阻碍及正常状态，直接保留预览说明，避免关键词筛选漏掉预算等原因。
-  const notes=usePreview?[
-    ...(preview.notes??[]),
-    ...(preview.forge?.factories??[]).filter(f=>f.reason).map(f=>f.buildingId+'：'+f.reason),
-    ...(preview.dispatch?.fleets??[]).map(f=>f.reason),
-  ]:relevant.flatMap(c=>[...(c.blockedBy?.map(name=>'需开启'+name)??[]),...(['waiting','error','pending'].includes(c.observation?.state)?[c.observation.text]:[])]);
-  const conditions=[...new Set(notes.filter(n=>typeof n==='string'&&n.trim()).map(n=>n.trim()))];
-  const conditionText=conditions.length?conditions.slice(0,3).join('；')+(conditions.length>3?'；其余见下方条件':'')
-    :!usePreview?'尚未预览，请先读取当前状态'
-    :preview.viewOnly?'已完成只读检查，详见下方状态'
-    :preview.actions.length?'本次预览可安排动作，执行前会重新核对条件'
-    :'当前无可执行动作，详见下方状态与条件';
-  const root=clear($('config-usage'));
-  root.append(el('div','','任务类型：'+type),el('div','','进度：'+progress+(usePreview?'；本次'+(preview.viewOnly?'只读查看':preview.actions.length+'项待执行（仅预览）'):'')),el('div','','执行条件：'+conditionText));
+
+  if (!group || !Array.isArray(runtime?.controls)) {
+    root.textContent = matching ? '' : '挂机记录尚未同步';
+    root.renderKey = null;
+    return;
+  }
+  if (runtime.settingsRevision < configEditor.data?.revision) {
+    root.textContent = matching ? '' : '配置已保存，等待刷新运行状态';
+    root.renderKey = null;
+    return;
+  }
+  const relevant = runtime.controls.filter(control => group.controlKeys.includes(control.key));
+  const items = relevant.map(control => runtimeControlItem(control, runtime));
+  const active = items.filter(item => item.enabled);
+  const issues = runtimeAttention(active);
+  const weekly = group.id === 'weekly-activities' && configEditor.baseline?.weeklyActivity;
+  const themes = weekly?.enabled ? ['farm','pet','antique','order','forge','hero'].filter(key => weekly[key+'Enabled']).length : 0;
+  const phase = loopPhase(runtime);
+  const foldRuntime = !!matching && (!matching.fields || !!matching.moduleActions || !!matching.moduleActivities);
+  const key = JSON.stringify([configEditor.owner, group.id, items, themes, phase, foldRuntime]);
+  if (root.renderKey === key) return;
+  const keepOpen = root.groupId === group.id && root.querySelector('.runtime-other')?.open;
+  const keepHistoryOpen = root.groupId === group.id && root.querySelector('.preview-history')?.open;
+  root.renderKey = key;
+  root.groupId = group.id;
+  clear(root);
+  let body = root;
+  if (foldRuntime) {
+    body = el('details', 'preview-history');
+    body.open = !!keepHistoryOpen;
+    body.append(el('summary', '', '最近挂机记录'+(issues.length ? ' · 需关注 '+issues.length+' 项' : '')));
+    root.append(body);
+  }
+  const head = el('div', 'runtime-summary');
+  head.append(runtimeBadge(phase[0], phase[1]));
+  if (!foldRuntime) head.append(el('span', '', '最近挂机记录'));
+  if (issues.length) head.append(el('strong', 'runtime-count', '需关注 '+issues.length+' 项'));
+  body.append(head);
+  if (phase[2]) body.append(el('p', 'runtime-message', phase[2]));
+  if (themes) body.append(el('p', 'runtime-message', '已选 '+themes+' 个活动主题'));
+  if (!items.length && !themes) body.append(el('p', 'dim runtime-message', '此分组暂无独立运行记录'));
+  const latest = relevant.reduce((best, control, index) => {
+    if (!['waiting','sent','ok','unsynced'].includes(items[index].state)) return best;
+    return best < 0 || (control.observation?.checkedAt ?? 0) > (relevant[best].observation?.checkedAt ?? 0) ? index : best;
+  }, -1);
+  const featured = issues.length ? issues.slice(0, 2) : latest >= 0 ? [items[latest]] : [];
+  for (const item of featured) body.append(runtimeRow(item, {history:true}));
+  const others = items.filter(item => !featured.includes(item));
+  if (others.length) {
+    const details = el('details', 'runtime-other');
+    details.open = !!keepOpen;
+    details.append(el('summary', '', '查看'+(featured.length ? '其余 ' : '分组内 ')+others.length+' 项'), ...others.map(item => runtimeRow(item, {history:true})));
+    body.append(details);
+  }
+}
+
+function configPreviewFacts(preview) {
+  const actions = preview.moduleActions ?? (preview.viewOnly ? null : preview.actions);
+  let result = preview.fields && !preview.moduleActivities ? '参数预览' : '只读预览';
+  if (actions) result = actions.length ? '本次可排 '+actions.length+' 项' : '本次没有可排动作';
+  const notes = [...new Set((preview.notes ?? []).filter(Boolean))];
+  const rowReasons = [
+    ...(preview.forge?.factories ?? []).map(row => [row.buildingId, row.reason]),
+    ...(preview.treasure?.targets ?? []).map(row => [row.label, row.reason]),
+    ...(preview.treasure?.fleets ?? preview.dispatch?.fleets ?? []).map(row => [row.name, row.reason]),
+  ].filter(([,reason]) => reason).map(([label, reason]) => label ? label+'：'+reason : reason);
+  const condition = notes[0] || rowReasons[0] || (actions?.length === 0 ? '本次检查未返回具体原因。' : '');
+  const treasure = preview.treasure;
+  const evidence = treasure ? [
+    '今日领奖 '+(treasure.todayRewardTimes ?? '未知')+'/'+(treasure.rewardLimit ?? '未知')+' 次',
+    '候选货轮 '+(preview.counts?.treasures ?? '未知')+' 艘',
+    '读到舰队 '+(preview.counts?.fleets ?? '未知')+' 支',
+  ].join(' · ') : '';
+  // 逐艘、逐队和逐厂的原因可在明细表查看。
+  const more = notes.slice(1).filter(note => !rowReasons.includes(note));
+  return {result, condition, more, evidence};
 }
 
 function configSyncRecovery(runtime) {
@@ -1489,7 +1558,7 @@ function configAccountChanged() {
   configEditor.runtime=null;configEditor.previewSummary=null;
   configEditor.playerData = null; configEditor.playerRequest = null; configEditor.playerError = ''; configEditor.playerWidgets = [];
   configCollapsed.clear();configDisclosureSeen.clear();configCollapsedSections.clear();
-  clear($('config-fields')).append(el('p', 'config-empty', '正在切换账号配置…')); clear($('config-preview-result')); clear($('config-usage')); configBusy(false); configUpdateState();
+  clear($('config-fields')).append(el('p', 'config-empty', '正在切换账号配置…')); clear($('config-preview-result')); clear($('config-preview-summary')); clear($('config-usage')).renderKey = null; configBusy(false); configUpdateState();
   if (configVisible()) void configLoad(true);
 }
 
@@ -2028,17 +2097,22 @@ async function configExport() {
 async function configPreview() {
   if (configPageStale()) { configMessage(''); return; }
   if (!configEditor.draft || configEditor.busy || !configCheckForm()) return;
-  const account = current, original = JSON.stringify(configEditor.draft), category = configEditor.category, group = configEditor.selectedGroups[category], scope = $('config-preview-scope').value;
-  const contextChanged = () => JSON.stringify(configEditor.draft) !== original || category !== configEditor.category || group !== configEditor.selectedGroups[category] || scope !== $('config-preview-scope').value;
+  const selection = configEditor.selectedGroups;
+  const selected = configEditor.groups.get(selection[configEditor.category]);
+  if (!selected) return;
+  const account = current, original = JSON.stringify(configEditor.draft);
+  const stillOnPage = () => account === current && selection === configEditor.selectedGroups && configEditor.groups.get(selected.id) === selected;
   configBusy(true); configUpdateState(); $('config-preview').textContent = '读取真实状态…';
+  configEditor.previewSummary = null;
+  clear($('config-preview-result'));
+  configRenderUsage();
   try {
-    const selected=scope.startsWith('module:')?configEditor.groups.get(scope.slice(7)):null;
     const dedicated={arena:'arena',league:'league',alliance:'alliance',guildShip:'guildShip',guildFort:'guildFort',silicon:'silicon',resourceFields:'resourceFields','hero-raid':'heroRaid',treasure:'world',radar:'radar','fleet-dispatch':'fleetDispatch','pirate-hunt':'pirateHunt',worldBoss:'worldBoss',cityWar:'cityWar',forge:'forge',antique:'antique',heroes:'heroes'};
-    const runtime=await call('/api/loop');
-    const source=selected?dedicated[selected.id]:scope;
+    const source=dedicated[selected.id];
     let data;
-    if(selected?.id==='pirate-hunt'){
+    if(selected.id==='pirate-hunt'){
       const sweep=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'pirateSweep'})});
+      if (!stillOnPage()) return;
       const hunt=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'pirateHunt'})});
       data={...hunt,scopeLabel:selected.title,counts:{...sweep.counts,...hunt.counts},
         actions:[...sweep.actions,...hunt.actions],
@@ -2047,50 +2121,68 @@ async function configPreview() {
     }else if(source){
       data=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:source})});
     }else{
-      const controls=runtime.controls.filter(c=>selected.controlKeys.includes(c.key));
-      data={groupRows:controls,fields:selected.fields,scopeLabel:selected.title,checkedAt:new Date().toISOString(),usage:configEditor.data.usage,viewOnly:true,actions:[],notes:[]};
+      data={fields:selected.fields,scopeLabel:selected.title,checkedAt:new Date().toISOString(),usage:configEditor.data.usage,viewOnly:true,actions:[],notes:[]};
       if(selected.category==='base' && selected.id!=='resources'){
         const plan=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'base'})});
-        const bases={building:['build','finishUpgrade','speedUpUpgrade','buildSupply','challengeField','giveUpField'],factory:['startProduce','gainFactory','collectProduct','speedUpProduce','nativeProduce'],farm:['farm'],resident:['finishOrder','denyOrder','checkResidentOrders'],cargo:['cargo','cargoLoad','cargoClaim'],gold:['paidGold'],gather:['autoDive','diveEnhance','autoSalvage','salvageEnhance','autoFish','fishEnhance','floaters','antiqueFloaters']};
+        const bases={building:['collectProduct','build','upgrade','weekFactory','finishUpgrade','speedUpUpgrade','buildSupply','challengeField','giveUpField'],factory:['startProduce','gainFactory','speedUpProduce','nativeProduce'],farm:['farm'],resident:['finishOrder','denyOrder','checkResidentOrders'],cargo:['cargo','cargoLoad','cargoReward','cargoSpeed','cargoClaim'],gold:['paidGold'],gather:['autoDive','diveKey','diveEnhance','autoSalvage','salvageEnhance','autoFish','fishEnhance','floaters','antiqueFloaters']};
         data.moduleActions=plan.actions.filter(a=>a.setting?.split('.')[0]===selected.id || bases[selected.id]?.includes(a.kind));
+        data.notes=plan.moduleNotes?.[selected.id] ?? [];
         data.usage=plan.usage;
+        data.checkedAt=plan.checkedAt;
       }
       if(['daily-actions','daily-challenges','rewards'].includes(selected.id)){
         const plan=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'daily'})});
         const isTrial=a=>['trialPaidSweep','trialAdSweep'].includes(a.kind);
         data.moduleActions=plan.actions.filter(a=>!['arena','league'].includes(a.kind) && (selected.id==='daily-actions'?a.kind==='daily':selected.id==='daily-challenges'?isTrial(a):a.kind!=='daily'&&!isTrial(a)));
+        data.notes=plan.moduleNotes?.[selected.id] ?? [];
         data.usage=plan.usage;
+        data.checkedAt=plan.checkedAt;
       }
       const activityNames={'weekly-activities':['军备竞赛'],'river-series':['走江踏浪','龙王罗盘','酆都法旨']};
       if(activityNames[selected.id]){
         const stats=await call('/api/activity-statistics?refresh=1');
         data.moduleActivities=stats.items.filter(r=>activityNames[selected.id].includes(r.name));
+        if (stats.checkedAt) data.checkedAt=stats.checkedAt*1000;
       }
 
     }
-    if (account !== current) return;
-    if (contextChanged()) { clear($('config-preview-result')); configMessage('草稿、分组或预览范围已变化，请重新预览。'); return; }
-    configEditor.runtime=runtime;configEditor.data={...configEditor.data,usage:data.usage,...(data.pendingUsage?{pendingUsage:data.pendingUsage}:{})};configEditor.previewSummary={...data,group,scope};configRenderUsage();
-    const root = clear($('config-preview-result'));
-    if(data.groupRows){
-      root.append(el('h4','',data.scopeLabel+' · 草稿与运行状态'));
-      if(data.moduleActions)root.append(data.moduleActions.length?table(['拟执行动作','消耗'],data.moduleActions.map(a=>[a.label,a.costs.map(c=>c.name+' ×'+c.num).join('、')||'—'])):el('p','dim','当前无可排动作'));
-      if(data.moduleActivities)root.append(data.moduleActivities.length?table(['活动','状态','进度'],data.moduleActivities.map(r=>[r.name,r.status,r.progress])):el('p','dim','尚无对应活动数据'));
-      if(data.fields.length)root.append(table(['参数','草稿值'],data.fields.map(f=>{
-        const value=configGet(f.key);
-        return [f.label,typeof value==='boolean'?(value?'开':'关'):Array.isArray(value)?value.map(v=>typeof v==='object'?JSON.stringify(v):String(v)).join('、')||'未选':String(value??'未配置')];
-      })));
-      if(data.groupRows.length)root.append(table(['功能','最近进度','执行条件'],data.groupRows.map(c=>[c.label,c.progress,c.condition])));
-      root.append(el('p','dim','只读 · 运行状态取自已保存配置'));
+    if (!stillOnPage() || JSON.stringify(configEditor.draft) !== original) return;
+    configEditor.data={...configEditor.data,usage:data.usage,...(data.pendingUsage?{pendingUsage:data.pendingUsage}:{})};configEditor.previewSummary={...data,group:selected.id};configRenderUsage();
+    const result = clear($('config-preview-result'));
+    const actions = data.moduleActions ?? data.actions;
+    if (actions.length) {
+      const list = el('ol', 'config-preview-list'), rest = el('ol', 'config-preview-list');
+      for (const [index, action] of actions.entries()) {
+        const row = el('li', '', action.label);
+        if (action.costs.length) row.append(el('span', 'config-preview-cost', '消耗：'+action.costs.map(cost => cost.name+' ×'+cost.num).join('、')));
+        (index < 3 ? list : rest).append(row);
+      }
+      result.append(list);
+      if (actions.length > 3) {
+        const details = el('details', 'runtime-other');
+        rest.start = 4;
+        details.append(el('summary', '', '其余 '+(actions.length-3)+' 项动作'), rest);
+        result.append(details);
+      }
+    }
+    if(data.fields){
+      if(data.moduleActivities)result.append(data.moduleActivities.length?table(['活动','状态','进度'],data.moduleActivities.map(r=>[r.name,r.status,r.progress])):el('p','dim','尚无对应活动数据'));
+      if(data.fields.length){
+        const fields = el('details', 'runtime-other');
+        fields.append(el('summary', '', '查看草稿参数'),table(['参数','草稿值'],data.fields.map(f=>{
+          const value=configGet(f.key);
+          return [f.label,typeof value==='boolean'?(value?'开':'关'):Array.isArray(value)?value.map(v=>typeof v==='object'?JSON.stringify(v):String(v)).join('、')||'未选':String(value??'未配置')];
+        })));
+        result.append(fields);
+      }
       return;
     }
+    const root = el('details', 'preview-inspection');
     if(data.dispatch){if(data.dispatch.fuel!==undefined)root.append(el('p','config-help','汽油库存 '+(data.dispatch.fuel??'未同步')+' · 待确认占用 '+(data.dispatch.pending??'未同步')));root.append(table(['舰队','状态'],(data.dispatch.fleets??[]).map(f=>[f.name||f.buildingId,f.reason||'当前可用'])));}
-    root.append(el('p', 'config-help', (data.scopeLabel || '当前分类') + (data.viewOnly ? ' · 只读' : ' · 可排 '+data.actions.length+' 项') + ' 检查时间：' + new Date(data.checkedAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })));
     if (data.treasure) {
       const state = data.treasure;
-      root.append(el('p', 'config-help', `读到 ${data.counts?.treasures ?? 0} 艘候选货轮、${data.counts?.fleets ?? 0} 支舰队，汽油 ${state.fuel ?? '未确认'}，每队费用 ${state.fuelPerFleet ?? '未确认'}，今日领奖 ${state.todayRewardTimes ?? '未确认'} / ${state.rewardLimit ?? '未确认'}。`));
-      const mode = el('p', 'config-help title-with-help', '常规参与模式：' + (state.participationMode === 'always' ? '每次参与' : '打满就停'));
-      mode.append(makeHelpTip('常规参与模式', state.participationMode === 'always' ? '领奖已满仍可常规参加。' : '领奖已满后停止常规派遣和备战维修。追杀按对手名单执行。')); root.append(mode);
+      const mode = {always:'每次参与', untilFull:'打满就停'}[state.participationMode];
+      root.append(el('p', 'config-help', ['汽油 '+(state.fuel ?? '未确认'), '每队费用 '+(state.fuelPerFleet ?? '未确认'), mode && '常规参与模式：'+mode].filter(Boolean).join(' · ')));
       if (state.targets?.length) root.append(table(['货轮', '本人实际进度 / 上限', '参与条件'], state.targets.map(target => [target.label,
         (target.personalProgress == null ? '未确认' : target.personalProgress + '%') + ' / ' + (target.personalProgressLimit ?? '?') + '%', target.chaseName ? '追杀 ' + target.chaseName : target.reason || '满足目标条件'])));
       if (state.fleets?.length) root.append(table(['舰队', '实际状态 / 耐久', '游戏自动作战', '舰队条件'], state.fleets.map(fleet => [
@@ -2143,15 +2235,18 @@ async function configPreview() {
       const state = data.antique;
       root.append(el('p', 'config-help', '已激活藏品 ' + (state.count ?? '未确认') + ' 件 · 套装 ' + (state.suits ?? '未确认') + ' 套 · 大师等级 ' + (state.masterLv ?? '未确认') + ' · 金币 ' + (state.gold ?? '未确认')));
     }
-    const list = el('ol', 'config-preview-list');
-    for (const action of data.actions) { const row = el('li', '', action.label); if (action.costs.length) row.append(el('span', 'config-preview-cost', '消耗：' + action.costs.map(cost => cost.name + ' ×' + cost.num).join('、'))); list.append(row); }
-    root.append(list);
-    if (data.notes.length) { const details = el('details'); details.append(el('summary', '', (data.viewOnly ? '状态说明（' : '查看跳过原因与条件（') + data.notes.length + '）')); const notes = el('ul'); for (const text of data.notes) notes.append(el('li', '', text)); details.append(notes); root.append(details); }
+    if (root.childElementCount) {
+      const title = data.treasure ? '查看货轮与舰队条件' : data.forge ? '查看工厂状态与操作' : data.cityWar ? '查看城战条件与舰队' : '查看状态明细';
+      root.prepend(el('summary', '', title));
+      result.append(root);
+    }
     configMessage('');
   } catch (error) {
-    if (account === current) {
-      if (contextChanged()) { clear($('config-preview-result')); configMessage('草稿、分组或预览范围已变化，请重新预览。'); }
-      else {clear($('config-preview-result')).append(el('p','bad','预览未完成：'+error.message));configErrors(error);}
+    if (stillOnPage() && JSON.stringify(configEditor.draft) === original) {
+      configEditor.previewSummary = null;
+      configRenderUsage();
+      clear($('config-preview-result')).append(el('p','bad','预览未完成：'+error.message));
+      if (error.fields) configErrors(error);
     }
   }
   finally { if (account === current) { configBusy(false); configUpdateState(); $('config-preview').textContent = '只读预览'; } }
@@ -2164,7 +2259,6 @@ $('config-file').onchange = configImportFile;
 $('config-export').onclick = configExport;
 $('config-preview').onclick = configPreview;
 $('config-weekly-ranking-refresh').onclick = () => { void configWeeklyRankingLoad(true); };
-$('config-preview-scope').onchange = () => {const value=$('config-preview-scope').value;if(value.startsWith('module:')){const g=configEditor.groups.get(value.slice(7));if(g){configActivate(g.category,false,false);configActivateGroup(g.id,false,true,true);}}configEditor.previewSummary=null;clear($('config-preview-result'));configRenderUsage();};
 for (const tab of document.querySelectorAll('[data-config-tab]')) {
   tab.onclick = () => configActivate(tab.dataset.configTab);
   tab.onkeydown = event => {

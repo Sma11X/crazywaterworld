@@ -8,7 +8,7 @@ import { formatConsoleLog } from '../src/console-log.mjs';
 import { createLogAccountLabels } from '../src/log-accounts.mjs';
 import { describeLogError } from '../src/log-errors.mjs';
 import { LOG_CATEGORIES } from '../src/log-categories.mjs';
-import { formatLoopStep } from '../src/loop.mjs';
+import { formatLoopStep, formatLoopRound } from '../src/loop.mjs';
 
 const time = new Date(2026, 10, 12, 13, 14, 15).getTime();
 const clock = new Intl.DateTimeFormat('zh-CN', {
@@ -20,6 +20,16 @@ let passed = 0;
 function test(name, fn) {
   fn(); passed++; console.log('通过：' + name);
 }
+
+test('同一条记录只计入一种轮次结果，已确认与已发送分别计数', () => {
+  const results = [
+    {ok:true, sent:true, status:'unknown'}, {ok:true, skipped:true, pending:true},
+    {ok:true, sent:true, status:'confirmed'}, {ok:true, sent:true},
+    {skipped:true, reason:'未到时间'}, {ok:false, error:'请求被拒绝'},
+  ];
+  assert.equal(formatLoopRound({round:1, tasks:{results}, dailies:{results:[]}, world:{results:[]}}),
+    '挂机第 1 轮结束 · 待确认 2 项，完成 1 项，已发送 1 项，跳过 1 项，失败 1 项');
+});
 
 test('扩展挂机日志显示功能名称，配置键只保留为内部任务标识', () => {
   for (const [key, label, category] of [

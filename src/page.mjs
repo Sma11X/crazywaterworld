@@ -11,6 +11,7 @@ const progressionScript = readFileSync(new URL('./ui/progression.js', import.met
 const lineupScript = readFileSync(new URL('./lineup-editor.js', import.meta.url), 'utf8');
 const lineupCss = readFileSync(new URL('./lineup-editor.css', import.meta.url), 'utf8');
 const settingsScript = readFileSync(new URL('./settings-ui.js', import.meta.url), 'utf8');
+const runtimeOverviewScript = readFileSync(new URL('./runtime-overview-ui.js', import.meta.url), 'utf8');
 const activitiesScript = readFileSync(new URL('./ui/activities.js', import.meta.url), 'utf8');
 const settingsCss = readFileSync(new URL('./settings.css', import.meta.url), 'utf8');
 const giftCodeScript=readFileSync(new URL('./gift-codes-ui.js',import.meta.url),'utf8');
@@ -1222,48 +1223,13 @@ async function pirateAdvanceCommand(action) {
 $('pirate-manual-once').onclick=()=>pirateAdvanceCommand('once');
 $('pirate-advance-start').onclick=()=>pirateAdvanceCommand('start');
 $('pirate-advance-stop').onclick=()=>pirateAdvanceCommand('stop');
-let overviewLoopData=null,overviewLoopOwner=null,overviewRenderKey="";
-function compactOverviewText(text){
- return String(text||'—').replaceAll('本次连接尚无检查结果','待检查').replaceAll('尚未同步当前条件','待同步')
-   .replaceAll('当前没有可读取的万吨货轮','暂无万吨货轮').replaceAll('当前不在服务器','未到')
-   .replaceAll('受总控限制：','受限：').replaceAll('当前没有新的联盟福利礼包','暂无联盟福利礼包');
-}
-function renderAutomationOverview(data){
- overviewLoopData=data;overviewLoopOwner=current;
- const root=$('overview-task-groups'),opened=new Set([...root.querySelectorAll('details[open]')].map(d=>d.dataset.group));
- const query=$('overview-task-search').value.trim().toLowerCase(),mode=$('overview-task-filter').value;
- const issue=t=>t.enabled&&(t.blockedBy?.length||['error','pending'].includes(t.observation?.state));
- const controls=(data.controls??[]).map(t=>({...t,group:t.group==='总控制'?'运行范围与权限':t.group}));
- const renderKey=JSON.stringify([current,data.running,query,mode,controls,data.fleetMaintenance]);if(renderKey===overviewRenderKey)return;overviewRenderKey=renderKey;
- const filterKey=JSON.stringify([current,query,mode]);
- const previousGroups=root.filterKey===filterKey?new Set([...root.children].map(s=>s.dataset.group)):new Set();
- root.filterKey=filterKey;
- const expanded=key=>previousGroups.has(key)?opened.has(key):!!query||mode==='issues'||opened.has(key);
- const focusedGroup=document.activeElement?.closest('.overview-task-group')?.dataset.group;clear(root);
- if(!Array.isArray(data.controls)){clear(root);$('overview-task-summary').textContent='未同步';return;}
- const selected=controls.filter(t=>(mode==='all'||mode==='enabled'&&t.enabled||mode==='issues'&&issue(t))&&(!query||(t.label+' '+(t.observation?.text??'')).toLowerCase().includes(query)));
- $('overview-task-summary').textContent=(data.running?'运行中':'已停止')+' · 已开 '+controls.filter(t=>t.enabled).length+' · 异常/受限 '+controls.filter(issue).length+((query||mode!=='enabled')?' · 筛出 '+selected.length:'');
- for(const group of [...new Set(selected.map(t=>t.group))]){
-  const items=selected.filter(t=>t.group===group),section=el('details','overview-task-group');section.dataset.group=group;section.open=expanded(group);
-  section.append(el('summary','',group+' · '+items.length+' 项'));
-  section.append(table(['功能','当前进度','当前条件'],items.map(t=>[t.label,compactOverviewText(t.progress),compactOverviewText(t.condition||t.observation?.text||'待同步')])));
-  root.append(section);if(group===focusedGroup)section.querySelector('summary').focus({preventScroll:true});
- }
- const maintenance=data.fleetMaintenance,repairRows=(maintenance?.rows??[]).filter(r=>(!query||('战后维修 '+r.name+' '+r.source+' '+r.condition).toLowerCase().includes(query))&&(mode!=='issues'||['waiting','unknown'].includes(r.state)));
- const maintenanceShown=maintenance&&(mode==='all'||maintenance.enabled)&&(repairRows.length||(!query||'战后维修'.includes(query))&&maintenance.reason);
- if(maintenanceShown){
-  const section=el('details','overview-task-group');section.dataset.group='fleet-maintenance';section.open=expanded('fleet-maintenance');section.append(el('summary','','战后维修 · '+repairRows.length+' 队'));
-  section.append(el('p','dim','沿用城战/巨轮所选舰队和自动维修参数；重复选择按调度优先级取参数。'));
-  if(maintenance.reason)section.append(el('p','dim',maintenance.reason));
-  if(repairRows.length)section.append(table(['舰队','当前进度','当前条件'],repairRows.map(r=>[r.name+' · '+r.source,(r.durability??'未同步')+'/'+(r.maxDura??'未同步'),maintenance.enabled?r.condition:'监控未运行；'+r.condition])));
-  root.append(section);
- }
- if(!selected.length&&!maintenanceShown)root.append(el('p','dim','没有符合当前筛选的项目。'));
-}
-$('overview-task-search').oninput=()=>{if(overviewLoopData&&overviewLoopOwner===current)renderAutomationOverview(overviewLoopData);};
-$('overview-task-filter').onchange=$('overview-task-search').oninput;
+${runtimeOverviewScript}
 function renderLoop(data) {
   renderAutomationOverview(data);
+  if (configEditor.owner === current && configVisible()) {
+    configEditor.runtime = data;
+    configRenderUsage();
+  }
   renderPirateAdvance(data.pirateAdvance);
   loopSettingsRevision = data.settingsRevision;
   if (snapshot.looping !== data.running || snapshot.loopStopping !== data.stopping) accountStatusRevision++;
@@ -1288,9 +1254,9 @@ let loopReads = 0;
 async function refreshLoop() {
   if(document.hidden)return;
   const account = current, version = ++loopVersion;
+  if (overviewLoopOwner !== account || !account) resetAutomationOverview(account ? '正在读取运行状态' : '请先选择账号');
   if (loopAccount !== account || !account) {
     $('loop-hint').textContent = account ? '正在读取设置' : '请选择账号';
-    if(overviewLoopOwner!==account){overviewLoopData=null;overviewLoopOwner=account;overviewRenderKey='';clear($('overview-task-groups'));$('overview-task-summary').textContent=account?'正在读取运行状态':'请先选择账号';}
     loopSettingsRevision = null;
     $('loop-every').disabled = true;
     $('loop-every').value = '';
@@ -1307,7 +1273,10 @@ async function refreshLoop() {
     const data = await call('/api/loop');
     if (account === current && version === loopVersion) renderLoop(data);
   } catch {
-    /* call 已记录错误 */
+    if (account === current && version === loopVersion) {
+      resetAutomationOverview('运行状态读取失败，正在等待刷新', false);
+      if (configEditor.owner === account && configVisible()) { configEditor.runtime = null; configRenderUsage(); }
+    }
   } finally {
     loopReads--;
   }

@@ -7,7 +7,7 @@ import { Switch } from "./switch"
 import { HelpTip } from "./help-tip"
 import { Badge } from "./badge"
 import { DialogFooter, DialogHeader, DialogTitle } from "./dialog"
-import { Backpack, Gem, Gift, LayoutGrid, MessageCircle, Music2, Plus, QrCode, Shirt, Smartphone, Sprout, X } from "lucide-react"
+import { Backpack, Gem, Gift, LayoutGrid, MessageCircle, Music2, Plus, QrCode, Search, Shirt, Smartphone, Sprout, X } from "lucide-react"
 
 function Panel({title, help, titleAfter, children}: {title: string; help?: string; titleAfter?: React.ReactNode; children: React.ReactNode}) {
   return <Card><CardHeader><CardTitle className="title-with-help">{title}{help && <HelpTip title={title}>{help}</HelpTip>}</CardTitle>{titleAfter && <CardAction className="row-span-1 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-start-2 max-md:justify-self-start">{titleAfter}</CardAction>}</CardHeader><CardContent>{children}</CardContent></Card>
@@ -89,10 +89,17 @@ export function giftCodesPage() {
 
 export function overviewPage() {
   return renderToStaticMarkup(<div className="grid gap-3">
-    <Panel title="运行概览" help="按功能分别查看当前进度与当前条件。这里只读展示；开关与参数在对应挂机配置中设置。">
-      <div className="bar overview-task-filter"><Input id="overview-task-search" type="search" aria-label="查找运行状态" placeholder="功能名称或状态" /><label htmlFor="overview-task-filter">显示</label><select id="overview-task-filter" defaultValue="enabled"><option value="enabled">已开启</option><option value="issues">异常 / 受总控限制</option><option value="all">全部项目</option></select></div>
-      <p id="overview-task-summary" className="dim" role="status">等待读取运行状态</p>
-      <div id="overview-task-groups" />
+    <Panel title="运行概览" titleAfter={<span id="overview-task-summary" role="status">正在读取运行状态</span>}>
+      <p id="overview-loop-reason" className="runtime-message" hidden />
+      <div id="overview-browser" hidden>
+        <div className="overview-tools">
+          <label className="overview-search"><Search size={16} aria-hidden="true" /><Input id="overview-task-search" type="search" aria-label="搜索功能或原因" placeholder="搜索功能或原因" /></label>
+          <select id="overview-task-filter" aria-label="按运行状态筛选" defaultValue="all"><option value="all">全部功能</option><option value="enabled">已开启</option><option value="issues">需关注</option></select>
+        </div>
+        <div className="overview-columns" aria-hidden="true"><span>功能</span><span>状态</span><span>结果或原因</span></div>
+        <div id="overview-task-groups" role="region" aria-label="功能运行状态" tabIndex={0} />
+        <div id="overview-matches" className="overview-footer" role="status" />
+      </div>
     </Panel>
     <Panel title="世界概览" help="点击城池可查看攻守队列、驻防和可用操作。地图刷新间隔可设为 5–300 秒。" titleAfter={<div className="world-refresh-controls"><Button id="world-map-auto-refresh" size="sm" variant="outline" aria-pressed="true">自动刷新：开</Button><label className="world-refresh-setting">每<input id="world-map-refresh-seconds" aria-label="世界概览刷新秒数" type="number" min="5" max="300" step="1" defaultValue="10" />秒</label></div>}>
       <div id="world-map-fleets" className="fleet-summary" aria-label="我的舰队" />

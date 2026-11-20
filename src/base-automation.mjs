@@ -193,7 +193,7 @@ export function baseDemands(snapshot, config, settings) {
 }
 
 export async function previewNativeAutomation(client, config, player, settings, flags, world, usage) {
-  const actions = [], notes = [];
+  const actions = [], notes = [], moduleNotes = { gather: [], cargo: [] };
   const enabled = key => flags[key] === true && nativePreferenceEnabled(settings, key);
   const reads = new Set(['FishEncyclopediaRequest','OnWaterRequest', 'AllItemRequest', 'AllResourceRequest', 'GameEffectRequest', 'CargoShipsRequest', 'WeekInfoRequest', 'WeekOrderInfoRequest']);
   // 除 dryRun 分支外再限定请求白名单，预览路径始终不能发送游戏写入。
@@ -210,7 +210,11 @@ export async function previewNativeAutomation(client, config, player, settings, 
     if (entry?.action) actions.push(entry.action);
     else if (entry?.reason || entry?.error) notes.push((entry.label || '采集') + '：' + (entry.reason || entry.error));
   };
-  const group = async (label, action) => { try { await action(); } catch (error) { notes.push(label + '：' + error.message); } };
+  const group = async (label, action, module = 'gather') => {
+    const from = notes.length;
+    try { await action(); } catch (error) { notes.push(label + '：' + error.message); }
+    moduleNotes[module].push(...notes.slice(from));
+  };
   if (enabled('autoFish')) await group('钓鱼', async () => record(await fishOnce(readonly, config, () => enabled('autoFish'), { dryRun: true, fishBook: settings.gather.fishBook })));
   if (enabled('fishEnhance')) await group('钓具养成', async () => record(await upgradeFishingOnce(readonly, config, { playerLevel: player?.level,
     targetLevel: settings.gather.targetLevel, enabled: () => enabled('fishEnhance'), dryRun: true })));
@@ -220,11 +224,11 @@ export async function previewNativeAutomation(client, config, player, settings, 
   if (enabled('cargo') && player?.level >= (rows(config, 'CargoUnlockCfg')[0]?.playerLevel ?? 9)) await group('贸易港', () => serviceCargo(readonly, config, {
     enabled: () => enabled('cargo'), getSettings: () => settings, ledger: { snapshot: () => usage }, dryRun: true,
     log(label, details) { if (details?.action) actions.push(details.action); else if (details?.skipped) notes.push(label); },
-  }));
+  }), 'cargo');
   if (settings.gather.keyOpen && actions.some(action => action.kind === 'autoDive') && world.have('保险箱钥匙') >= 1) {
     actions.push({ kind: 'diveKey', label: '潜水成功后使用 1 把现有保险箱钥匙', costs: [{ id: '保险箱钥匙', num: 1 }] });
   }
-  return { actions, notes };
+  return { actions, notes, moduleNotes };
 }
 
 export function planBaseAutomation(snapshot, config, settings, usage = {}, { diveCompleted = false, petQualityOrder = 'asc' } = {}) {

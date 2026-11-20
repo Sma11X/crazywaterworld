@@ -600,6 +600,15 @@ export async function claimDailies(client, protocol, { config = null, timeout = 
       const claimed = fresh[kind + 'RewardClaimed'];
       return rows?.length && rows.every(row => claimed?.includes(row.id));
     };
+    if (ready('chests')) {
+      for (const [kind, field] of [['daily', 'claimDailyChest'], ['weekly', 'claimWeeklyChest']]) {
+        const tiers = config?.tables?.[CHEST_TABLE[kind]]?.data;
+        if ((settings && !settings.dailies[field]) || !tiers?.length) continue;
+        const ids = fresh[kind + 'RewardClaimed'] ?? [];
+        const count = tiers.filter(tier => ids.includes(tier.id)).length;
+        scheduler.observe?.('dailies.' + field, '已领取 ' + count + '/' + tiers.length + ' 档');
+      }
+    }
     if (ready('chests') && !actions.length && Object.values(CHEST_TABLE).every(table => config?.tables?.[table]?.data?.length)) {
       scheduler.observe?.('chests',allCollected('daily')&&allCollected('weekly')?'当前可领活跃宝箱已全部领取':'活跃度尚未达到下一档');
       scheduler.defer('chests', allCollected('daily') && allCollected('weekly') ? fresh.dailyResetTime : recheck);
@@ -607,11 +616,15 @@ export async function claimDailies(client, protocol, { config = null, timeout = 
   }
   for (const action of actions) {
     if (!ready('chests')) break;
-    const title = action.request === 'DrawWeeklyRewardRequest' ? '周活跃宝箱' : '日常活跃宝箱';
+    const weekly = action.request === 'DrawWeeklyRewardRequest';
+    const key = weekly ? 'dailies.claimWeeklyChest' : 'dailies.claimDailyChest';
+    const title = weekly ? '周活跃宝箱' : '日常活跃宝箱';
     try {
       const body = await sendAction(client, protocol, action, timeout);
+      scheduler?.observe?.(key, '已请求领取第 '+action.body.index.join('、')+' 档，等待同步');
       report({ id: 'activityChest', title, request: action.request, note: action.note, ok: true, body });
     } catch (error) {
+      scheduler?.observe?.(key, error.message, 'error');
       report({ id: 'activityChest', title, request: action.request, note: action.note, ok: false, error: error.message });
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
