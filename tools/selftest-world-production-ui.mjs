@@ -443,7 +443,7 @@ test('农田施工使用建造倒计时，重新读取后清理旧倒计时', ()
   assert.doesNotMatch(env.node('world-factories').textContent, /待竣工/);
 });
 
-test('仓库仅给工厂产物和作物附上限，完整库存才补已解锁的零库存', () => {
+test('工厂产物和作物按各自的上限显示，完整库存才补已解锁的零库存', () => {
   const config = { tables: {
     BuildingProduceCfg: { data: [
       { buildType: '种子厂', itemId: '小麦种子', unlockLevel: 1 },

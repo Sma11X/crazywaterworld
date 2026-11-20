@@ -8,7 +8,9 @@ for (const [family, types] of Object.entries({
 })) {
   for (const type of types) inventoryFamilyByType.set(type, family);
 }
-const inventoryTabs = [...$('inventory-tabs').querySelectorAll('[role=tab]')];
+const inventoryTabList = $('inventory-tabs');
+const inventoryTabs = [...inventoryTabList.querySelectorAll('[role=tab]')];
+const narrowInventory = window.matchMedia('(max-width:768px)');
 let inventoryData = null, inventoryOwner = null, inventoryFamily = null;
 bindConsoleSlice('inventory', { inventoryData, inventoryOwner, inventoryFamily }, state => {
   inventoryData = state.inventoryData;
@@ -46,6 +48,7 @@ function showInventoryFamily(requested, keepPosition = false) {
     counts.set(family, (counts.get(family) || 0) + 1);
   }
   const active = requested || inventoryTabs.find(tab => counts.has(tab.dataset.family))?.dataset.family || 'production';
+  const revealSelection = !keepPosition || active !== inventoryFamily;
   if ((requested || inventoryData?.length) && active !== inventoryFamily) setConsoleValue('inventory', 'inventoryFamily', active);
   for (const tab of inventoryTabs) {
     const family = tab.dataset.family, selected = family === active;
@@ -54,6 +57,7 @@ function showInventoryFamily(requested, keepPosition = false) {
     tab.querySelector('[data-stock-count]').textContent = inventoryData
       ? String(family === 'all' ? inventoryData.length : counts.get(family) || 0) : '';
     if (selected) {
+      if (narrowInventory.matches && revealSelection) revealHorizontalTab(tab);
       $('inventory-panel').setAttribute('aria-labelledby', tab.id);
       const label = family === 'all' ? '搜索全部库存' : '搜索' + tab.querySelector('span').textContent;
       $('inventory-query').placeholder = label;
@@ -84,7 +88,8 @@ function inventoryItem(entry, showCategory) {
   item.append(iconEl(entry.icon, 24, entry.name), name, values);
   if (!Number.isFinite(ratio)) return item;
   const low = ratio <= 0.2, mid = ratio <= 0.5;
-  const label = low ? '紧缺' : mid ? '偏低' : ratio >= 1 ? '已满' : '充足';
+  const level = low ? '紧缺' : mid ? '偏低' : ratio >= 1 ? '已满' : '充足';
+  const label = entry.capKind === 'recovery' ? (ratio >= 1 ? '已达恢复上限' : '自然恢复上限') : level;
   item.dataset.level = low ? 'low' : mid ? 'mid' : 'high';
   const gauge = el('div', 'inventory-gauge'), track = el('div', 'inventory-track');
   track.setAttribute('role', 'meter');
@@ -129,21 +134,21 @@ function paintInventory(keepPosition = false) {
   $('inventory-match-count').textContent = query || category ? '匹配 ' + matches.length + ' 种' : '';
 }
 
-const narrowInventory = window.matchMedia('(max-width:760px)');
 function orientInventoryTabs() {
-  $('inventory-tabs').setAttribute('aria-orientation', narrowInventory.matches ? 'horizontal' : 'vertical');
+  inventoryTabList.setAttribute('aria-orientation', narrowInventory.matches ? 'horizontal' : 'vertical');
+  if (narrowInventory.matches) revealHorizontalTab(inventoryTabList.querySelector('[aria-selected=true]'));
 }
 orientInventoryTabs();
-narrowInventory.addEventListener('change', orientInventoryTabs);
+new ResizeObserver(orientInventoryTabs).observe(inventoryTabList);
 inventoryTabs.forEach((tab, index) => {
   tab.onclick = () => showInventoryFamily(tab.dataset.family);
   tab.onkeydown = event => {
-    const stride = narrowInventory.matches ? 3 : 1;
-    const offsets = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -stride, ArrowDown: stride, Home: -index, End: inventoryTabs.length - 1 - index };
+    const offsets = { ArrowLeft: -1, ArrowRight: 1, Home: -index, End: inventoryTabs.length - 1 - index };
+    if (!narrowInventory.matches) Object.assign(offsets, { ArrowUp: -1, ArrowDown: 1 });
     if (!Object.hasOwn(offsets, event.key)) return;
     event.preventDefault();
     const next = inventoryTabs[(index + offsets[event.key] + inventoryTabs.length) % inventoryTabs.length];
-    next.focus();
+    next.focus({ preventScroll: narrowInventory.matches });
     next.click();
   };
 });

@@ -1818,7 +1818,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
   async function world(session, account, allowAccelerators = false) {
     const instance = await ensureConnected(session, account);
     const config = loadConfigSafe();
-    const survey = await surveyWorld(instance, protocolFor(instance), { config, player: session.player, includeCargo: session.loop.tasks.cargo || needsCargoDemand(session.preferences) });
+    const survey = await surveyWorld(instance, protocolFor(instance), { config, player: session.player,
+      includeInventoryCaps: true, includeCargo: session.loop.tasks.cargo || needsCargoDemand(session.preferences) });
     const settings = session.preferences;
     const usage = usageFor(session).snapshot();
     const extra = settings ? await surveyBaseAutomation(instance, protocolFor(instance), config, session.player, settings, survey, { ledger: usageFor(session), enabled: () => session.client === instance && instance.connected !== false }) : null;

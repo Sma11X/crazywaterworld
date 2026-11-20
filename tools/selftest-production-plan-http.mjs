@@ -10,6 +10,8 @@ process.env.CW_DATA_DIR = directory;
 process.env.CW_CONFIG_PACK = path.join(directory, 'config.json');
 process.env.CW_PROTO_BUNDLE = path.join(directory, 'intentionally-missing-protocol.js');
 const config = {
+  ItemCfg: [{ id: '金属', show_name: '废金属', type: '原料' }],
+  ResourceRecoverCfg: [{ id: 'ARENA_POINT', recoverMax: 10 }, { id: 'LEAGUE_POINT', recoverMax: 12 }],
   BuildingCfg: [{ buildingType: '食品厂' }, { buildingType: '农田' }, { buildingType: '民居' }, { buildingType: '宠物培育室' }],
   BuildingUpgradeCfg: [{ buildingType: '民居', level: 1, effect: [] },
     { buildingType: '民居', level: 2, playerLevel: 1, curPeople: 1, condition: [['食品厂', 1]], consume: [['面包', 4]] }],
@@ -158,6 +160,33 @@ try {
       assert.equal(world.farms[0].productId, '小麦');
       assert.deepEqual(world.recipes.map(recipe => [recipe.productId, recipe.output, recipe.inputs[0].id, recipe.inputs[0].num]),
         [['面包', 1, '小麦', 5], ['小麦', 5, '小麦种子', 1]]);
+    } finally { await f.close(); }
+  });
+  await test('仓库按账号效果刷新原料容量，挑战券按配置标记恢复上限并保留实际数量', async () => {
+    const f = await fixture();
+    try {
+      const { AllItemRequest, AllResourceRequest, GameEffectRequest } = f.state.responses;
+      AllItemRequest.items.push({ itemId: '金属', num: 5860 });
+      AllResourceRequest.list.push({ res: 5, amount: 0 }, { res: 6, amount: 14 });
+      const capacity = { id: 16, value: 6000 };
+      GameEffectRequest.effects.push(capacity);
+      await f.api('connect', {});
+      const readStock = async () => new Map((await f.api('world')).stock.map(row => [row.id, row]));
+      const stock = await readStock();
+      assert.equal(stock.get('金属').name, '废金属');
+      assert.equal(stock.get('金属').cap, 6000);
+      for (const [id, num, cap] of [['ARENA_POINT', 0, 10], ['LEAGUE_POINT', 14, 12]]) {
+        const row = stock.get(id);
+        assert.deepEqual([row.num, row.cap, row.capKind], [num, cap, 'recovery']);
+      }
+      assert.equal(stock.get('GOLD').cap, undefined);
+      capacity.value = 7200;
+      assert.equal((await readStock()).get('金属').cap, 7200);
+      GameEffectRequest.effects = [];
+      const missing = await readStock();
+      assert.equal(missing.get('金属').cap, undefined);
+      assert.equal(missing.get('金属').num, 5860);
+      assert.equal(missing.get('ARENA_POINT').cap, 10);
     } finally { await f.close(); }
   });
   await test('真实HTTP保留全部当前订单与完整库存并保持零游戏写入', async () => {

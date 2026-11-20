@@ -375,13 +375,13 @@ function openJournal() {
   document.body.classList.add('has-log-dialog'); $('journal-dialog').showModal();
   const selectedAccount = $('log-account-tabs').querySelector('[aria-pressed=true]');
   selectedAccount.focus({ preventScroll: true });
-  revealLogFilter(selectedAccount); revealLogFilter($('log-tabs').querySelector('[aria-selected=true]'));
+  revealHorizontalTab(selectedAccount); revealHorizontalTab($('log-tabs').querySelector('[aria-selected=true]'));
 }
 $('logs-open').onclick = openJournal;
 $('logs-close').onclick = () => $('journal-dialog').close();
 $('journal-dialog').addEventListener('close', () => { document.body.classList.remove('has-log-dialog'); (logReturnFocus?.isConnected ? logReturnFocus : $('logs-open')).focus(); });
 const logTabs = [...$('log-tabs').querySelectorAll('[role=tab]')];
-function revealLogFilter(button) {
+function revealHorizontalTab(button) {
   // 使用布局坐标，避免弹窗开场缩放影响横向定位。
   const container = button.parentElement, left = button.offsetLeft - 3, right = button.offsetLeft + button.offsetWidth + 3;
   if (left < container.scrollLeft) container.scrollLeft = left;
@@ -390,12 +390,12 @@ function revealLogFilter(button) {
 function selectLogGroup(tab) {
   stateActions.setView({ logGroup: tab.dataset.logGroup });
   updateLogSummary();
-  revealLogFilter(tab);
+  revealHorizontalTab(tab);
 }
 function selectLogAccount(id) {
   stateActions.setView({ logAccount: id });
   updateLogSummary();
-  revealLogFilter($('log-account-tabs').querySelector('[aria-pressed=true]'));
+  revealHorizontalTab($('log-account-tabs').querySelector('[aria-pressed=true]'));
 }
 $('log-account-tabs').onkeydown = event => {
   const buttons = [...$('log-account-tabs').querySelectorAll('[data-log-account]')];

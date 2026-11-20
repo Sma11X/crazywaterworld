@@ -53,12 +53,20 @@ function rowsOf(config, name) {
 export function inventoryStockRows(survey, config) {
   const stock = new Map(survey.stock);
   const categories = new Map(rowsOf(config, 'ResourceCfg').map(row => [row.id, '基础资源']));
-  for (const row of rowsOf(config, 'ItemCfg')) categories.set(row.id, row.type);
-  const caps = new Map();
+  const limits = new Map();
+  for (const { id, type } of rowsOf(config, 'ItemCfg')) {
+    categories.set(id, type);
+    if (type === '原料' && Number.isSafeInteger(survey.rawMaterialCap) && survey.rawMaterialCap > 0) {
+      limits.set(id, { cap: survey.rawMaterialCap });
+    }
+  }
+  for (const { id, recoverMax } of rowsOf(config, 'ResourceRecoverCfg')) {
+    if (Number.isSafeInteger(recoverMax) && recoverMax > 0) limits.set(id, { cap: recoverMax, capKind: 'recovery' });
+  }
   if (Number.isSafeInteger(survey.stockCap) && survey.stockCap > 0) {
     const availableProducts = new Set();
     const recordProduct = (id, cap, unlocked) => {
-      caps.set(id, cap);
+      limits.set(id, { cap });
       if (unlocked) {
         availableProducts.add(id);
         // A complete bag omits depleted items. Never infer zero from a failed read.
@@ -77,8 +85,9 @@ export function inventoryStockRows(survey, config) {
     }
   }
   return Array.from(stock, ([id, num]) => ({
-    id, num, category: categories.get(id) || '其他', ...(caps.has(id) ? { cap: caps.get(id) } : {}),
-  })).filter(row => row.num > 0 || (row.cap && row.num === 0 && survey.stockKnown))
+    id, num, category: categories.get(id) || '其他', ...limits.get(id),
+  })).filter(row => row.num > 0 || (row.cap && row.num === 0
+    && (row.capKind === 'recovery' ? survey.resourceStockKnown : survey.stockKnown)))
     .sort((a, b) => b.num - a.num);
 }
 
@@ -201,7 +210,7 @@ function rememberResidentOrders(session, orders) {
 
 // 只读探测：一次拉齐海面状态、库存、资源田、舰队。
 export async function surveyWorld(client, protocol, { config = null, player = null, includeWeekOrder = true, includeCargo = false,
-  ordersOnly = false, includeProductionTiming = true, timeout = 8000 } = {}) {
+  ordersOnly = false, includeProductionTiming = true, includeInventoryCaps = false, timeout = 8000 } = {}) {
   const get = async (name) => {
     const responseName = `${name.slice(0, -7)}Response`;
     if (!protocol[name] || !protocol[responseName]) return null;
@@ -387,7 +396,10 @@ export async function surveyWorld(client, protocol, { config = null, player = nu
     && rowsOf(config, 'BuildingProduceCfg').some(recipe => recipe.buildType === b.type));
   const monthCards = readTiming ? await get('MonthCardRequest') : null;
   const serverClock = () => Math.floor((Date.now() + (client.serverClockOffsetMs || 0)) / 1000);
-  const effects = secondProductionLane(config, monthCards, serverClock()).until > 0 ? await get('GameEffectRequest') : null;
+  const timingEffectsNeeded = secondProductionLane(config, monthCards, serverClock()).until > 0;
+  const effects = (includeInventoryCaps && !ordersOnly) || timingEffectsNeeded ? await get('GameEffectRequest') : null;
+  // RAW_MATERIAL_UPPER_BOUND is the account's current per-material capacity, including bonuses.
+  const rawMaterialCap = Array.isArray(effects?.effects) ? effects.effects.find(effect => effect?.id === 16)?.value : null;
   const resFieldInfo = resFields?.info ?? null;
   const vip = rowsOf(config, 'VipLevelCfg').find(row => row.level === player?.vip?.vipLevel);
   const stockBonus = Number(vip?.effects?.find(([effect]) => effect === '加工品存量上限')?.[1] ?? 0);
@@ -424,8 +436,9 @@ export async function surveyWorld(client, protocol, { config = null, player = nu
     salvageLevel: water.salvageLevel ?? null,
     divingLevel: water.divingLevel ?? null,
     stockCap: baseStockCap > 0 ? baseStockCap + stockBonus : 0,
+    rawMaterialCap,
     factorySlots: slots,
-    productionTiming: { monthCards, effects, observedDurations: observedProductionDurations(client) },
+    productionTiming: { monthCards, effects: timingEffectsNeeded ? effects : null, observedDurations: observedProductionDurations(client) },
     resFields: resFieldInfo ? normalize(resFieldInfo) : null,
     fleets: fleets ? normalize(fleets.fleets ?? []) : null,
     worldOpenLevel: rowsOf(config, 'ModuleOpenCfg').find(r => r.moduleId === '世界')?.playerLevel,
