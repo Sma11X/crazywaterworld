@@ -2,6 +2,7 @@
 const progressionViews = [
   { id:'guild-tech',tab:'guild',path:'/api/guild/tech',render:renderGuildTech },
   { id: 'trial', tab: 'stages', path: '/api/trials', render: renderTrialProgress },
+  { id: 'pirate-manual', tab: 'stages', path: '/api/pirates/hunt', render: renderManualPirateChoices },
   { id: 'crafting', tab: 'heroes', path: '/api/equipment/crafting', render: renderCrafting },
   { id: 'pirate-board', tab: 'activities', path: '/api/pirates/board', render: renderPirateBoard },
   { id: 'guild', tab: 'guild', boxId: 'guild-aid-view', path: '/api/guild', render: renderGuild },
@@ -20,13 +21,15 @@ async function refreshProgression(only) {
     const same=box.dataset.owner===account;
     if(!same||!account||snapshot.paused||disconnected.has(account)){
       clear(box);delete box.progressSnapshot;
+      if(view.id==='pirate-manual')setManualPirateChoices(null);
     }
     box.dataset.owner=account||'';
     if(!account||snapshot.paused||disconnected.has(account)){
       box.textContent=!account?'请先选择账号':snapshot.paused?'账号已暂停':'请先连接账号';return;
     }
-    if(!box.childNodes.length)box.textContent='正在读取…';
+    if(!box.childNodes.length && !box.progressSnapshot)box.textContent='正在读取…';
     box.setAttribute('aria-busy','true');
+    if(view.id==='pirate-manual')paintManualPirateButtons();
     try {
       const data=await call(view.path);
       if(!valid())return;
@@ -41,11 +44,15 @@ async function refreshProgression(only) {
         if(focused)[...box.querySelectorAll('[aria-label]')].find(e=>e.getAttribute('aria-label')===focused)?.focus({preventScroll:true});
       }
       box.progressSnapshot=signature;
-    }catch(error){if(valid()){reportError(error);if(!box.progressSnapshot)box.textContent='读取失败，详情见运行日志';}}
-    finally{if(valid())box.removeAttribute('aria-busy');}
+    }catch(error){if(valid()){
+      reportError(error);
+      if(view.id==='pirate-manual'){delete box.progressSnapshot;setManualPirateChoices(null);box.textContent='读取失败，请刷新重试';}
+      else if(!box.progressSnapshot)box.textContent='读取失败，详情见运行日志';
+    }}
+    finally{if(valid()){box.removeAttribute('aria-busy');if(view.id==='pirate-manual')paintManualPirateButtons();}}
   }));
 }
-for(const id of ['trial','guild','guild-tech','crafting'])$(id+'-refresh').onclick=()=>refreshProgression(id);
+for(const id of ['trial','guild','guild-tech','crafting','pirate-manual'])$(id+'-refresh').onclick=()=>refreshProgression(id);
 
 function progressionAction(label, path, payload, account, reason, group) {
   const key = JSON.stringify(group ? [account, group] : [account, path, payload]);
@@ -190,6 +197,12 @@ function choice(bar, title, options) {
   label.appendChild(control);
   bar.appendChild(label);
   return select;
+}
+
+function renderManualPirateChoices(box, data) {
+  setManualPirateChoices(data);
+  box.textContent=data.reason || (!data.targets.some(t=>!t.reason) && (data.targets[0]?.reason || '暂无可挑战的海盗')) ||
+    (!data.fleets.some(f=>!f.reason) && '暂无可出征的舰队') || '';
 }
 
 function renderTrialProgress(box, rows, account) {

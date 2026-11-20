@@ -529,8 +529,23 @@ try {
       assert.deepEqual(importAutomationSettings({ format: SETTINGS_FORMAT, version: 30, settings: old }), expected);
     }
   });
+  test('海盗独立开关迁移保留原来实际运行的动作', () => {
+    for (const hunt of [false, true]) for (const sweep of [false, true]) for (const daily of [false, true]) {
+      const old = defaultSettings();
+      delete old.pirate;
+      old.loop.dailies = old.dailies.enabled = daily;
+      old.schedule.pirate = sweep;
+      Object.assign(old.pirateHunt, { enabled: hunt, fleetIds: ['1远征船'] });
+      const settings = importAutomationSettings({ format: SETTINGS_FORMAT, version: 31, settings: old });
+      assert.equal(settings.pirate.enabled && settings.pirateHunt.enabled, hunt);
+      assert.equal(settings.pirate.enabled && settings.schedule.pirate, sweep && daily);
+      assert.deepEqual(settings.loop, old.loop);
+      assert.deepEqual(settings.dailies, old.dailies);
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings(settings)), settings);
+    }
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 31);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 32);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;

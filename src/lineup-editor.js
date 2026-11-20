@@ -137,6 +137,7 @@ function updateManualLineupSelects(account) {
   for (const node of document.querySelectorAll('[data-lineup-choice-status]')) {
     if (node.dataset.lineupChoiceStatus === account) paintLineupChoiceStatus(node, state);
   }
+  if(account===current && $('pirate-manual-lineup') && typeof paintManualPirateButtons==='function')paintManualPirateButtons();
 }
 
 function adoptSavedLineups(state, data) {
@@ -389,7 +390,7 @@ function openSavedLineupViewer(account, presetId) {
   if (presetId) return openLineupViewer(account, { presetId });
 }
 
-async function openLineupViewer(account, { presetId, buildingId, fleetName }) {
+async function openLineupViewer(account, { presetId, buildingId, fleetName, fleetPreview = false }) {
   if (account !== current) return;
   const modal = openLineupDialog(account, 'viewer', presetId);
   const loading = el('section', 'lineup-editor lineup-viewer');
@@ -417,7 +418,7 @@ async function openLineupViewer(account, { presetId, buildingId, fleetName }) {
     renderSavedLineups(account); updateManualLineupSelects(account);
     const preset = state.saved.presets.find(item => item.id === presetId);
     if (!preset) throw new Error('该阵容已删除，请重新选择');
-    clear(modal.body); renderLineupViewer(modal.body, state, preset, account);
+    clear(modal.body); renderLineupViewer(modal.body, state, preset, account, {showPet:!fleetPreview});
   } catch (error) {
     if (lineupModal !== modal || account !== current) return;
     message.textContent = error.message;

@@ -97,7 +97,7 @@ export function nativePreferenceEnabled(settings, key) {
     freeRecruit: () => settings.loop.dailies && settings.dailies.enabled,
     ticketRecruit: () => settings.loop.dailies && settings.dailies.enabled,
     arena: () => settings.loop.dailies && settings.dailies.enabled,
-    pirate: () => settings.loop.dailies && settings.dailies.enabled,
+    pirate: () => settings.pirate?.enabled && settings.schedule.pirate,
     shop: () => settings.loop.dailies && settings.dailies.enabled,
   };
   if (map[key]) return !!map[key]();

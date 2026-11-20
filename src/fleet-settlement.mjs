@@ -6,7 +6,7 @@ import { fleetRepairConfirmed } from './fleet-repair-confirmation.mjs';
 import { fleetSpeedConfirmed } from './fleet-speed-evidence.mjs';
 import { forgetReleasedResourceField } from './resource-field-history.mjs';
 
-const fleetKey = /^(?:fleet-speed|fleet-speed-wait|radar-send|world-boss|world-boss-lineup|pirate-first|cityWar|treasureRepair|treasureFollow|treasureSpeed|treasure|silicon|silicon-repair|silicon-retreat|silicon-speed|resource-field):(\d+):/;
+const fleetKey = /^(?:fleet-speed|fleet-speed-wait|radar-send|world-boss|world-boss-lineup|pirate-lineup|pirate-first|cityWar|treasureRepair|treasureFollow|treasureSpeed|treasure|silicon|silicon-repair|silicon-retreat|silicon-speed|resource-field):(\d+):/;
 const repairKinds = new Set(['cityRepair', 'treasureRepair']);
 const integer = Number.isSafeInteger;
 const dayOf = (seconds) => Math.floor((seconds + 28800) / 86400);

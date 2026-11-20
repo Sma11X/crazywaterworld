@@ -1112,31 +1112,115 @@ function setTaskSwitch(input, enabled) {
   input.dataset.state = enabled ? 'checked' : 'unchecked';
   input.querySelector('[data-slot=switch-thumb]').dataset.state = input.dataset.state;
 }
-const pirateAdvanceErrors=new Map();
+const pirateManualMessage=new Map();
+const pirateManualPending=new Set();
+let pirateManualStatus=null;
 const pirateFailureOptions=new Map();
+let pirateManualChoices=null;
+function setManualPirateChoices(data) {
+  pirateManualChoices=data;
+  function fill(id, label, rows, key, describe) {
+    const select=$(id), previous=select.value;
+    select.replaceChildren(new Option('请选择'+label,''));
+    for(const row of rows){
+      const option=new Option(describe(row)+(row.reason?' · '+row.reason:''),row[key]);
+      option.disabled=Boolean(row.reason);
+      select.add(option);
+      if(!option.disabled && option.value===previous)select.value=previous;
+    }
+  }
+  fill('pirate-manual-target','海盗目标',data?.targets??[],'targetKey',t=>t.name+' '+t.level+' 级 · '+t.location);
+  fill('pirate-manual-fleet','出征舰队',data?.fleets??[],'key',f=>f.name+' · 耐久 '+fmt(f.durability)+(f.needsPreset?' · 需选择阵容':' · 战力 '+fmt(f.power)));
+  paintManualPirateButtons();
+}
+function manualPirateSelection() {
+  const target=pirateManualChoices?.targets.find(t=>!t.reason && t.targetKey===$('pirate-manual-target').value);
+  const fleet=pirateManualChoices?.fleets.find(f=>!f.reason && f.key===$('pirate-manual-fleet').value);
+  return {target,fleet};
+}
+function paintManualPirateButtons() {
+  const status=pirateManualStatus?.account===current ? pirateManualStatus.data : null;
+  const pending=pirateManualPending.has(current);
+  const choices=$('pirate-manual-view');
+  const data=pirateManualChoices;
+  const ready=current && !snapshot.paused && !disconnected.has(current) && choices.dataset.owner===current && data;
+  const locked=!ready || choices.hasAttribute('aria-busy') || pending || status?.running;
+  $('pirate-manual-target').disabled=locked || !data.targets.some(t=>!t.reason);
+  $('pirate-manual-fleet').disabled=locked || !data.fleets.some(f=>!f.reason);
+  const {target,fleet}=manualPirateSelection();
+  const lineup=$('pirate-manual-lineup');
+  if(lineup.dataset.owner!==current || lineup.lineups!==savedLineupState(current).saved) {
+    const previous=lineup.dataset.owner===current ? lineup.value : '';
+    lineup.dataset.owner=current || '';
+    lineup.lineups=savedLineupState(current).saved;
+    fillLineupSelect(lineup,lineup.lineups?.presets || [],previous);
+    lineup.options[0].textContent='使用舰队当前阵容';
+  }
+  const preset=lineup.lineups?.presets?.find(p=>p.id===lineup.value);
+  lineup.disabled=locked;
+  $('pirate-manual-lineup-view').disabled=!ready || !(lineup.value?preset:fleet);
+  $('pirate-manual-once').disabled=$('pirate-advance-start').disabled=locked || !status || !!data.reason || !target || !fleet || ((lineup.value || fleet.needsPreset) && !preset);
+  $('pirate-advance-stop').disabled=!status?.running || status.stopping || pending;
+}
+$('pirate-manual-target').onchange=$('pirate-manual-fleet').onchange=$('pirate-manual-lineup').onchange=paintManualPirateButtons;
+$('pirate-manual-lineup-view').onclick=()=>{
+  const presetId=$('pirate-manual-lineup').value, {fleet}=manualPirateSelection();
+  if(presetId || fleet)void openLineupViewer(current,presetId?{presetId,fleetPreview:true}:{buildingId:fleet.buildingId,fleetName:fleet.name});
+};
 function renderPirateAdvance(data) {
   if(!data)return;
-  $('pirate-advance-start').disabled=data.running || !current;
-  $('pirate-advance-stop').disabled=!data.running || data.stopping;
+  pirateManualStatus={account:current,data};
+  paintManualPirateButtons();
   $('pirate-manual-failures').disabled=!!data.running;
+  $('pirate-manual-interval').disabled=!!data.running;
   if(data.running)$('pirate-manual-failures').value=data.maxFailures;
-  $('pirate-advance-state').textContent=[data.stopping?'正在停止':data.running?'推进中':'未运行',data.target,'本次已首杀 '+data.wins+' 级 · 已用汽油 '+data.spent,pirateAdvanceErrors.get(current)||data.reason].filter(Boolean).join(' · ');
+  if(data.running && data.checkEverySeconds)$('pirate-manual-interval').value=data.checkEverySeconds;
+  const state=$('pirate-advance-state');
+  state.textContent=pirateManualMessage.get(current) || [data.stopping?'正在停止':data.running?'连续挑战中':'', data.target, data.spent?'首杀 '+data.wins+' 次 · 已用汽油 '+data.spent:'', data.reason].filter(Boolean).join(' · ');
+  state.hidden=!state.textContent;
 }
-async function pirateAdvanceCommand(start) {
+async function pirateAdvanceCommand(action) {
   const account=current;
-  const maxFailures=Number($('pirate-manual-failures').value);
-  if(start&&(!$('pirate-manual-failures').reportValidity()||!Number.isSafeInteger(maxFailures)))return;
-  if(start)pirateFailureOptions.set(account,maxFailures);
-  pirateAdvanceErrors.delete(account);
-  if(start && !await configFlush()){reportError(new Error('海盗参数尚未保存，请先处理配置页的提示'));return;}
-  if(account!==current)return;
-  $('pirate-advance-start').disabled=$('pirate-advance-stop').disabled=true;
-  try{const data=await call('/api/pirates/advance/'+(start?'start':'stop'),{method:'POST',body:JSON.stringify({confirm:true,...(start?{maxFailures}:{})})});if(account===current)renderPirateAdvance(data);}
-  catch(error){if(account===current){pirateAdvanceErrors.set(account,error.message);$('pirate-advance-state').textContent='未启动：'+error.message;reportError(error);}}
-  finally{if(account===current)refreshLoop();}
+  if(!account || pirateManualPending.has(account))return;
+  const payload={confirm:true};
+  if(action!=='stop'){
+    const {target,fleet}=manualPirateSelection();
+    if(!fleet || !target || $('pirate-manual-once').disabled || $('pirate-manual-view').dataset.owner!==account)return;
+    payload.targetKey=target.targetKey;
+    payload.fleetKey=fleet.key;
+    payload.lineupId=$('pirate-manual-lineup').value;
+    if(action==='start'){
+      if(!$('pirate-manual-failures').reportValidity() || !$('pirate-manual-interval').reportValidity())return;
+      payload.type=target.type;
+      payload.fleetId=fleet.buildingId;
+      payload.maxFailures=Number($('pirate-manual-failures').value);
+      payload.checkEverySeconds=Number($('pirate-manual-interval').value);
+      pirateFailureOptions.set(account,{failures:payload.maxFailures,interval:payload.checkEverySeconds});
+    }
+  }
+  pirateManualMessage.delete(account);
+  pirateManualPending.add(account);
+  paintManualPirateButtons();
+  try{
+    const path=action==='once'?'/api/pirates/hunt':'/api/pirates/advance/'+action;
+    const data=await call(path,{method:'POST',body:JSON.stringify(payload)});
+    if(action==='once')pirateManualMessage.set(account,data.label);
+    else if(account===current)renderPirateAdvance(data);
+  } catch(error){
+    pirateManualMessage.set(account,error.message);
+    if(account===current)reportError(error);
+  } finally{
+    try {
+      if(account===current)await Promise.all([refreshLoop(),refreshProgression('pirate-manual')]);
+    } finally {
+      pirateManualPending.delete(account);
+      paintManualPirateButtons();
+    }
+  }
 }
-$('pirate-advance-start').onclick=()=>pirateAdvanceCommand(true);
-$('pirate-advance-stop').onclick=()=>pirateAdvanceCommand(false);
+$('pirate-manual-once').onclick=()=>pirateAdvanceCommand('once');
+$('pirate-advance-start').onclick=()=>pirateAdvanceCommand('start');
+$('pirate-advance-stop').onclick=()=>pirateAdvanceCommand('stop');
 let overviewLoopData=null,overviewLoopOwner=null,overviewRenderKey="";
 function compactOverviewText(text){
  return String(text||'—').replaceAll('本次连接尚无检查结果','待检查').replaceAll('尚未同步当前条件','待同步')
@@ -1211,9 +1295,10 @@ async function refreshLoop() {
     $('loop-every').value = '';
     $('loop-every').removeAttribute('aria-invalid');
     $('loop-interval-status').textContent = '';
-    $('pirate-advance-start').disabled=$('pirate-advance-stop').disabled=true;
+    $('pirate-manual-once').disabled=$('pirate-advance-start').disabled=$('pirate-advance-stop').disabled=true;
     $('pirate-advance-state').textContent=account?'正在读取首杀状态':'请选择账号';
-    $('pirate-manual-failures').value=pirateFailureOptions.get(account)??1;
+    $('pirate-manual-failures').value=pirateFailureOptions.get(account)?.failures??1;
+    $('pirate-manual-interval').value=pirateFailureOptions.get(account)?.interval??15;
   }
   if (!account) return;
   loopReads++;

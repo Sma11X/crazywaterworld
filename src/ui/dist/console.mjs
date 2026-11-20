@@ -142,10 +142,35 @@ function Input({ type, ...props }) {
   return /* @__PURE__ */ React3.createElement("input", { type, "data-slot": "input", ...props });
 }
 
-// src/ui/help-tip.tsx
+// src/ui/native-select.tsx
 import * as React4 from "react";
-function HelpTip({ title, children }) {
+function NativeSelect({
+  className,
+  size = "default",
+  ...props
+}) {
   return /* @__PURE__ */ React4.createElement(
+    "div",
+    {
+      className: "group/native-select relative inline-block max-w-full min-w-0 has-[select:disabled]:opacity-50",
+      "data-slot": "native-select-wrapper"
+    },
+    /* @__PURE__ */ React4.createElement(
+      "select",
+      {
+        "data-slot": "native-select",
+        "data-size": size,
+        className: cn("w-full", className),
+        ...props
+      }
+    )
+  );
+}
+
+// src/ui/help-tip.tsx
+import * as React5 from "react";
+function HelpTip({ title, children }) {
+  return /* @__PURE__ */ React5.createElement(
     "button",
     {
       type: "button",
@@ -166,7 +191,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Boxes, Building2, CalendarDays, Check, ChevronDown, CircleUserRound, Download, LayoutDashboard, Monitor, Moon, MoreHorizontal, RefreshCw, ScrollText, Settings2, Ship, Sun, Swords, UsersRound, X } from "lucide-react";
 
 // src/ui/badge.tsx
-import * as React5 from "react";
+import * as React6 from "react";
 import { cva as cva2 } from "class-variance-authority";
 import * as Slot2 from "@radix-ui/react-slot";
 var badgeVariants = cva2(
@@ -194,7 +219,7 @@ function Badge({
   ...props
 }) {
   const Comp = asChild ? Slot2.Root : "span";
-  return /* @__PURE__ */ React5.createElement(
+  return /* @__PURE__ */ React6.createElement(
     Comp,
     {
       "data-slot": "badge",
@@ -206,40 +231,15 @@ function Badge({
 }
 
 // src/ui/dialog.tsx
-import * as React6 from "react";
+import * as React7 from "react";
 function DialogHeader({ className, ...props }) {
-  return /* @__PURE__ */ React6.createElement("div", { "data-slot": "dialog-header", className: cn("flex flex-col gap-2 text-left", className), ...props });
+  return /* @__PURE__ */ React7.createElement("div", { "data-slot": "dialog-header", className: cn("flex flex-col gap-2 text-left", className), ...props });
 }
 function DialogTitle({ className, ...props }) {
-  return /* @__PURE__ */ React6.createElement("h2", { "data-slot": "dialog-title", className: cn("text-lg leading-none font-semibold", className), ...props });
+  return /* @__PURE__ */ React7.createElement("h2", { "data-slot": "dialog-title", className: cn("text-lg leading-none font-semibold", className), ...props });
 }
 function DialogFooter({ className, ...props }) {
-  return /* @__PURE__ */ React6.createElement("div", { "data-slot": "dialog-footer", className: cn("flex flex-col gap-2 sm:flex-row-reverse sm:justify-start", className), ...props });
-}
-
-// src/ui/native-select.tsx
-import * as React7 from "react";
-function NativeSelect({
-  className,
-  size = "default",
-  ...props
-}) {
-  return /* @__PURE__ */ React7.createElement(
-    "div",
-    {
-      className: "group/native-select relative inline-block max-w-full min-w-0 has-[select:disabled]:opacity-50",
-      "data-slot": "native-select-wrapper"
-    },
-    /* @__PURE__ */ React7.createElement(
-      "select",
-      {
-        "data-slot": "native-select",
-        "data-size": size,
-        className: cn("w-full", className),
-        ...props
-      }
-    )
-  );
+  return /* @__PURE__ */ React7.createElement("div", { "data-slot": "dialog-footer", className: cn("flex flex-col gap-2 sm:flex-row-reverse sm:justify-start", className), ...props });
 }
 
 // src/ui/table.tsx
@@ -463,7 +463,7 @@ function action(id, label, variant = "outline", disabled = false) {
 }
 function stagePanel() {
   return renderToStaticMarkup4(
-    /* @__PURE__ */ React13.createElement("div", { className: "grid gap-3" }, /* @__PURE__ */ React13.createElement(Card, null, /* @__PURE__ */ React13.createElement(CardHeader, null, /* @__PURE__ */ React13.createElement(CardTitle, { className: "title-with-help" }, "\u4E3B\u7EBF / \u95EF\u5173", /* @__PURE__ */ React13.createElement(HelpTip, { title: "\u4E3B\u7EBF / \u95EF\u5173" }, "\u70B9\u51FB\u5F00\u59CB\u540E\u8FDE\u7EED\u6311\u6218\uFF0C\u6BCF\u573A\u95F4\u96945\u79D2\uFF0C\u540C\u4E00\u5173\u8FDE\u7EED\u6218\u8D25\u8FBE\u5230\u672C\u9875\u8BBE\u7F6E\u540E\u505C\u6B62\uFF0C\u901A\u5173\u6E05\u96F6\u3002\u8FD9\u91CC\u7684\u624B\u52A8\u53C2\u6570\u72EC\u7ACB\u4E8E\u6302\u673A\u914D\u7F6E\uFF0C\u4E0D\u4F1A\u5F00\u542F\u6BCF\u8F6E\u6302\u673A\u3002"), /* @__PURE__ */ React13.createElement("span", { id: "stage-view", className: "heading-status", role: "status", "aria-live": "polite" }, "\u672A\u540C\u6B65"))), /* @__PURE__ */ React13.createElement(CardContent, null, /* @__PURE__ */ React13.createElement("div", { className: "bar" }, /* @__PURE__ */ React13.createElement("div", { id: "stage-lineup-control", className: "bar" }, /* @__PURE__ */ React13.createElement("span", null, "\u6311\u6218\u9635\u5BB9")), /* @__PURE__ */ React13.createElement("label", { htmlFor: "stage-failures" }, "\u5931\u8D25\u505C\u6B62\u6B21\u6570"), /* @__PURE__ */ React13.createElement(Input, { id: "stage-failures", "aria-label": "\u4E3B\u7EBF\u624B\u52A8\u6311\u6218\u5931\u8D25\u505C\u6B62\u6B21\u6570", className: "w-20", type: "number", min: "1", defaultValue: "3" }), /* @__PURE__ */ React13.createElement(Button, { id: "stage-start", disabled: true }, "\u5F00\u59CB\u8FDE\u7EED\u6311\u6218"), /* @__PURE__ */ React13.createElement(Button, { id: "stage-stop", variant: "outline", disabled: true }, "\u505C\u6B62\u6311\u6218")))), /* @__PURE__ */ React13.createElement(Card, null, /* @__PURE__ */ React13.createElement(CardHeader, null, /* @__PURE__ */ React13.createElement(CardTitle, { className: "title-with-help" }, "\u8BD5\u70BC\u526F\u672C", /* @__PURE__ */ React13.createElement(HelpTip, { title: "\u8BD5\u70BC\u526F\u672C" }, "\u201C\u6311\u6218\u4E00\u6B21\u201D\u53EA\u6311\u6218\u4E0B\u4E00\u5173\uFF1B\u201C\u5F00\u59CB\u8FDE\u7EED\u6311\u6218\u201D\u7531\u4F60\u624B\u52A8\u5F00\u59CB\uFF0C\u8FBE\u5230\u672C\u9875\u8BBE\u7F6E\u7684\u5931\u8D25\u505C\u6B62\u6B21\u6570\u540E\u505C\u6B62\u3002\u624B\u52A8\u53C2\u6570\u4E0E\u6302\u673A\u914D\u7F6E\u72EC\u7ACB\uFF0C\u626B\u8361\u6B21\u6570\u53E6\u8BA1\u3002")), /* @__PURE__ */ React13.createElement(CardAction, { className: "row-span-1 self-center" }, /* @__PURE__ */ React13.createElement(Button, { id: "trial-refresh", variant: "outline", size: "sm" }, "\u5237\u65B0\u8BD5\u70BC\u8FDB\u5EA6"))), /* @__PURE__ */ React13.createElement(CardContent, null, /* @__PURE__ */ React13.createElement("div", { id: "trial-view", className: "progression-view", "aria-live": "polite" }))), /* @__PURE__ */ React13.createElement(Card, null, /* @__PURE__ */ React13.createElement(CardHeader, null, /* @__PURE__ */ React13.createElement(CardTitle, null, "\u6D77\u76D7\u9996\u6740\u624B\u52A8\u63A8\u8FDB")), /* @__PURE__ */ React13.createElement(CardContent, null, /* @__PURE__ */ React13.createElement("p", { className: "dim" }, "\u624B\u52A8\u5F00\u59CB\u672C\u6B21\u8FDE\u7EED\u63A8\u8FDB\uFF0C\u8FBE\u5230\u5931\u8D25\u505C\u6B62\u6B21\u6570\u6216\u6761\u4EF6\u4E0D\u8DB3\u65F6\u505C\u6B62\uFF1B\u4E0D\u4F1A\u5F00\u542F\u6302\u673A\u81EA\u52A8\u8BA8\u4F10\u3002\u8230\u961F\u548C\u76EE\u6807\u6CBF\u7528\u6D77\u76D7\u914D\u7F6E\uFF0C\u6C7D\u6CB9\u6309\u5B9E\u9645\u5E93\u5B58\u68C0\u67E5\u3002"), /* @__PURE__ */ React13.createElement("div", { className: "bar" }, /* @__PURE__ */ React13.createElement("a", { href: "#config-group-pirate-hunt" }, "\u8BBE\u7F6E\u8230\u961F\u4E0E\u76EE\u6807"), /* @__PURE__ */ React13.createElement("label", { htmlFor: "pirate-manual-failures" }, "\u5931\u8D25\u505C\u6B62\u6B21\u6570"), /* @__PURE__ */ React13.createElement(Input, { id: "pirate-manual-failures", "aria-label": "\u6D77\u76D7\u624B\u52A8\u63A8\u8FDB\u5931\u8D25\u505C\u6B62\u6B21\u6570", className: "w-20", type: "number", min: "1", max: "100", defaultValue: "1" }), /* @__PURE__ */ React13.createElement(Button, { id: "pirate-advance-start", disabled: true }, "\u5F00\u59CB\u9996\u6740\u63A8\u8FDB"), /* @__PURE__ */ React13.createElement(Button, { id: "pirate-advance-stop", variant: "outline", disabled: true }, "\u505C\u6B62\u9996\u6740\u63A8\u8FDB")), /* @__PURE__ */ React13.createElement("p", { id: "pirate-advance-state", role: "status" }, "\u5C1A\u672A\u5F00\u542F"))))
+    /* @__PURE__ */ React13.createElement("div", { className: "grid gap-3" }, /* @__PURE__ */ React13.createElement(Card, null, /* @__PURE__ */ React13.createElement(CardHeader, null, /* @__PURE__ */ React13.createElement(CardTitle, { className: "title-with-help" }, "\u4E3B\u7EBF / \u95EF\u5173", /* @__PURE__ */ React13.createElement(HelpTip, { title: "\u4E3B\u7EBF / \u95EF\u5173" }, "\u70B9\u51FB\u5F00\u59CB\u540E\u8FDE\u7EED\u6311\u6218\uFF0C\u6BCF\u573A\u95F4\u96945\u79D2\uFF0C\u540C\u4E00\u5173\u8FDE\u7EED\u6218\u8D25\u8FBE\u5230\u672C\u9875\u8BBE\u7F6E\u540E\u505C\u6B62\uFF0C\u901A\u5173\u6E05\u96F6\u3002\u8FD9\u91CC\u7684\u624B\u52A8\u53C2\u6570\u72EC\u7ACB\u4E8E\u6302\u673A\u914D\u7F6E\uFF0C\u4E0D\u4F1A\u5F00\u542F\u6BCF\u8F6E\u6302\u673A\u3002"), /* @__PURE__ */ React13.createElement("span", { id: "stage-view", className: "heading-status", role: "status", "aria-live": "polite" }, "\u672A\u540C\u6B65"))), /* @__PURE__ */ React13.createElement(CardContent, null, /* @__PURE__ */ React13.createElement("div", { className: "bar" }, /* @__PURE__ */ React13.createElement("div", { id: "stage-lineup-control", className: "bar" }, /* @__PURE__ */ React13.createElement("span", null, "\u6311\u6218\u9635\u5BB9")), /* @__PURE__ */ React13.createElement("label", { htmlFor: "stage-failures" }, "\u5931\u8D25\u505C\u6B62\u6B21\u6570"), /* @__PURE__ */ React13.createElement(Input, { id: "stage-failures", "aria-label": "\u4E3B\u7EBF\u624B\u52A8\u6311\u6218\u5931\u8D25\u505C\u6B62\u6B21\u6570", className: "w-20", type: "number", min: "1", defaultValue: "3" }), /* @__PURE__ */ React13.createElement(Button, { id: "stage-start", disabled: true }, "\u5F00\u59CB\u8FDE\u7EED\u6311\u6218"), /* @__PURE__ */ React13.createElement(Button, { id: "stage-stop", variant: "outline", disabled: true }, "\u505C\u6B62\u6311\u6218")))), /* @__PURE__ */ React13.createElement(Card, null, /* @__PURE__ */ React13.createElement(CardHeader, null, /* @__PURE__ */ React13.createElement(CardTitle, { className: "title-with-help" }, "\u8BD5\u70BC\u526F\u672C", /* @__PURE__ */ React13.createElement(HelpTip, { title: "\u8BD5\u70BC\u526F\u672C" }, "\u201C\u6311\u6218\u4E00\u6B21\u201D\u53EA\u6311\u6218\u4E0B\u4E00\u5173\uFF1B\u201C\u5F00\u59CB\u8FDE\u7EED\u6311\u6218\u201D\u7531\u4F60\u624B\u52A8\u5F00\u59CB\uFF0C\u8FBE\u5230\u672C\u9875\u8BBE\u7F6E\u7684\u5931\u8D25\u505C\u6B62\u6B21\u6570\u540E\u505C\u6B62\u3002\u624B\u52A8\u53C2\u6570\u4E0E\u6302\u673A\u914D\u7F6E\u72EC\u7ACB\uFF0C\u626B\u8361\u6B21\u6570\u53E6\u8BA1\u3002")), /* @__PURE__ */ React13.createElement(CardAction, { className: "row-span-1 self-center" }, /* @__PURE__ */ React13.createElement(Button, { id: "trial-refresh", variant: "outline", size: "sm" }, "\u5237\u65B0\u8BD5\u70BC\u8FDB\u5EA6"))), /* @__PURE__ */ React13.createElement(CardContent, null, /* @__PURE__ */ React13.createElement("div", { id: "trial-view", className: "progression-view", "aria-live": "polite" }))), /* @__PURE__ */ React13.createElement(Card, null, /* @__PURE__ */ React13.createElement(CardHeader, null, /* @__PURE__ */ React13.createElement(CardTitle, null, "\u6D77\u76D7\u9996\u6740"), /* @__PURE__ */ React13.createElement(CardAction, null, /* @__PURE__ */ React13.createElement(Button, { id: "pirate-manual-refresh", variant: "outline", size: "sm" }, "\u5237\u65B0\u76EE\u6807\u4E0E\u8230\u961F"))), /* @__PURE__ */ React13.createElement(CardContent, null, /* @__PURE__ */ React13.createElement("div", { className: "bar pirate-manual-choices" }, /* @__PURE__ */ React13.createElement("label", { className: "choice-field" }, /* @__PURE__ */ React13.createElement("span", null, "\u6D77\u76D7\u76EE\u6807"), /* @__PURE__ */ React13.createElement(NativeSelect, { id: "pirate-manual-target", size: "sm", disabled: true, required: true }, /* @__PURE__ */ React13.createElement("option", { value: "" }, "\u8BF7\u9009\u62E9\u6D77\u76D7\u76EE\u6807"))), /* @__PURE__ */ React13.createElement("label", { className: "choice-field" }, /* @__PURE__ */ React13.createElement("span", null, "\u51FA\u5F81\u8230\u961F"), /* @__PURE__ */ React13.createElement(NativeSelect, { id: "pirate-manual-fleet", size: "sm", disabled: true, required: true }, /* @__PURE__ */ React13.createElement("option", { value: "" }, "\u8BF7\u9009\u62E9\u51FA\u5F81\u8230\u961F"))), /* @__PURE__ */ React13.createElement("label", { className: "choice-field" }, /* @__PURE__ */ React13.createElement("span", null, "\u51FA\u6218\u9635\u5BB9"), /* @__PURE__ */ React13.createElement(NativeSelect, { id: "pirate-manual-lineup", size: "sm" }, /* @__PURE__ */ React13.createElement("option", { value: "" }, "\u4F7F\u7528\u8230\u961F\u5F53\u524D\u9635\u5BB9"))), /* @__PURE__ */ React13.createElement(Button, { id: "pirate-manual-lineup-view", variant: "outline", size: "sm", disabled: true }, "\u67E5\u770B\u9635\u5BB9")), /* @__PURE__ */ React13.createElement("div", { id: "pirate-manual-view", className: "dim", role: "status" }), /* @__PURE__ */ React13.createElement("div", { className: "bar pirate-manual-actions" }, /* @__PURE__ */ React13.createElement("label", null, "\u8FDE\u7EED\u6218\u8D25\u4E0A\u9650", /* @__PURE__ */ React13.createElement(Input, { id: "pirate-manual-failures", className: "w-20", type: "number", min: "1", max: "100", defaultValue: "1", required: true })), /* @__PURE__ */ React13.createElement("label", null, "\u68C0\u67E5\u95F4\u9694\uFF08\u79D2\uFF09", /* @__PURE__ */ React13.createElement(Input, { id: "pirate-manual-interval", className: "w-20", type: "number", min: "5", max: "60", defaultValue: "15", required: true })), /* @__PURE__ */ React13.createElement(Button, { id: "pirate-manual-once", disabled: true }, "\u6311\u6218\u4E00\u6B21"), /* @__PURE__ */ React13.createElement(Button, { id: "pirate-advance-start", variant: "outline", disabled: true }, "\u5F00\u59CB\u8FDE\u7EED\u6311\u6218"), /* @__PURE__ */ React13.createElement(Button, { id: "pirate-advance-stop", variant: "outline", disabled: true }, "\u505C\u6B62\u6311\u6218")), /* @__PURE__ */ React13.createElement("p", { id: "pirate-advance-state", role: "status", hidden: true }))))
   );
 }
 export {

@@ -406,6 +406,11 @@ summary.plan-material-label::after { width:12px; height:12px }
 .trial-lineup-controls .choice-field>span { flex:none; white-space:nowrap }
 .trial-lineup-controls .saved-lineup-select { flex:1; width:0; min-width:0; max-width:none }
 .trial-lineup-controls [data-lineup-choice-status] { grid-column:1 / -1; overflow-wrap:anywhere }
+.pirate-manual-choices .choice-field { display:flex; align-items:center; gap:6px; min-width:0 }
+.pirate-manual-choices .choice-field>span { white-space:nowrap }
+.pirate-manual-choices select { max-width:min(24em,65vw); text-overflow:ellipsis }
+.pirate-manual-choices.bar,.pirate-manual-actions.bar { margin-block:4px }
+.pirate-manual-actions label { display:flex; align-items:center; gap:6px }
 .trial-run-controls label { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-weight:400 }
 .trial-run-controls input { width:80px }
 #trial-view .trial-run-controls { margin-top:8px; gap:8px }

@@ -5,7 +5,7 @@ import { activityTaskBlocker } from './activity-automation.mjs';
 const controls = [];
 const add = (key, label, group, options = {}) => controls.push({ key, label, group, fields: [key], ...options });
 add('loop.world', '基地执行总开关', '总控制');
-add('loop.dailies', '日常行动与点金总开关', '总控制', { help: '控制英雄免费/券招募、点金、竞技场、海盗日常和折扣店。免费领奖等独立项目不由本项控制。' });
+add('loop.dailies', '日常行动与点金总开关', '总控制', { help: '控制英雄免费/券招募、点金、竞技场和折扣店。免费领奖等独立项目不由本项控制。' });
 add('loop.tasks', '主线、支线与成就总开关', '总控制');
 add('dailies.enabled', '每日任务与奖励总开关', '总控制', { help: '控制日常行动和每日任务、活跃宝箱、免费赠礼。钻石点金独立受点金和钻石开关限制。' });
 add('heroes.enabled', '英雄自动养成', '总控制', { fields: ['heroes.enabled','loop.heroes'], help: '控制英雄随挂机自动养成；养成动作、目标和资源保留在游戏配置中设置。' });
@@ -36,7 +36,8 @@ add('cityWar.enabled','联盟城战','世界与挑战');
 add('progression.enabled','推关与试炼总开关','世界与挑战',{help:'按统一配置自动挑战主线（闯关）和所选试炼。每轮继续推进，达到失败停止次数后本次挂机不再挑战该关；暂停后重新开始挂机可重试。扫荡仍按独立开关执行。'});
 add('progression.mainline','主线 / 闯关自动挑战','世界与挑战',{gates:['progression.enabled']});
 add('progression.trials','试炼自动推关','世界与挑战',{gates:['progression.enabled']});
-add('pirateHunt.enabled','海盗讨伐自动推进','世界与挑战',{configLabel:'自动讨伐首杀',help:'每轮核对本人首杀和舰队状态，自动挑战下一等级。消耗汽油，达到失败停止次数或实际汽油不足时停止派遣；先在配置中选择舰队。每日免费扫荡独立控制。'});
+add('pirate.enabled','海盗挂机','世界与挑战',{configLabel:'开启挂机',configuredFields:['schedule.pirate','pirateHunt.enabled'],help:'挂机时执行下方已选的海盗动作。关闭后保留选择。'});
+add('pirateHunt.enabled','海盗首杀','世界与挑战',{gates:['pirate.enabled'],configLabel:'自动挑战下一级',help:'按个人首杀记录挑战所选种类的下一等级，每次出征消耗汽油。'});
 add('antique.enabled','藏品自动养成','藏品',{
  configLabel:'藏品养成总开关', configuredFields:['antique.activate','antique.star','antique.master','antique.suit'],
  help:'开启后，挂机按下方已选动作培养藏品。关闭会暂停藏品养成，仍可编辑各项设置。养成只使用已有资源。',
@@ -56,8 +57,8 @@ for (const task of automationTasks) {
  if (task.key === 'stageAuto' || task.key === 'heroGrowth' || retiredAutomationTasks.has(task.key)) continue;
  if (nativeKeys.has(task.key)) continue;
  const group = ['freeRecruit','ticketRecruit','heroRecruitRewards','heroAdRecruit'].includes(task.key) ? '英雄' : ['freeAntiqueRecruit','antiqueRecruitRewards','antiqueAdRecruit'].includes(task.key) ? '藏品' : ['周期活动','限时活动'].includes(task.group) ? '活动' : ['联盟','挑战'].includes(task.group) ? '世界与挑战' : task.group === '日常' ? '日常行动' : task.group === '海面' ? '基地' : '任务与领奖';
- const gates = task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
- add('schedule.'+task.key,task.label,combatGroups[task.key] ?? group,{gates,taskKey:task.key,...(task.key==='pirate'?{configLabel:'每日免费扫荡',help:'在挂机配置 → 世界 → 海盗讨伐选择扫荡种类。三种海盗共用每日免费次数，无需派舰队，不消耗汽油、耐久或钻石；日常任务完成后仍按剩余次数执行，与首杀开关独立。'}:{}),...(task.key==='guildTitleReward'?{help:'默认关闭，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
+ const gates = task.key==='pirate' ? ['pirate.enabled'] : task.group==='日常' ? ['loop.dailies','dailies.enabled'] : task.key==='adSpeedUpBuilding'?['loop.world','building.enabled']:task.key==='adSpeedUpProduce'?['loop.world','factory.enabled']:task.key==='adSpeedUpMuseum'?['loop.world']:[];
+ add('schedule.'+task.key,task.label,combatGroups[task.key] ?? group,{gates,taskKey:task.key,...(task.key==='pirate'?{configLabel:'每日免费扫荡',help:'使用当天剩余的免费次数，无需派舰。三种海盗共用次数。'}:{}),...(task.key==='guildTitleReward'?{help:'默认关闭，每天只领取服务器确认可领的职级礼包；结果未知时保留记录，不重复提交。'}:{}),...(task.key==='seasonChest'?{help:'默认关闭。每箱消耗服务器指定的 3 把赛季钥匙，钥匙不足时等待，不花钻石。钥匙在进入新赛季时清零。'}:{})});
 }
 // 模块主控与细项在同一配置分组编辑；主控仍保留独立的保存字段。
 const idleModules = {
@@ -73,9 +74,10 @@ const idleModules = {
  'forge.enabled':['装备','forge','装备锻造'], 'gold.enabled':['基地','gold','每日付费点金'],
  'worldBoss.enabled':['世界','worldBoss','世界Boss首战'], 'radar.runEnabled':['世界','radar','联盟情报'],
  'treasure.enabled':['世界','treasure','万吨巨轮'], 'cityWar.enabled':['世界','cityWar','联盟城战'],
+ 'pirate.enabled':['世界','pirate-hunt','海盗'],
  'schedule.pirate':['世界','pirate-hunt','海盗日常扫荡'],
  'progression.enabled':['世界','progression','推关与试炼'],
- 'pirateHunt.enabled':['世界','pirate-hunt','海盗讨伐'],
+ 'pirateHunt.enabled':['世界','pirate-hunt','海盗首杀'],
  'heroes.enabled':['英雄','heroes','英雄养成'],
  'appointments.enabled':['英雄','appointments','英雄任命'],
  'antique.enabled':['藏品','antique','藏品养成'],

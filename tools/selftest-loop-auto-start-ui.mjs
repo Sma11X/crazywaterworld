@@ -12,7 +12,7 @@ function section(start, end) {
 }
 const source = [
   section('function configRecoveryMessage(', 'function configMessage('),
-  section('function setTaskSwitch(', 'const pirateAdvanceErrors'),
+  section('function setTaskSwitch(', 'const pirateManualMessage'),
   section('function renderHostingControl(', 'function renderAccountSelect('),
   section('function renderLoop(', 'async function toggleAutoTask('),
   section('async function saveLoopInterval(', 'let orderClockOffset=0;'),

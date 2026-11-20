@@ -6,7 +6,7 @@ import { createTraceLog, traceJson, redactLog } from './trace-log.mjs';
 import { createProtocolDiagnostics } from './protocol-diagnostics.mjs';
 import { createResourceUpdater } from './resource-updater.mjs';
 import {checkFleetSettlement,invalidateFleetReports} from './fleet-settlement.mjs';
-import {recoverWorldBossLineups} from './world-boss-lineups.mjs';
+import {recoverFleetLineups, isFleetLineupRecord} from './fleet-lineups.mjs';
 import { recoverPirateHunts } from './pirate-recovery.mjs';
 import {readGuildTech,upgradeGuildTech} from './guild-tech.mjs';
 import {resourceFieldRows,resourceFieldTotals} from './resource-fields.mjs';
@@ -740,13 +740,13 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     });
   }
 
-  function progressionJob(session, account, key, label, action, { read = false, shouldStart } = {}) {
+  function progressionJob(session, account, key, label, action, { read = false, shouldStart, checkSettings = !read } = {}) {
     if (!session.progressionJobs.has(key)) {
       const generation = session.generation;
       const schedule = read ? work => readJob(session, work) : work => enqueue(session, work, label);
       const job = schedule(async () => {
         if (shouldStart?.() === false) throw new Error('操作已取消，尚未连接游戏');
-        if (!read) validateRuntimeSettings(session.preferences, loadConfigSafe());
+        if (checkSettings) validateRuntimeSettings(session.preferences, loadConfigSafe());
         const client = await ensureConnected(session, account);
         const enabled = () => session.client === client && client.connected && !session.paused && generation === session.generation;
         if (!enabled()) throw new Error('账号连接已变化，请刷新后再试');
@@ -1080,9 +1080,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     };
   }
 
-  async function refreshFleetReservations(session,settings) {
+  async function refreshFleetReservations(session) {
+    if (!session.loop.running) return;
     await refreshCityWarReservations(session.client, protocolFor(session.client), loadConfigSafe(), session.player,
-      () => session.preferences ?? settings);
+      () => session.preferences);
   }
   function actionGuard(session, client, config) {
     const generation = session.generation;
@@ -1135,7 +1136,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           settlementDirty=false;
           if(current()){const changes=await checkFleetSettlement(instance,session.player,usageFor(session),{afterPush:true});
             for(const change of changes)if(change.repairRecovery)emit(session,'info','战后维修 · '+change.buildingId+' · '+change.reason+'（已确认）');
-            await recoverWorldBossLineups(instance,session.player,usageFor(session),{enabled:current,report:entry=>emit(session,entry.ok?'info':'warn',entry.label+' · '+(entry.reason||entry.error||''))});}
+            await recoverFleetLineups(instance,session.player,usageFor(session),{enabled:current,report:entry=>emit(session,entry.ok?'info':'warn',entry.label+' · '+(entry.reason||entry.error||''))});}
         }).catch(error=>{if(current())emit(session,'warn','舰队归队状态待核对：'+error.message);}).finally(()=>{
           settlementBusy=false;
           if(settlementDirty&&current())scheduleSettlement();
@@ -1161,8 +1162,8 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
     });
     const lineupRecoveryTimer=setInterval(()=>{
       if(!current())return;
-      try{if(Object.values(usageFor(session).keyRecords()).some(record=>record.details?.kind==='worldBossLineup'&&record.details.active!==false))scheduleSettlement();}
-      catch(error){emit(session,'warn','世界Boss阵容恢复记录待核对：'+error.message);}
+      try{if(Object.values(usageFor(session).keyRecords()).some(isFleetLineupRecord))scheduleSettlement();}
+      catch(error){emit(session,'warn','舰队阵容恢复记录待核对：'+error.message);}
     },15000);
     lineupRecoveryTimer.unref?.();
     instance.on('close',()=>{clearInterval(lineupRecoveryTimer);clearTimeout(settlementTimer);settlementTimer=null;settlementDirty=false;});
@@ -1636,10 +1637,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
     try {await checkFleetSettlement(client,session.player,usageFor(session));}
     catch(error){emit(session,'warn','舰队历史占用待核对：'+error.message);}
-    try {await recoverWorldBossLineups(client,session.player,usageFor(session),{
+    try {await recoverFleetLineups(client,session.player,usageFor(session),{
       enabled:()=>session.client===client&&session.generation===generation&&!session.paused&&client.connected,
       report:entry=>emit(session,entry.ok?'info':'warn',entry.label+' · '+(entry.reason||entry.error||''))});}
-    catch(error){emit(session,'warn','世界Boss阵容仍待恢复：'+error.message);}
+    catch(error){emit(session,'warn','舰队阵容仍待恢复：'+error.message);}
     if (session.client !== client || session.generation !== generation || session.paused || !client.connected) {
       throw new Error('连接初始化期间已断开或取消');
     }
@@ -2468,6 +2469,11 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             const plan = await previewRadarSweep(client, protocolFor(client), session.player, usageFor(session));
             if (plan) return output(plan, { targets: plan.ready.length }, '联盟情报 · 普通月卡一键扫荡');
           }
+          if (category === 'pirateSweep' || category === 'pirateHunt') {
+            const note = !settings.pirate.enabled ? '海盗挂机已关闭'
+              : category === 'pirateHunt' && !settings.pirateHunt.enabled ? '「自动挑战下一级」已关闭' : '';
+            if (note) return output({ actions: [], notes: [note] }, {}, category === 'pirateSweep' ? '海盗日常扫荡' : '海盗首杀');
+          }
           let previewCityReserved=[];
           if(['radar','pirateHunt','worldBoss'].includes(category)&&settings.cityWar.enabled&&settings.cityWar.reserveDuringWar){
             const war=await readCityWar(client,protocolFor(client),config,session.player,settings.cityWar);
@@ -2485,10 +2491,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             return {...output({actions:[],notes:['任务顺序：'+settings.fleetDispatch.priority.map(k=>dispatchLabels[k]).join(' → '),'意向仅表示配置允许；派遣前仍核对目标和费用，正在执行的任务不抢占。']},{fleets:table.length},'舰队调度'),viewOnly:true,dispatch:{fleets:table.map(f=>({name:f.buildingId,reason:[f.reason,...f.reserved.map(r=>'预留给'+r),'允许顺序：'+(f.intents.map(i=>i.label).join(' → ')||'无'),'当前目标：'+(f.targetGrid??'主城')].filter(Boolean).join('；')}))}};
           }
           if(category==='pirateSweep'){
-            const state=await readPirateSweeps(client,config,session.player,settings),notes=[state.name+' · 今日已用 '+(state.used??'未同步')+'/'+(state.limit??'未同步')+' 次，剩余 '+(state.left??'未同步')+' 次'];
-            if(state.reason)notes.push(state.reason);if(!settings.schedule.pirate)notes.push('海盗日常扫荡开关未开启');
-            notes.push('三种海盗共用每日次数，不派遣舰队，不消耗汽油、耐久或钻石。');
-            return output({actions:!state.reason&&settings.schedule.pirate?[{kind:'pirateSweep',label:'扫荡'+state.name+' '+state.level+'级（本次最多使用剩余 '+state.left+' 次；逐次回读确认）',costs:[]}]:[],notes},{remaining:state.left},'海盗日常扫荡');
+            const state=await readPirateSweeps(client,config,session.player,settings),notes=[];
+            if(state.left!==null)notes.push('今日剩余 '+state.left+'/'+state.limit+' 次（三种海盗共用）');
+            if(state.reason)notes.push(state.reason);if(!settings.schedule.pirate)notes.push('每日免费扫荡已关闭');
+            return output({actions:!state.reason&&settings.schedule.pirate?[{kind:'pirateSweep',label:'扫荡'+state.name+' '+state.level+'级',costs:[]}]:[],notes},{remaining:state.left},'海盗日常扫荡');
           }
           if(category==='worldBoss'){
             const state=await readWorldBoss(client,config,session.player,settings,usageFor(session),{cityReservedFleetIds:previewCityReserved});
@@ -2507,7 +2513,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             for(const fleet of snapshot.view.fleets??[])fleet.reason ||= (!settings.pirateHunt.fleetIds.includes(fleet.buildingId)?'未选择此舰队':'')|| fleetRecordReason(ledger.keyRecords(),fleet.buildingId,exactAutomationId(session.player.worldId))||(previewCityReserved.includes(fleet.buildingId)?'城战时段预留':dispatchReservationReason(client,settings,'pirateHunt',fleet.buildingId,{ignoreOwners:['cityWar']}));
             const progress=pirateRunState(session);
             const selection=progress.halted?{reason:progress.reason}:selectPirateAdvance(snapshot,settings.pirateHunt,{pendingFuel:pendingPetrol(ledger)});
-            const plan={actions:selection.reason?[]:[{kind:'pirateFirst',label:selection.fleet.name+' → '+selection.target.name+' '+selection.target.level+'级',costs:[{id:'汽油',num:selection.cost}]}],notes:[selection.reason||'开启海盗讨伐后随挂机每轮检查；也可单独手动启动，此处仅预览下一次派遣']};
+            const plan={actions:selection.reason?[]:[{kind:'pirateFirst',label:selection.fleet.name+' → '+selection.target.name+' '+selection.target.level+'级',costs:[{id:'汽油',num:selection.cost}]}],notes:selection.reason?[selection.reason]:[]};
             return {...output(plan,{fleets:snapshot.view.fleets?.length??0,targets:snapshot.view.targets?.length??0},'海盗首杀'),dispatch:{fleets:snapshot.view.fleets,fuel:snapshot.view.fuel,pending:pendingPetrol(ledger)}};
           }
           if (category === 'antique') {
@@ -3428,7 +3434,13 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             return guild;
           }
           if (route === 'GET /api/fleets/formation') return readFleetFormations(client, config, player);
-          if (route === 'GET /api/pirates/hunt') return pirateHuntOptions(client, config, player);
+          if (route === 'GET /api/pirates/hunt') {
+            const view = await pirateHuntOptions(client, config, player, true);
+            const records = usageFor(session).keyRecords();
+            for (const fleet of view.fleets) fleet.reason ||= fleetRecordReason(records, fleet.buildingId, exactAutomationId(player.worldId))
+              || dispatchReservationReason(client, session.preferences, 'pirateHunt', fleet.buildingId);
+            return view;
+          }
           const rows = await trialProgress(client, config, player.level);
           syncLineupRecoveryState(session);
           for (const row of rows) {
@@ -3450,7 +3462,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const label = operationLabels[parsed.pathname];
         const key = route === 'POST /api/guild/tech/upgrade'
           ? JSON.stringify([route, payload.techId, payload.expectedIdentity, payload.expectedLevel, payload.maxCost])
-          : JSON.stringify([route, payload.techId, payload.heroId, payload.uid, payload.expectedLevel, payload.maxCost, payload.targetKey, payload.fleetKey, payload.buildingId, payload.previewKey]);
+          : JSON.stringify([route, payload.techId, payload.heroId, payload.uid, payload.expectedLevel, payload.maxCost, payload.targetKey, payload.fleetKey, payload.buildingId, payload.previewKey, payload.lineupId]);
         json(await progressionJob(session, account, key, label, async (client, enabled) => {
           const config = loadConfigSafe(), player = session.player;
           if (route === 'POST /api/guild/tech/upgrade') {
@@ -3487,13 +3499,14 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             emit(session, 'info', result.label);
             return result;
           }
-          await refreshFleetReservations(session,settingsView(session).settings);
-          const result = await runSinglePirateHunt(client, config, player, { ...payload, enabled, getSettings:()=>settingsView(session).settings,ledger:usageFor(session),
-            prepareDispatch:()=>refreshFleetReservations(session,settingsView(session).settings),
+          if (session.pirateAdvance.view().running) throw Error('连续挑战进行中，请先停止再单次出征');
+          const preset = selectedSavedLineup(payload.lineupId ? refreshSessionSettings(session).settings : null, { presetId: payload.lineupId ?? '' });
+          const result = await runSinglePirateHunt(client, config, player, { targetKey:payload.targetKey, fleetKey:payload.fleetKey, preset, enabled, getSettings:()=>session.preferences,ledger:usageFor(session),
+            prepareDispatch:()=>refreshFleetReservations(session),
             report: entry => emit(session, 'info', typeof entry === 'string' ? entry : entry.label) });
           emit(session, 'info', result.label);
           return result;
-        }));
+        }, { checkSettings: route !== 'POST /api/pirates/hunt' }));
         return;
       }
       if (route === 'GET /api/fleets/current-formation') {
@@ -4085,17 +4098,23 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const payload=jsonBody();needConfirm(payload);const {session,account}=scoped_(parsed);
         if(route.endsWith('/stop')){json(session.pirateAdvance.stop());return;}
         if(session.paused)throw new Error('账号已暂停，请先恢复托管');
-        const options=settingsView(session).settings.pirateHunt;
+        const { fleetId, type, checkEverySeconds = 15 } = payload;
+        if(typeof fleetId!=='string' || !/^[1-9]\d*远征船$/.test(fleetId))throw Error('请选择出征舰队');
+        if(![1,2,3].includes(type))throw Error('请选择海盗种类');
+        if(!Number.isInteger(checkEverySeconds)||checkEverySeconds<5||checkEverySeconds>60)throw Error('检查间隔须为 5–60 秒');
+        if(![payload.targetKey,payload.fleetKey].every(key=>typeof key==='string' && /^[0-9a-f]{64}$/.test(key)))throw Error('请刷新并选择海盗目标与舰队');
+        const options={fleetIds:[fleetId],types:[String(type)],checkEverySeconds};
+        const preset=selectedSavedLineup(payload.lineupId?refreshSessionSettings(session).settings:null,{presetId:payload.lineupId??''});
         const generation=session.generation;
         let lastReason='';
-        if (session.loop.running && options.enabled) throw new Error('海盗自动讨伐已随挂机运行，请先暂停挂机再手动开始');
         json(session.pirateAdvance.start(options,async()=>{
           const client=await ensureConnected(session,account);
-          return {client,player:session.player,config:loadConfigSafe(),ledger:usageFor(session),getSettings:()=>settingsView(session).settings,
+          return {client,player:session.player,config:loadConfigSafe(),ledger:usageFor(session),getSettings:()=>session.preferences,
+            preset,firstSelection:{targetKey:payload.targetKey,fleetKey:payload.fleetKey},
             enabled:()=>!session.paused && session.generation===generation && session.client===client && client.connected,
-            prepareDispatch:()=>refreshFleetReservations(session,settingsView(session).settings),
+            prepareDispatch:()=>refreshFleetReservations(session),
             schedule:work=>enqueue(session,work)};
-        },state=>{if(state.reason!==lastReason){emit(session,'info','海盗首杀 · '+state.reason+'（已首杀'+state.wins+'级，本次汽油'+state.spent+'）');lastReason=state.reason;}},payload.maxFailures??1));return;
+        },state=>{if(state.reason!==lastReason){emit(session,'info','海盗首杀 · '+state.reason+'（首杀'+state.wins+'次，已用汽油'+state.spent+'）');lastReason=state.reason;}},payload.maxFailures??1));return;
       }
       if (route === 'GET /api/guild/mutual') { json(mutualView(scoped_(parsed).session)); return; }
       if (route === 'POST /api/guild/mutual/preset') {
@@ -4879,7 +4898,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           state = museum.observation;
           nextCheck = museum.nextCheck;
         }
-        state??={text:control.group==='总控制'?'控制项，不单独执行':control.key==='radar.runEnabled'||control.key.endsWith('.enabled')&&['building','factory','heroes','pet','gather','progression'].includes(control.key.split('.')[0])?'分组控制，具体动作状态见下方子项':'等待首次检查',state:'unseen',checkedAt:null};
+        state??={text:control.group==='总控制'?'控制项，不单独执行':control.key==='radar.runEnabled'||control.key==='pirate.enabled'||control.key.endsWith('.enabled')&&['building','factory','heroes','pet','gather','progression'].includes(control.key.split('.')[0])?'分组控制，具体动作状态见下方子项':'等待首次检查',state:'unseen',checkedAt:null};
         if(control.key==='events.enabled'&&session.client){const events=watchBasePushes(session.client);state={text:events.choiceObserved?'已同步 '+events.choices.size+' 条事件（等待匹配可处理选项）':'未同步：本次连接尚未收到随机事件状态',state:events.choiceObserved?'waiting':'pending'};}
         return {...control,observation:state,...runtimeProgress(control,state,displayUsage,{running:loop.running,connected:!!session.client?.connected,treasureReward,freeTimes:session.client?.freeRecruitTimes,now:Date.now()+(session.client?.serverClockOffsetMs||0)}),nextCheck:loop.running&&session.client?.connected&&control.enabled&&!control.blockedBy.length?nextCheck:null,stale:!loop.running||!session.client?.connected};
       }),

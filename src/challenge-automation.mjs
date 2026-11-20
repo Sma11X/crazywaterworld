@@ -73,16 +73,20 @@ export async function runChallengeRound(client, config, { player, getSettings, s
         () => isTrialBusy(raidId), options => runTrialStages(client, player, config, raidId, { ...options, signal, wait, maxFailures: 1, maxWins: 1 }));
     }
   }
-  if (mode !== 'progression' && getSettings()?.pirateHunt?.enabled && current()) {
-    if (isPirateBusy()) { report({ key: 'pirateAuto', label: '海盗讨伐', skipped: true, reason: '手动首杀推进中，本轮跳过' }); return; }
+  const pirateEnabled = () => {
+    const settings = getSettings();
+    return settings?.pirate?.enabled && settings.pirateHunt.enabled;
+  };
+  if (mode !== 'progression' && pirateEnabled() && current()) {
+    if (isPirateBusy()) { report({ key: 'pirateAuto', label: '海盗首杀', skipped: true, reason: '手动首杀推进中，本轮跳过' }); return; }
     try {
       const spentBefore = state.pirate.state?.spent ?? 0, winsBefore = state.pirate.state?.wins ?? 0;
       const result = await runPirateAdvance({ client, config, player, ledger, checkpoint: state.pirate, oneCheck: true,
         options: structuredClone(getSettings().pirateHunt), getSettings, signal, prepareDispatch,
-        enabled: () => current() && getSettings()?.pirateHunt?.enabled && !isPirateBusy() });
+        enabled: () => current() && pirateEnabled() && !isPirateBusy() });
       const advanced = result.wins > winsBefore, dispatched = result.spent > spentBefore;
-      report({ key: 'pirateAuto', label: '海盗讨伐', ok: advanced || dispatched, skipped: !advanced && !dispatched,
-        reason: result.reason + `（已首杀 ${result.wins} 级，连续战败 ${result.failures ?? 0} 次，本次汽油 ${result.spent}）` });
-    } catch (error) { report({ key: 'pirateAuto', label: '海盗讨伐', ok: false, error: error.message }); }
+      report({ key: 'pirateAuto', label: '海盗首杀', ok: advanced || dispatched, skipped: !advanced && !dispatched,
+        reason: result.reason + `（本次首杀 ${result.wins} 次，连续战败 ${result.failures ?? 0} 次，已用汽油 ${result.spent}）` });
+    } catch (error) { report({ key: 'pirateAuto', label: '海盗首杀', ok: false, error: error.message }); }
   }
 }

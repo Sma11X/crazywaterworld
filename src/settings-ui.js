@@ -435,16 +435,16 @@ const configGroups = [
     configField('progression.maxFailures','失败停止次数','number',{unit:'次',help:'主线与每个试炼分别累计同一关的连续战败，通关清零。跨挂机轮次和断线重连保留；达到上限后本次挂机不再重试，暂停后重新开始挂机可重试。不是挑战总次数，也不统计网络错误。仅用于挂机，挑战页手动参数独立。'}),
     configField('schedule.trialSweep','试炼首轮免费扫荡','switch',{help:'只使用免费档位，扫荡与自动推关分别控制，不计入失败停止次数。'}),
   ] },
-  { id: 'pirate-hunt', title: '海盗讨伐', category: 'world', description: '免费扫荡已首杀的最高等级；派遣舰队挑战下一等级可推进首杀。两项独立开启。', fields: [
-    configField('schedule.pirate','每日免费扫荡','switch',{help:'使用游戏每日免费扫荡次数，三种海盗共用。无需舰队，不消耗汽油、耐久或钻石；日常任务完成后仍按剩余扫荡次数执行。'}),
-    configField('pirateSweep.type','扫荡海盗种类','choice',{options:[['1','海盗先锋'],['2','海盗精锐'],['3','海盗头目']],help:'默认海盗先锋。自动使用所选种类已首杀的最高等级；地图暂时没有该等级目标时等待，不自动改种类或降级。'}),
-    configField('pirateHunt.enabled','自动讨伐首杀'),
-    configField('pirateHunt.maxFailures','失败停止次数','number',{unit:'次',help:'只统计本人战报确认的连续战败，首杀成功清零。跨挂机轮次和重连保留，达到上限后停止本次挂机的海盗派遣；暂停后重新开始挂机可重试。结果未确认时保留记录，不按战败重发。'}),
-    configField('pirateHunt.fleetIds','首杀参与舰队','multi',{catalog:'expeditionFleets',empty:'请选择首杀舰队',help:'每次只派一支空闲舰队。可与巨轮、城战、情报共用舰队；实际占用或结果待确认时跳过，不抢占任务。'}),
-    configField('pirateHunt.types','首杀海盗种类','multi',{catalog:'pirateTypes',empty:'所有类型',help:'从各类型本人尚未首杀的下一等级开始，优先较低等级；空选表示所有类型。'}),
-    configField('pirateHunt.maxLevel','推进等级上限','number',{unit:'级',help:'0表示推进到游戏当前允许的等级。每次必须确认本人首杀记录更新后才推进下一级。'}),
-    configField('pirateHunt.minDurabilityPercent','最低舰队耐久','number',{unit:'%',help:'低于阈值停止，不自动修理；零耐久或无法确认上限也不派遣。'}),
-    configField('pirateHunt.checkEverySeconds','手动推进战果检查间隔','number',{unit:'秒',help:'手动连续推进按此间隔检查，自动讨伐随挂机每轮检查。连续战败达到失败停止次数或结果不明时停止；已出征舰队不会强制召回。'}),
+  { id: 'pirate-hunt', title: '海盗', category: 'world', fields: [
+    configField('pirate.enabled','开启挂机'),
+    configField('schedule.pirate','每日免费扫荡'),
+    configField('pirateSweep.type','扫荡种类','choice',{options:[['1','海盗先锋'],['2','海盗精锐'],['3','海盗头目']],help:'只扫荡该种类中自己已击败的最高等级。地图上没有该等级时等待刷新。'}),
+    configField('pirateHunt.enabled','自动挑战下一级'),
+    configField('pirateHunt.maxFailures','连续战败上限','number',{unit:'次',help:'只计已确认的战败，首杀成功后清零。达到上限后，本次挂机停止挑战海盗。'}),
+    configField('pirateHunt.fleetIds','首杀舰队','multi',{catalog:'expeditionFleets',empty:'请选择舰队',help:'每次从所选舰队中派出一支已编队的空闲舰队。'}),
+    configField('pirateHunt.types','首杀种类','multi',{catalog:'pirateTypes',empty:'全部种类',help:'留空表示全部种类。优先挑战可选目标中等级最低的海盗。'}),
+    configField('pirateHunt.maxLevel','首杀等级上限','number',{unit:'级',help:'包含所填等级。0 表示按当前赛季已开放的等级挑战。'}),
+    configField('pirateHunt.minDurabilityPercent','首杀最低耐久','number',{unit:'%',help:'跳过耐久低于此比例的舰队。耐久上限未知时也跳过。0 表示有耐久即可。'}),
   ] },
   { id: 'cityWar', title: '联盟城战', category: 'world', fields: [
     configField('schedule.guildWelfare', '领取联盟福利礼包'),
@@ -533,7 +533,7 @@ const configGroups = [
   ]},
   { id:'fleet-dispatch',title:'舰队调度',category:'world',fields:[configField('fleetDispatch.priority','任务优先顺序','sortableOrder',{
     wide:true,help:'从上到下检查，已出征舰队不抢占。有效城战时段预留优先；已启动首杀对较低优先级任务预留舰队，无目标后释放。巨轮跟随独立排序；当天世界Boss首战完成后释放舰队。',
-    options: [['cityWar','城战接续'], ['pirateHunt','海盗讨伐 / 首杀'], ['treasure','巨轮普通参战'], ['follow','巨轮跟随'],
+    options: [['cityWar','城战接续'], ['pirateHunt','海盗首杀'], ['treasure','巨轮普通参战'], ['follow','巨轮跟随'],
       ['worldBoss','世界Boss首战'], ['radar','联盟情报'], ['silicon','硅矿采集'], ['resourceFields','资源田占领']],
   })]},
 ];
@@ -2036,7 +2036,7 @@ async function configPreview() {
       const hunt=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:'pirateHunt'})});
       data={...hunt,scopeLabel:selected.title,counts:{...sweep.counts,...hunt.counts},
         actions:[...sweep.actions,...hunt.actions],
-        notes:[...sweep.notes.map(note=>'每日免费扫荡：'+note),...hunt.notes.map(note=>'首杀推进：'+note)],
+        notes:[...sweep.notes.map(note=>'扫荡：'+note),...hunt.notes.map(note=>'首杀：'+note)],
       };
     }else if(source){
       data=await call('/api/settings/preview',{method:'POST',body:JSON.stringify({settings:JSON.parse(original),category:source})});
