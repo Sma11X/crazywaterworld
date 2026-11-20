@@ -2230,19 +2230,24 @@ function renderCapture(state) {
   const box = clear($('cap-box'));
   const recovery = state.recovery;
   const cleanupPending = state.phase === 'error' || recovery?.pending;
+  const selectedChannel = accountAddChannel();
+  const otherChannelRunning = state.running && ['wechat', 'douyin'].includes(selectedChannel) && state.platform !== selectedChannel;
   $('cap-start').disabled = captureActionBusy || state.running || cleanupPending;
   $('cap-douyin').disabled = captureActionBusy || state.running || cleanupPending;
-  $('cap-stop').disabled = captureActionBusy || (!state.running && state.phase !== 'error');
-  $('cap-stop').hidden = !state.running && state.phase !== 'error';
+  $('cap-stop').hidden = otherChannelRunning || (!state.running && state.phase !== 'error');
+  $('cap-stop').disabled = captureActionBusy || $('cap-stop').hidden;
   $('cap-recover').hidden = !recovery?.pending;
   $('cap-recover').disabled = captureActionBusy || state.running || !recovery?.recoverable;
   const ownResult = captureOwner?.startedAt && captureOwner.startedAt === state.startedAt;
   const phase = cleanupPending || state.error ? 'error' : state.running ? state.phase : ownResult && state.accountId ? 'saved' : 'entry';
-  const messages = { starting: '正在准备登录采集…', ca: '请完成 Windows 证书安装提示。', listening: '正在准备本机登录通道…', proxy: '正在准备本机登录通道…', waiting: '请在电脑客户端中重新打开游戏。', captured: '已读取账号，正在完成验证和清理…', stopping: '正在恢复本机代理和证书设置…', saved: '账号已添加。可关闭此窗口，在账号卡片中查看角色和运行状态。', entry: '' };
-  hint.textContent = state.error ? cleanupPending ? '采集清理未完成，请点击「停止读取」重试。' : '本次读取失败，请重新开始或查看运行日志。' : messages[phase] || '';
+  const messages = { starting: '正在准备登录采集…', ca: '请完成 Windows 证书安装提示。', listening: '正在准备本机登录通道…', proxy: '正在准备本机登录通道…', waiting: '采集已就绪，请在电脑客户端中重新打开游戏。', captured: '已读取账号，正在完成验证和清理…', stopping: '正在恢复本机代理和证书设置…', saved: '账号已添加。可关闭此窗口，在账号卡片中查看角色和运行状态。', entry: '' };
+  hint.textContent = state.error ? cleanupPending ? '采集清理未完成，请点击「停止读取」重试。' : state.failureHint || '本次读取失败，请重新开始或查看运行日志。' : messages[phase] || '';
   hint.className = state.error ? 'bad' : 'warn';
-  if (recovery?.pending) {
-    hint.textContent = recovery.error ? '本机设置尚未恢复，请重试恢复上次采集残留。' : '检测到上次采集残留，请先恢复原代理和本次安装的证书。';
+  if (otherChannelRunning) {
+    const channelName = state.platform === 'douyin' ? '电脑抖音采集' : '微信小游戏';
+    hint.textContent = '「' + channelName + '」正在采集，请返回该渠道查看进度。';
+  } else if (recovery?.pending) {
+    hint.textContent = !recovery.recoverable ? '无法自动恢复上次采集。请在控制台所在电脑运行 start-console.cmd status 查看原因。' : '请点击「恢复上次采集残留」还原本机设置。';
     hint.className = recovery.error ? 'bad' : 'warn';
   }
   const notice = $('account-add-notice');
@@ -2254,13 +2259,13 @@ function renderCapture(state) {
   if (!state.running && !cleanupPending && phase !== 'saved') {
     const clientName = accountAddChannel() === 'douyin' ? '抖音' : '微信';
     const steps = el('ol', 'steps');
-    for (const text of ['先登录电脑版' + clientName + '。', '点击「开始读取」，按提示完成本机登录通道的准备。', '从电脑' + clientName + '重新打开《疯狂水世界》，等待读取角色并自动保存。']) {
+    for (const text of ['先登录电脑版' + clientName + '。', '点击「开始读取」可再次查看并确认本次采集。', '等页面显示「采集已就绪」后，再按提示操作。']) {
       steps.appendChild(el('li', null, text));
     }
     box.appendChild(steps);
   }
 
-  if (state.running) {
+  if (state.running && state.phase === 'waiting' && !otherChannelRunning) {
     const steps = el('ol', 'steps');
     const lines = [
       '先登录电脑版' + (state.platform === 'douyin' ? '抖音' : '微信') + '，再从该客户端打开《疯狂水世界》',
@@ -2284,7 +2289,6 @@ function renderCapture(state) {
 
   }
   if (typeof accountAddChanged === 'function') {
-    const selectedChannel = accountAddChannel();
     const channel = ['wechat', 'douyin'].includes(selectedChannel) ? selectedChannel : state.platform === 'douyin' ? 'douyin' : 'wechat';
     accountAddChanged(channel, phase, { busy: captureActionBusy });
   }
@@ -2296,7 +2300,7 @@ async function pollCapture() {
     const state = await call('/api/capture');
     if (version !== captureFlowVersion) return;
     renderCapture(state);
-    if (state.running && !capturePoll && accountAddChannel() === state.platform) {
+    if (state.running && !capturePoll && ['wechat', 'douyin'].includes(accountAddChannel())) {
       capturePoll = setInterval(pollCapture, 1500);
     }
     if (!state.running && capturePoll) {
@@ -2305,6 +2309,7 @@ async function pollCapture() {
       await loadAccounts(false);
       renderAccounts();
     }
+    return state;
   } catch (error) {
     if (version !== captureFlowVersion) return;
     $('cap-hint').textContent = '';
@@ -2331,39 +2336,41 @@ $('cap-recover').onclick = async () => {
 };
 async function beginCapture(platform) {
   if (captureActionBusy || accountAddChannel() !== platform) return;
-  const version = captureFlowVersion;
+  const version = ++captureFlowVersion;
   captureActionBusy = true;
-  accountAddChanged(platform, 'starting', { busy: true });
+  accountAddChanged(platform, 'checking', { busy: true });
+  $('cap-hint').className = 'dim';
+  $('cap-hint').textContent = '正在检查本机采集状态…';
   let state;
   try {
-    state = await call('/api/capture');
-    if (version !== captureFlowVersion || accountAddChannel() !== platform) return;
-    renderCapture(state);
-  } catch (error) {
-    $('cap-hint').textContent = '';
-    reportError(error);
-    return;
+    state = await pollCapture();
   } finally {
     captureActionBusy = false;
     if (captureView) renderCapture(captureView);
-    accountAddChanged(platform, 'entry', { busy: false });
+    else accountAddChanged(platform, 'entry', { busy: false });
+  }
+  if (version !== captureFlowVersion || accountAddChannel() !== platform) return;
+  if (!state) {
+    $('cap-hint').className = 'bad';
+    $('cap-hint').textContent = '暂时无法读取本机采集状态。请检查控制台连接后重新选择渠道。';
+    return;
   }
   if (state.running || state.phase === 'error' || state.recovery?.pending) return;
   const body = [
-    el('div', null, '抓包只做两处「仅当前用户」的改动，抓到账号后立刻自动还原：'),
-    el('div', null, '1. 若缺少证书，Windows 会打开导入向导，目标已选定为当前用户的“受信任的根证书颁发机构”。点击“完成”；若出现安全警告，核对 CrazyWaterWorld Local Test CA 后选择“是”。'),
-    el('div', null, '2. 临时使用本机代理读取本游戏的登录信息，结束后恢复原代理设置。'),
-    el('div', null, '使用系统代理的其他程序也会临时经过本机代理，工具仅解密本游戏网关，结束后恢复原设置。随时可点「停止读取」。'),
-    el('div', null, '采集就绪后，请只在电脑' + (platform === 'douyin' ? '抖音' : '微信') + '里重新打开《疯狂水世界》。'),
-    el('div', null, '捕获后会尝试连接游戏验证角色，可能让正在运行的游戏掉线一次。'),
+    el('p', null, '控制台会读取并保存《疯狂水世界》的游戏登录凭据。验证角色时，正在玩的账号可能会下线。'),
+    el('p', null, '采集期间会临时更改当前 Windows 用户的系统代理。使用系统代理的其他程序也会经过本机代理，工具仅解密本游戏网关的连接。'),
+    el('p', null, '如需安装临时根证书，请在 Windows 安装提示中核对 CrazyWaterWorld Local Test CA。启动失败或采集结束时，工具会还原代理，并移除本次安装的证书。'),
   ];
   captureConfirmation = true;
-  openConfirm('开始抓包（将修改当前用户的系统设置）', body, async () => {
+  openConfirm(platform === 'douyin' ? '确认开始电脑抖音采集' : '确认开始电脑微信采集', body, async () => {
     captureConfirmation = false;
     if (version !== captureFlowVersion || accountAddChannel() !== platform || captureActionBusy) return;
     captureActionBusy = true;
     captureOwner = { platform, startedAt: null, previousStartedAt: state.startedAt };
     accountAddChanged(platform, 'starting', { busy: true });
+    clear($('cap-box'));
+    $('cap-hint').className = 'warn';
+    $('cap-hint').textContent = '正在准备采集。若 Windows 弹出证书窗口，请核对是安装还是删除，以及证书名称。';
     try {
       const next = await call('/api/capture/start', { method: 'POST', body: JSON.stringify({ confirm: true, platform }) });
       captureOwner.startedAt = next.startedAt;
@@ -2380,7 +2387,7 @@ async function beginCapture(platform) {
       if (captureView) renderCapture(captureView);
       else accountAddChanged(platform, 'error', { busy: false });
     }
-  });
+  }, '同意并开始采集');
 }
 
 async function stopAccountCapture() {
