@@ -45,8 +45,9 @@ function fixture({ vip = 3, firstCharge = false, max = [2, 1] } = {}) {
 const names = f => f.calls.map(call => call[0]);
 for (const via of ['VIP', '首充']) {
   const f = fixture({ vip: via === 'VIP' ? 3 : 0, firstCharge: via === '首充' });
-  f.options.clientInfo = { channelId: 'new', appId: 'other', originVersion: '' };
-  f.config.tables.AdvChannelCfg.data.push({ key: 'new', isOpen: true, minAppVersion: '' });
+  f.options.clientInfo = { channelId: 'new', appId: 'other' };
+  if (via === 'VIP') f.options.clientInfo.originVersion = '1.9.4.434';
+  f.config.tables.AdvChannelCfg.data.push({ key: 'new', isOpen: true, minAppVersion: '1.11.6' });
   f.options.language = 'en';
   Object.assign(f.options.player, { channelId: '1422', appId: '14021167' });
   await Promise.all([f.run(), f.run()]);
@@ -73,8 +74,6 @@ for (const change of [
   f => { f.options.player.level = 8; },
   f => { f.options.clientInfo.channelId = 'unknown'; },
   f => { f.config.tables.AdvChannelCfg.data[0].isOpen = false; },
-  f => { f.config.tables.AdvChannelCfg.data[0].minAppVersion = '1.2.0'; },
-  f => { f.config.tables.AdvChannelCfg.data[0].minAppVersion = '1.2.0'; f.options.clientInfo.originVersion = '1.1.99'; },
 ]) {
   const f = fixture();
   change(f);
@@ -97,8 +96,6 @@ for (const change of [
 }
 {
   const f = fixture({ max: [1] });
-  f.config.tables.AdvChannelCfg.data[0].minAppVersion = '1.2';
-  f.options.clientInfo.originVersion = '1.10';
   f.products[0].gotTimes = 1;
   await f.run();
   assert.deepEqual(names(f), ['AdvShopInfoRequest']);

@@ -12,23 +12,10 @@ export const AD_PAUSED_REASON = '广告等待期间任务已暂停或目标已�
 const REJECT_COOLDOWN_MS = 300_000;
 const adStates = new WeakMap();
 
-function versionAtLeast(version, minimum) {
-  if (!minimum) return true;
-  if (![version, minimum].every(v => typeof v === 'string' && /^\d+(\.\d+)*$/.test(v))) return false;
-  const actual = version.split('.').map(Number), required = minimum.split('.').map(Number);
-  for (let i = 0; i < Math.max(actual.length, required.length); i++) {
-    const diff = (actual[i] ?? 0) - (required[i] ?? 0);
-    if (diff !== 0) return diff > 0;
-  }
-  return true;
-}
-
 export function channelUnavailable(tables, player, clientInfo) {
   const channel = String(clientInfo?.channelId ?? '');
   const settings = tables?.AdvChannelCfg?.data?.find(r => String(r.key) === channel);
   if (settings?.isOpen !== true) return '当前客户端渠道未开放广告功能';
-  if (!versionAtLeast(clientInfo?.originVersion, settings.minAppVersion))
-    return '广告功能要求应用版本 ' + settings.minAppVersion + ' 或更高，当前为 ' + (clientInfo?.originVersion || '未知');
   const level = tables?.ModuleOpenCfg?.data?.find(r => r.moduleId === '广告')?.playerLevel;
   if (!Number.isSafeInteger(level) || !Number.isSafeInteger(player?.level)) return '未能确认广告商店开放等级';
   if (player.level < level) return '角色达到 ' + level + ' 级开放';
