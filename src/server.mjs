@@ -3707,41 +3707,40 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
       }
       if (route === 'GET /api/activities') {
         const { account, session } = scoped_(parsed);
-        const client = await ensureConnected(session, account);
-        const view = await activityView(client, client.festivals, loadConfigSafe(), session.player);
-        view.compassSpinCount = session.preferences?.eventActions.compassDrawCount ?? session.loop.compassSpinCount;
-        view.compassSpinEditable = !session.preferences;
-        view.newbie = newbieView(client);
-        if (view.order?.materials.length && !view.order.finished) {
+        json(await progressionJob(session, account, route, null, async (client, enabled) => {
           const config = loadConfigSafe();
-          const typeOf = makeTypeResolver(config);
-          let buildings;
-          try {
-            const water = await client.request('OnWaterRequest', {}, 'OnWaterResponse');
-            buildings = (water.building ?? []).map(b => ({ ...b, type: typeOf(b.buildingId) }));
-          } catch (error) {
-            emit(session, 'error', '读取商人订单工厂等级失败：' + error.message);
+          const view = await activityView(client, client.festivals, config, session.player);
+          view.newbie = newbieView(client);
+          if (view.order?.materials.length && !view.order.finished && enabled()) {
+            const typeOf = makeTypeResolver(config);
+            let buildings;
+            try {
+              const water = await client.request('OnWaterRequest', {}, 'OnWaterResponse');
+              buildings = (water.building ?? []).map(b => ({ ...b, type: typeOf(b.buildingId) }));
+            } catch (error) {
+              emit(session, 'error', '读取商人订单工厂等级失败：' + error.message);
+            }
+            for (const row of view.order.materials) {
+              row.factory = weekFactoryInfo(config, row.id, buildings);
+              if (!row.seed) continue;
+              const plots = buildings?.filter(b => b.type === '农田' && b.level > 0);
+              const growing = plots?.find(b => b.farm?.productId === row.id);
+              row.farmStatus = !plots ? '状态未知' : !plots.length ? '农田未建成' : growing ? '已种植，等待收获'
+                : row.seed.count ? '种子库存 ' + row.seed.count : '缺' + row.seed.name;
+            }
           }
-          for (const row of view.order.materials) {
-            row.factory = weekFactoryInfo(config, row.id, buildings);
-            if (!row.seed) continue;
-            const plots = buildings?.filter(b => b.type === '农田' && b.level > 0);
-            const growing = plots?.find(b => b.farm?.productId === row.id);
-            row.farmStatus = !plots ? '状态未知' : !plots.length ? '农田未建成' : growing ? '已种植，等待收获'
-              : row.seed.count ? '种子库存 ' + row.seed.count : '缺' + row.seed.name;
+          if (!enabled()) throw new Error('账号连接已变化，请刷新活动进度');
+          if (view.lotteryError) emit(session, 'error', '读取周抽奖进度失败：' + view.lotteryError);
+          if (view.orderError) emit(session, 'error', '读取商人订单失败：' + view.orderError);
+          const now = (Date.now() + (client.serverClockOffsetMs || 0)) / 1000;
+          let activities = view.activities;
+          try { activities = rememberActivityCatalog(session.id, activities, now); }
+          catch (error) {
+            view.catalogError = '活动历史暂未保存，请稍后刷新重试。';
+            emit(session, 'warn', '保存活动目录失败：' + error.message);
           }
-        }
-        if (view.lotteryError) emit(session, 'error', '读取周抽奖进度失败：' + view.lotteryError);
-        if (view.orderError) emit(session, 'error', '读取商人订单失败：' + view.orderError);
-        const now = (Date.now() + (client.serverClockOffsetMs || 0)) / 1000;
-        let activities = view.activities;
-        try { activities = rememberActivityCatalog(session.id, activities, now); }
-        catch (error) {
-          view.catalogError = '活动历史暂未保存，请稍后刷新重试。';
-          emit(session, 'warn', '保存活动目录失败：' + error.message);
-        }
-        Object.assign(view, activityCatalogView(session, activities));
-        json(view);
+          return Object.assign(view, activityCatalogView(session, activities));
+        }, { read: true }));
         return;
       }
       if (route === 'POST /api/activities/run') {
