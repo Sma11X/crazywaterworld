@@ -55,7 +55,7 @@ import { validateRuntimeSettings, guardRuntimeActions } from './settings-runtime
 import { assertResourcesReady } from './resource-store.mjs';
 import { treasureAutomationEnabled, runTreasureLoot } from './treasure-loot.mjs';
 import {watchTreasureTravel,matchesFollowDeparture,matchesChaseDeparture,treasureChaseActive} from './treasure-follow.mjs';
-import { nextDailyWindowStart } from './daily-time-windows.mjs';
+import { inDailyWindows, nextDailyWindowStart } from './daily-time-windows.mjs';
 import {watchFleetMaintenance,fleetMaintenanceEnabled,fleetMaintenanceInterval,runFleetMaintenance} from './fleet-maintenance.mjs';
 import {watchFleetSpeed,fleetSpeedEnabled,runFleetSpeed} from './fleet-speed.mjs';
 import { cityWarEnabled, cityWarReservedFleets, refreshCityWarReservations, reserveCityWarFleets, runCityWar } from './city-war.mjs';
@@ -213,24 +213,26 @@ export async function runLoop(client, protocol, {
   }
   const heldForEvent = id => inRecallWindow('treasure', id) || inRecallWindow('cityWar', id);
   const recallRuntime = () => !stop.aborted && runtimeActive() && client.connected !== false;
-  const nextChaseStart = () => {
+  function treasureScanTimes(now, refreshTime) {
     const p = getSettings()?.treasure;
-    return p?.chase ? nextDailyWindowStart(p.chaseWindows, serverNowSeconds()) : null;
-  };
+    const refresh = Number.isSafeInteger(refreshTime) && refreshTime > now ? refreshTime : (Math.floor(now / 3600) + 1) * 3600;
+    return [refresh, nextDailyWindowStart(p?.windows, now), p?.chase ? nextDailyWindowStart(p.chaseWindows, now) : null];
+  }
   const treasureScan = scheduler.scanTask({
     enabled: () => treasureAutomationEnabled(getSettings()),
     intervalMs: () => (getSettings()?.treasure?.checkEverySeconds ?? 15) * 1000,
     hourlyFallback: true,
     async observe(current) {
       if (!runtimeActive()) return;
-      const chaseStart = nextChaseStart();
+      const started = serverNowSeconds();
       const [list, stats] = await Promise.allSettled([
         client.request('TreasureLootListRequest', {}, 'TreasureLootListResponse', 8000),
         client.request('TreasureLootStatsRequest', {}, 'TreasureLootStatsResponse', 8000),
       ]);
       if (current()) {
         if (Array.isArray(list.value?.treasure)) rewards?.observe('万吨巨轮', '已扫描海面货轮 ' + list.value.treasure.length + ' 艘，派遣时复核目标与舰队');
-        return [stats.value?.nextRefreshTime, recallWindowStart('treasure', stats.value?.nextRefreshTime), chaseStart];
+        const refresh = stats.value?.nextRefreshTime;
+        return [...treasureScanTimes(started, refresh), recallWindowStart('treasure', refresh)];
       }
     },
   });
@@ -319,6 +321,7 @@ export async function runLoop(client, protocol, {
   scheduler.addCleanup(travel.subscribe(fleet=>{
     const preferences=getSettings()?.treasure;
     if(stop.aborted||!client.connected||!treasureAutomationEnabled(getSettings()))return;
+    if (!inDailyWindows(preferences.windows, serverNowSeconds())) return;
     const ownId = exactAutomationId(player?.playerId), others = travel.current();
     if (matchesFollowDeparture(fleet, preferences, ownId, others) ||
         (treasureChaseActive(preferences, serverNowSeconds()) && matchesChaseDeparture(fleet, preferences, ownId, others))) treasureScan.invalidate();
@@ -713,7 +716,7 @@ export async function runLoop(client, protocol, {
       return [Math.min(eventAt, nextRewardAt ?? Infinity, serverNowSeconds() + settings[source].checkEverySeconds)];
     }
     async function scanTreasure() {
-      const chaseStart = nextChaseStart();
+      const started = serverNowSeconds();
       if(getSettings()?.cityWar.reserveDuringWar)await checkCityWar();
       try {
         const result = await runTreasureLoot(client, protocol, config, player, { getSettings, ledger: usageLedger,
@@ -734,7 +737,7 @@ export async function runLoop(client, protocol, {
           },
         });
         const recallTimes = await prepareSiliconRecall('treasure', result.canPrepare ? result.nextRefreshTime : null, result.miningFleetIds);
-        return [result.nextRefreshTime, chaseStart, ...recallTimes];
+        return [...treasureScanTimes(started, result.nextRefreshTime), ...recallTimes];
       } catch (error) { recallStarts.treasure = null; phaseFailure('world', '万吨巨轮检查', error); }
       finally { cityFuelCeiling = null; }
     }

@@ -376,6 +376,7 @@ const configGroups = [
   ] },
   { id: 'treasure', title: '万吨巨轮', category: 'world', fields: [
     configField('treasure.enabled', '巨轮自动化总开关', 'switch', { help: '开始挂机后生效，独立于基地自动化。按所选舰队、参与模式和实际汽油库存出征；耐久不足可先普通维修。不会召回、补油或修改编队。' }),
+    configField('treasure.windows', '参与时间', 'names', { placeholder: '08:00-12:00\n22:00-02:00', help: '按北京时间每天生效，每行一个 HH:mm-HH:mm 时段，可跨午夜。留空或起止相同表示全天。自动参加、跟随、兜底和追杀都在时段内出征。时段结束后停止巨轮维修和去程加速，回城加速沿用回城设置。' }),
     configField('treasure.qualities', '常规参与货轮类型', 'multi', { catalog: 'treasureQualities', selectAll: true, empty: '未选择，暂停常规派遣和跟随', help: '勾选常规自动参加和跟随时可以抢的货轮类型，可多选。中小货轮兜底按下方设置，独立选择货轮。' }),
     configField('treasure.autoJoin', '常规自动参加', 'switch', { when:d=>!d.treasure.follow, help:'仅在未开启指定跟随时生效。开启跟随后，首次出征必须匹配名单，不使用常规自动参加兜底；已确认的跟随按反复攻占设置接续。' }),
     configField('treasure.participationMode', '参与模式', 'radio', { options: [['untilFull', '打满就停'], ['always', '每次参与']], help: '打满就停：达到游戏今日领奖上限后不再派遣或维修。每次参与：领奖已满仍可参加，但不增加奖励次数，其他限制仍有效。' }),
@@ -387,7 +388,7 @@ const configGroups = [
     configField('treasure.followNames', '补充跟随昵称（可选）', 'names', { parent: 'treasure.follow', when: d => d.treasure.follow, help: '保留原有手填名单。每行一个完整昵称，角色 ID 名单优先；同名无法确认身份时跳过。', placeholder: '每行输入一位其他玩家的完整昵称' }),
     configField('treasure.chase', '是否开启追杀', 'switch', { help: '名单对手正在前往、驻守或交战的货轮优先出征。追杀跳过货轮类型、奖励、进度、避战、外盟、反复攻占、每日出征上限和最低耐久比例。只用所选可用舰队，服从其他挂机项目的占用和预留。' }),
     configField('treasure.chaseNames', '追杀名单', 'names', { parent: 'treasure.chase', when: d => d.treasure.chase, placeholder: '每行一位对手的完整昵称', help: '按填写顺序优先追击。每次派遣前重新核对对手位置。对手离开后停止追击，单独开启追杀时会等待下次出现。' }),
-    configField('treasure.chaseWindows', '追杀时间范围', 'names', { parent: 'treasure.chase', when: d => d.treasure.chase, placeholder: '08:00-12:00\n22:00-02:00', help: '按北京时间每天生效，每行一个 HH:mm-HH:mm 时段，可跨午夜。留空或起止相同表示全天。到结束时间就停止追加追杀派舰和追杀去程加速。' }),
+    configField('treasure.chaseWindows', '追杀时间范围', 'names', { parent: 'treasure.chase', when: d => d.treasure.chase, placeholder: '08:00-12:00\n22:00-02:00', help: '在巨轮参与时间内进一步限定追杀。每行一个北京时间 HH:mm-HH:mm 时段，可跨午夜。留空或起止相同表示沿用全部参与时间。' }),
     configField('treasure.chaseSpeedUp', '追杀去程钻石加速', 'switch', { parent: 'treasure.chase', when: d => d.treasure.chase, help: '仅加速已确认的追杀去程。对手离开后停止花钻。回城可单独使用下方的回城加速。' }),
     configField('treasure.chaseTargetSeconds', '追杀去程剩余目标', 'number', { parent: 'treasure.chaseSpeedUp', when: d => d.treasure.chase && d.treasure.chaseSpeedUp, unit: '秒', help: '剩余时间超过此值时才加速。' }),
     configField('treasure.chaseDailyDiamondLimit', '追杀每日钻石预算', 'number', { parent: 'treasure.chaseSpeedUp', when: d => d.treasure.chase && d.treasure.chaseSpeedUp, unit: '钻石', help: '0 禁止花钻。同时遵守全局钻石开关、每日预算和钻石保留量。' }),
