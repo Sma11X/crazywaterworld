@@ -2007,7 +2007,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   async function dailies(session, account) {
     const instance = await ensureConnected(session, account);
-    const survey = await surveyDailies(instance, protocolFor(instance), { config: loadConfigSafe(), player: session.player, settings: session.preferences });
+    const survey = await surveyDailies(instance, protocolFor(instance), { config: loadConfigSafe(), player: session.player, settings: session.preferences, ledger: usageFor(session) });
     return { ...addDailyOptions(survey, session.dailySingle), text: formatSurvey(survey) };
   }
 
@@ -2490,12 +2490,16 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
             return output(plan, plan.counts, '资源田自动占领');
           }
           if (category === 'arena') {
-            const { plan, info, tickets, task } = await readArena(client, () => settings);
+            const { plan, info, tickets, task } = await readArena(client, () => settings, undefined, usageFor(session));
             const notes = [];
             const enabled = settings.schedule.arena && nativePreferenceEnabled(settings, 'arena');
-            if (!enabled) notes.push('开启竞技场挑战、日常行动和每日任务与奖励总开关后执行');
+            if (!enabled) notes.push('开启竞技场挂机、日常行动和每日任务与奖励总开关后执行');
             if (plan.reason) notes.push(plan.reason);
-            notes.push(`本人排名 ${info.myself?.rankNo ?? '未知'} · 今日战斗 ${info.dailyChallengeTimes ?? '未知'} / ${settings.arena.dailyBattleLimit} 次 · 挑战券 ${tickets ?? '未知'} 张`);
+            notes.push(`本人排名 ${info.myself?.rankNo ?? '未知'} · 今日战斗 ${info.dailyChallengeTimes ?? '未知'} 次 · 挑战券 ${tickets ?? '未知'} 张`);
+            const { challengeHigher, challengeLimit, sweepLower, sweepLimit } = settings.arena;
+            const usage = plan.usage;
+            notes.push(`高排名挑战 ${challengeHigher ? (usage?.challenges ?? '未知') + ' / ' + challengeLimit + ' 次' : '已关闭'} · 低排名扫荡 ${sweepLower ? (usage?.sweeps ?? '未知') + ' / ' + sweepLimit + ' 次' : '已关闭'}`);
+            if (usage?.unknown) notes.push(`今日另有 ${usage.unknown} 场无法区分类型，已计入今日总次数。`);
             const actions = enabled ? (plan.actions ?? []).map(a => ({ kind: 'arena', label: a.note, costs: [{ id: 'ARENA_POINT', num: 1 }] })) : [];
             if (canClaimDailyReward(task, settings, 'arena')) actions.push({ kind: 'arena', label: '领取竞技场每日任务奖励' });
             return output({ notes, actions }, {}, '竞技场');
@@ -2660,7 +2664,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           }
           if (category === 'daily') {
             const flags = nativeTaskValues(settings, session.loop.tasks);
-            const daily = await surveyDailies(client, protocolFor(client), { config, player: session.player, settings, allowRecruitTickets: false });
+            const daily = await surveyDailies(client, protocolFor(client), { config, player: session.player, settings, allowRecruitTickets: false, ledger: usageFor(session) });
             const tasks = selectTaskSettings(await surveyTasks(client, protocolFor(client), { config, player: session.player }), settings);
             const actions = [...tasks.plan];
             const trialNotes = [];
@@ -4403,7 +4407,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         json(await progressionJob(session, account, route + ':' + payload.token, '完成单项日常', async (client, enabled) => {
           const config = loadConfigSafe();
           const result = await runDailySingle(client, protocolFor(client), { state: session.dailySingle, token: payload.token, paid: payload.paid === true,
-            config, player: session.player, settings: session.preferences, guard: actionGuard(session, client, config), enabled });
+            config, player: session.player, getSettings: () => session.preferences, ledger: usageFor(session), guard: actionGuard(session, client, config), enabled });
           emit(session, result.ok ? 'info' : 'warn', result.label);
           return result;
         }));
@@ -4415,12 +4419,12 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         const { account, session } = scoped_(parsed);
         const instance = await ensureConnected(session, account);
         const config = loadConfigSafe();
-        const survey = await surveyDailies(instance, protocolFor(instance), { config, player: session.player, settings: session.preferences });
+        const survey = await surveyDailies(instance, protocolFor(instance), { config, player: session.player, settings: session.preferences, ledger: usageFor(session) });
         const started = Date.now();
         const guard = actionGuard(session, instance, config);
         const results = await runDailies(instance, protocolFor(instance), survey, {
           allowMutate: true,
-          allowPaid: payload.paid === true,
+          allowPaid: payload.paid === true, ledger: usageFor(session),
           settings: session.preferences, getSettings: () => session.preferences, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
           onStep: (entry) => {
             if (reportOperationStep(session, entry, entry.ok ? 'info' : entry.skipped ? 'warn' : 'error', formatLoopStep(entry))) return;
@@ -4431,7 +4435,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
         });
         // 任务奖励、活跃度宝箱与每日赠礼的领取都在 runDailies 内部收尾，这里只把结果重新读一遍给页面。
         await new Promise((resolve) => setTimeout(resolve, 1200));
-        const after = await surveyDailies(instance, protocolFor(instance), { config, player: session.player, settings: session.preferences });
+        const after = await surveyDailies(instance, protocolFor(instance), { config, player: session.player, settings: session.preferences, ledger: usageFor(session) });
         const claimed = results
           .filter((entry) => entry.ok && (entry.request === 'DrawDailyTaskRewardRequest' || entry.id === 'activityChest' || entry.id === 'freeDailyPack'))
           .map((entry) => entry.note);

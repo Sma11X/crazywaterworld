@@ -845,7 +845,7 @@ export async function runLoop(client, protocol, {
         try {
            const includeTask = id => id === 1010 && settings
              ? false : !isEnabled || dailyKeys[id]?.some(enabled);
-          const survey = await surveyDailies(client, protocol, { config, player, includeTask, probeGift: !isEnabled, idle: !!isEnabled, allowRecruitTickets: false, settings });
+          const survey = await surveyDailies(client, protocol, { config, player, includeTask, probeGift: !isEnabled, idle: !!isEnabled, allowRecruitTickets: false, settings, ledger: usageLedger });
           for (const entry of survey.tasks) for (const key of dailyKeys[entry.task.id]??[]) rewards?.observe(key, entry.reason || (Number.isFinite(entry.task.progress)&&Number.isFinite(entry.task.targetProgress)?entry.task.progress+'/'+entry.task.targetProgress+(entry.task.progress>=entry.task.targetProgress?' · 今日目标已完成':' · 等待执行'):'已读取任务状态'));
            const recruit = survey.tasks.find(entry => entry.task.id === 1002 && entry.status === 'waiting');
            if (recruit && (includeRepeatedWaits || recruit.reason !== lastRecruitWait)) stepLog('dailies')({ title: recruit.task.title, skipped: true, reason: recruit.reason, taskKey: 'freeRecruit' });
@@ -862,7 +862,7 @@ export async function runLoop(client, protocol, {
           if (summary.dailies.planned) {
             summary.dailies.results = await runDailies(client, protocol, survey, {
               allowMutate, allowPaid: isEnabled ? true : allowPaid, claimRewards: !isEnabled, config,
-              allowAction: allowDaily, onStep: stepLog('dailies'),
+              allowAction: allowDaily, onStep: stepLog('dailies'), ledger: usageLedger,
               settings, getSettings, beforeAction: guard.before, afterAction: guard.after, cancelAction: guard.cancel,
             });
           }

@@ -237,11 +237,14 @@ const configGroups = [
     configField('schedule.leaguePassRewards','领取已达标战令奖励'),
   ]},
   {id:'arena',title:'竞技场',category:'daily',fields:[
-    configField('schedule.arena','竞技场每日挑战','switch',{help:'使用已有挑战券，每轮最多挑战一次，达到每日战斗次数后停止。需开启「日常行动」和「每日任务与奖励」总开关。'}),
-    configField('arena.target','选对手策略','choice',{componentSelect:true,options:[['weakest','优先战力最低'],['rank','优先排名最高']],help:'从排名在自己之前、当前可以挑战的对手中选择。'}),
-    configField('arena.maxPowerRatio','对手战力上限（相对己方）','number',{unit:'%',help:'填 70 表示优先选战力不超过本人竞技场战力 70% 的对手，再按所选策略排序。0 表示不限。'}),
-    configField('arena.fallbackLowerRank','兜底扫荡低排名对手','switch',{help:'排名靠前的可挑战对手中无人符合条件时，消耗 1 张券扫荡排名在自己之后的对手，计入每日战斗次数。'}),
-    configField('arena.dailyBattleLimit','每日战斗次数','number',{unit:'次',help:'包含今天已打的场次。每场用 1 张券，填 0 暂停战斗并留券。'}),
+    configField('schedule.arena','竞技场挂机','switch',{help:'需开启「日常行动」和「每日任务与奖励」。两项都开启时优先挑战高排名对手。每场消耗 1 张券，缺券时等回券，完成设定次数后结束当天竞技场。'}),
+    configField('arena.challengeHigher','挑战排名高于自己的对手','switch',{editChildrenWhenOff:true}),
+    configField('arena.challengeLimit','每日挑战次数','number',{parent:'arena.challengeHigher',unit:'次',help:'填 0 暂停挑战高排名对手。'}),
+    configField('arena.target','挑战选人策略','choice',{parent:'arena.challengeHigher',componentSelect:true,options:[['weakest','优先战力最低'],['rank','优先排名最高']],help:'从排名在自己之前、当前可以挑战的对手中选择。'}),
+    configField('arena.maxPowerRatio','挑战对手战力上限（相对己方）','number',{parent:'arena.challengeHigher',unit:'%',help:'填 70 表示优先选战力不超过本人竞技场战力 70% 的对手，再按所选策略排序。0 表示不限。'}),
+    configField('arena.fallbackWeakest','超出上限时挑战战力最低的对手','switch',{parent:'arena.challengeHigher',help:'所有可挑战的高排名对手都超过战力上限时，选择其中战力最低的一位，计入每日挑战次数。'}),
+    configField('arena.sweepLower','扫荡排名低于自己的对手','switch',{editChildrenWhenOff:true}),
+    configField('arena.sweepLimit','每日扫荡次数','number',{parent:'arena.sweepLower',unit:'次',help:'填 0 暂停扫荡低排名对手。'}),
     configField('arena.claimTask','领取竞技场每日任务奖励','switch',{help:'任务达标后领取，需开启「每日任务与奖励」总开关。'}),
   ]},
   {id:'daily-actions',title:'日常行动',category:'daily',fields:[]},
@@ -880,10 +883,10 @@ function configUpdateVisibility() {
     const { spec, children = [] } = widget;
     const key = spec.key;
     const visible = parentActive && (!spec.when || spec.when(configEditor.draft));
-    const active = visible && (spec.moduleControl || spec.kind !== 'switch' || configSwitchValue(spec));
+    const showChildren = visible && (spec.editChildrenWhenOff || spec.moduleControl || spec.kind !== 'switch' || configSwitchValue(spec));
     let hasError = !!configEditor.errors[key] || !widget.error.hidden;
     for (const child of children) {
-      const childHasError = update(child, active);
+      const childHasError = update(child, showChildren);
       hasError = hasError || childHasError;
     }
     if(hasError)configRevealSection(widget);

@@ -621,8 +621,31 @@ try {
       assert.throws(() => exportAutomationSettings(settings), error => !!error.fields['treasure.windows']);
     }
   });
+  test('竞技场旧共享次数按开关分配，单项停用和零次数可往返保存', () => {
+    for (const fallback of [false, true]) for (const limit of [0, 1, 5]) {
+      const old = defaultSettings();
+      old.schedule.arena = true;
+      old.arena = { dailyBattleLimit: limit, fallbackLowerRank: fallback, target: 'rank', maxPowerRatio: 70, claimTask: true };
+      const settings = importAutomationSettings({ format: SETTINGS_FORMAT, version: 37, settings: old });
+      const sweeps = fallback ? Math.floor(limit / 2) : 0;
+      assert.deepEqual(settings.arena, { challengeHigher: true, challengeLimit: limit - sweeps,
+        target: 'rank', maxPowerRatio: 70, fallbackWeakest: false, sweepLower: fallback, sweepLimit: fallback ? sweeps : 3, claimTask: true });
+      assert.deepEqual(validateSettings(old), settings);
+      settings.arena.challengeHigher = false;
+      assert.deepEqual(importAutomationSettings(exportAutomationSettings(settings)), settings);
+    }
+  });
+  test('版本38竞技场默认关闭超限兜底，显式开启后可保存导出', () => {
+    const old = defaultSettings();
+    delete old.arena.fallbackWeakest;
+    const upgraded = importAutomationSettings({ format: SETTINGS_FORMAT, version: 38, settings: old });
+    assert.equal(upgraded.arena.fallbackWeakest, false);
+    assert.deepEqual(validateSettings(old), upgraded);
+    upgraded.arena.fallbackWeakest = true;
+    assert.deepEqual(importAutomationSettings(exportAutomationSettings(upgraded)), upgraded);
+  });
   test('版本1升级后重复迁移保持一致，保留有效的用户值', () => {
-    assert.equal(SETTINGS_SCHEMA_VERSION, 37);
+    assert.equal(SETTINGS_SCHEMA_VERSION, 39);
     const settings = legacySettings();
     settings.factory.checkEverySeconds = 270;
     settings.resources.diamondDailyLimit = 1234;
