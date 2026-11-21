@@ -30,23 +30,34 @@ try{
    assert.equal(f.state.ruby,1000);
   }
  });
- await check('益世界按每日次数、渠道身份和角色权益判断广告扫荡',async()=>{
-  for(const kind of ['无权益','次数用完','角色渠道不符','首充响应不完整']){
+ await check('益世界按每日次数和角色权益判断广告扫荡',async()=>{
+  for(const kind of ['次数用完','首充响应不完整']){
    const f=trialModesFixture();
    Object.assign(f.channel.clientInfo,{channelId:'17001784',appId:'14021102',clientVersion:'1.12.11',originVersion:'1.9.4.434'});
    f.config.tables.AdvChannelCfg.data.push({key:'17001784',isOpen:true,minAppVersion:'1.11.6'});
-   if(kind==='无权益'||kind==='首充响应不完整')f.player.vip.vipLevel=1;
+   if(kind==='首充响应不完整')f.player.vip.vipLevel=1;
    if(kind==='次数用完')f.state.adv.find(row=>row.id===4).gotTimes=1;
-   if(kind==='角色渠道不符')f.player.channelId='1400';
    if(kind==='首充响应不完整'){
     const request=f.client.request.bind(f.client);
     f.client.request=(name,...args)=>name==='FirstChargeRequest'?{}:request(name,...args);
    }
    const result=await run(f,ledger(),'ad');
    assert.equal(result.skipped,true,kind);
-   const reason={'无权益':/没有免广告权益/,'次数用完':/次数已用完/,'角色渠道不符':/渠道身份/,'首充响应不完整':/权益未确认/};
+   const reason={'次数用完':/次数已用完/,'首充响应不完整':/权益未确认/};
    assert.match(result.reason,reason[kind]);
    assert.deepEqual(f.state.writes,[]);
+  }
+ });
+ await check('无免广告权益账号不受客户端应用 ID、语言和角色渠道限制，按等待流程扫荡',async()=>{
+  for(const mismatch of [false,true]){
+   const f=trialModesFixture();
+   Object.assign(f.channel.clientInfo,{channelId:'17001784',appId:'14021102',clientVersion:'1.12.11',originVersion:'1.9.4.434'});
+   f.config.tables.AdvChannelCfg.data.push({key:'17001784',isOpen:true,minAppVersion:'1.11.6'});
+   f.player.vip.vipLevel=1;f.settings.ads.waitSeconds=0.01;
+   if(mismatch){f.player.channelId='1400';f.player.appId='14021170';f.channel.language='en';}
+   const result=await run(f,ledger(),'ad');
+   assert.equal(result.ok,true,mismatch?'客户端身份不一致':'客户端身份一致');
+   assert.deepEqual(f.state.writes.map(row=>row.name),['WatchAdvRequest','TrialRaidBuySweepRequest']);
   }
  });
  await check('旧设置原值保留，新钻石/广告开关关闭，导入及加载不改旧文件',()=>{

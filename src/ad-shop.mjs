@@ -2,7 +2,6 @@ import { displayMaterial } from './config.mjs';
 import { normalize } from './worlds.mjs';
 import { emitDiagnostic } from './trace-log.mjs';
 
-const waitingApps = new Map([['1400', '14021170'], ['1422', '14021167']]);
 const task = 'adShop';
 const title = '广告商店免广告领奖';
 const inProgress = new WeakSet();
@@ -38,17 +37,12 @@ export function adWaitMs(settings) {
   return seconds * 1000;
 }
 
-export async function adAccess(client, tables, { player, clientInfo, language, settings }) {
+export async function adAccess(client, tables, { player, clientInfo, settings }) {
   const reason = channelUnavailable(tables, player, clientInfo);
   if (reason) return { reason };
   const privilege = await hasSkipPrivilege(client, tables, player);
   if (privilege === null) return { reason: '尚未读取到首充记录，免广告权益未确认' };
   if (privilege) return { waitMs: 0 };
-  const channel = String(clientInfo?.channelId ?? '');
-  const app = waitingApps.get(channel);
-  if (!app || String(clientInfo?.appId) !== app || language !== 'zh_CN'
-    || (player?.channelId && String(player.channelId) !== channel)
-    || (player?.appId && String(player.appId) !== app)) return { reason: '当前账号没有免广告权益，请在游戏内观看广告领取' };
   return { waitMs: adWaitMs(settings) };
 }
 
@@ -102,14 +96,14 @@ async function readShop(client) {
   return products;
 }
 
-export async function claimAdShop(client, config, { player, clientInfo, language, enabled, schedule, report, getSettings }) {
+export async function claimAdShop(client, config, { player, clientInfo, enabled, schedule, report, getSettings }) {
   if (!enabled() || !schedule.due(task) || inProgress.has(client)) return;
   inProgress.add(client);
   const todayEnds = schedule.nextDay();
   const allowed = () => enabled() && schedule.now() < todayEnds;
   const retryIn = seconds => schedule.defer(task, Math.min(todayEnds, schedule.now() + seconds));
   try {
-    const access = await adAccess(client, config?.tables, { player, clientInfo, language, settings: getSettings?.() });
+    const access = await adAccess(client, config?.tables, { player, clientInfo, settings: getSettings?.() });
     if (access.reason) {
       report({ label: title, skipped: true, reason: access.reason });
       retryIn(1800);

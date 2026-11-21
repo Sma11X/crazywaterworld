@@ -85,8 +85,20 @@ for (const change of [
   const f = fixture({ vip: 0 });
   f.options.clientInfo.appId = 'other';
   await f.run();
-  assert.deepEqual(names(f), ['FirstChargeRequest']);
-  assert.equal(f.log[0].skipped, true);
+  assert.deepEqual(f.products.map(p => p.gotTimes), [2, 1], '客户端应用 ID 不在内置名单时仍按等待流程领取');
+  assert(names(f).includes('WatchAdvRequest'));
+}
+for (const change of [
+  f => { f.options.player.channelId = '1422'; f.options.player.appId = '14021167'; },
+  f => { f.options.language = 'en'; },
+]) {
+  const f = fixture({ vip: 0 });
+  change(f);
+  f.options.getSettings = () => ({ ads: { waitSeconds: 0.04 } });
+  const started = Date.now();
+  await f.run();
+  assert(Date.now() - started >= 40, '无免广告权益时仍须等待设定秒数后领取');
+  assert.deepEqual(f.products.map(p => p.gotTimes), [2, 1], '语言或角色渠道身份不在本地限制领取');
 }
 {
   const f = fixture();

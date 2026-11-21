@@ -5097,7 +5097,7 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
 
   return {
     server,
-    listen: async () => {
+    listen: async (onListening) => {
       const recovery = captureController.inspectCaptureRecovery();
       if (recovery.pending) emit(null, 'warn', recovery.error || recovery.message || '检测到上次采集残留，请在账号页恢复', { category: 'system' });
       await resources?.start();
@@ -5108,8 +5108,10 @@ export function createConsole({ host = '127.0.0.1', port = 17321, onLog, recover
           server.off('error', listenFailed);
           const bound = server.address();
           const address = consoleUrl(host, bound.port);
+          const hints = consoleAccessHints(bound.address, bound.port);
           emit(null, 'info', `控制台已启动 ${address}`);
-          for (const hint of consoleAccessHints(bound.address, bound.port)) emit(null, 'info', hint);
+          for (const hint of hints) emit(null, 'info', hint);
+          onListening?.(address, hints);
           giftAutomation.start();
           fs.watchFile(settingsFile(), { interval: 1000, persistent: false }, settingsFileChanged);
           settingsWatchStarted = true;

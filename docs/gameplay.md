@@ -731,6 +731,7 @@ node tools/selftest-describe.mjs    # 字段布局还原自检
 - 挂机广告按钮只在 `服务器时间 - afkStartTime - 1 <= 60` 时显示。第三方记录中超出窗口也领取成功，且金币数与“已挂机时长 + 2 小时”吻合，但工具仍按客户端窗口执行，避免额外偏离客户端行为。
 - `DispFactoryJob.idx` 是 optional，0 号队列可能不在线路上出现，读取时按 0 处理。`finishTime` 为 0 表示未开工，客户端不提供加速。
 - 展柜到期由客户端补发 `MuseumFinishCaseUpgradeRequest{exhibitionId,caseIndex}`；工具没有其他展柜升级入口，由广告加速开关一并处理。
+- 无免广告权益时的等待领取不限制客户端 appId、语言或角色渠道身份，只核对 `AdvChannelCfg` 开放状态和广告模块等级。
 - 实现位于 `ad-shop.mjs` 的 `adAccess`、`takeAdSlot`、`prepareAd` 与 `ad-rewards.mjs`。
 
 ## 14. 漫剧、擂台赛与赛季宝箱
